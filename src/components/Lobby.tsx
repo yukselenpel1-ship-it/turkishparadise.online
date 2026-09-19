@@ -28,7 +28,9 @@ import {
   Coins,
   Palette,
   Trophy,
-  Loader2
+  Loader2,
+  Trash2,
+  UserMinus
 } from 'lucide-react';
 
 interface LobbyProps {
@@ -42,6 +44,7 @@ interface LobbyProps {
   onUpdateSettings: (newSettings: GameSettings) => void;
   onJoin: (name: string, avatar: string, color: string, isOnline?: boolean, targetRoomCode?: string) => void;
   onAddBot: (difficulty?: BotDifficulty) => void;
+  onRemovePlayer?: (playerId: string) => void;
   onStartGame: () => void;
   onLeaveLobby?: () => void;
 }
@@ -57,6 +60,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   onUpdateSettings,
   onJoin,
   onAddBot,
+  onRemovePlayer,
   onStartGame,
   onLeaveLobby,
 }) => {
@@ -105,6 +109,17 @@ export const Lobby: React.FC<LobbyProps> = ({
   const hasJoined = players.some((p) => p.id === myPlayerId);
   const me = players.find((p) => p.id === myPlayerId);
   const isHost = me?.isHost || (players.length > 0 && players[0].id === myPlayerId);
+
+  // Taken colors by other players/bots in the room
+  const takenColors = players.filter((p) => p.id !== myPlayerId).map((p) => p.color);
+
+  // Auto-switch selectedColor if taken by another player/bot
+  useEffect(() => {
+    const freeColors = PLAYER_COLORS.filter((c) => !takenColors.includes(c));
+    if (freeColors.length > 0 && takenColors.includes(selectedColor)) {
+      setSelectedColor(freeColors[0]);
+    }
+  }, [players, myPlayerId, selectedColor]);
 
   const handleGoogleClick = async () => {
     try {
@@ -555,30 +570,51 @@ export const Lobby: React.FC<LobbyProps> = ({
                     {players.map((p, index) => (
                       <div
                         key={p.id}
-                        className="flex items-center justify-between bg-[#070b14] border border-slate-800 rounded-xl p-2"
+                        className="flex items-center justify-between bg-[#070b14] border border-slate-800 rounded-xl p-2 gap-2"
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{p.avatar}</span>
-                          <span className="font-bold text-xs text-white flex items-center gap-1">
-                            {p.name}
+                        <div className="flex items-center gap-2 min-w-0">
+                          {/* Player Assigned Color Dot */}
+                          <div
+                            className="w-3 h-3 rounded-full border border-white/60 shrink-0 shadow-sm"
+                            style={{ backgroundColor: p.color }}
+                            title={`Piyon Rengi: ${p.color}`}
+                          />
+                          <span className="text-lg shrink-0">{p.avatar}</span>
+                          <span className="font-bold text-xs text-white flex items-center gap-1 truncate">
+                            <span className="truncate">{p.name}</span>
                             {p.id === myPlayerId && (
-                              <span className="text-[8px] bg-rose-500 text-white font-black px-1 rounded">
+                              <span className="text-[8px] bg-rose-500 text-white font-black px-1 rounded shrink-0">
                                 SİZ
                               </span>
                             )}
                             {p.isBot && (
-                              <span className="text-[8px] bg-emerald-500/20 text-emerald-400 font-bold px-1 rounded border border-emerald-500/30">
-                                {p.botDifficulty === 'hard' ? '🔴 ZOR BOT' : p.botDifficulty === 'easy' ? '🟢 KOLAY BOT' : '🟡 ORTA BOT'}
+                              <span className="text-[8px] bg-emerald-500/20 text-emerald-400 font-bold px-1 rounded border border-emerald-500/30 shrink-0">
+                                {p.botDifficulty === 'hard' ? '🔴 ZOR' : p.botDifficulty === 'easy' ? '🟢 KOLAY' : '🟡 ORTA'}
                               </span>
                             )}
                           </span>
                         </div>
 
-                        {index === 0 && (
-                          <span className="flex items-center gap-1 text-[9px] text-amber-400 font-bold">
-                            <Shield className="w-3 h-3" /> Kurucu
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {index === 0 && (
+                            <span className="flex items-center gap-1 text-[9px] text-amber-400 font-bold">
+                              <Shield className="w-3 h-3" /> Kurucu
+                            </span>
+                          )}
+
+                          {/* Host can remove bot or kick player */}
+                          {isHost && index !== 0 && (
+                            <button
+                              type="button"
+                              onClick={() => onRemovePlayer?.(p.id)}
+                              className="flex items-center gap-1 bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-lg px-2 py-1 text-[10px] font-bold transition cursor-pointer"
+                              title={p.isBot ? "Botu Odadan Sil" : "Oyuncuyu Odadan Çıkar"}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>{p.isBot ? 'Botu Sil' : 'Çıkar'}</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -687,27 +723,39 @@ export const Lobby: React.FC<LobbyProps> = ({
                       <Palette className="w-3.5 h-3.5 text-amber-400" />
                       <span>Renginizi Seçin</span>
                     </label>
-                    <span className="text-[10px] text-slate-400 font-semibold">6 Renk</span>
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} Müsait
+                    </span>
                   </div>
                   <div className="grid grid-cols-6 gap-2">
-                    {PLAYER_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setSelectedColor(color)}
-                        className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform active:scale-90 cursor-pointer ${
-                          selectedColor === color
-                            ? 'ring-2 ring-white scale-105 border-white shadow-lg'
-                            : 'border-transparent opacity-80 hover:opacity-100'
-                        }`}
-                        style={{
-                          backgroundColor: color,
-                          boxShadow: selectedColor === color ? `0 0 10px ${color}` : undefined
-                        }}
-                      >
-                        {selectedColor === color && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                      </button>
-                    ))}
+                    {PLAYER_COLORS.map((color) => {
+                      const isTaken = takenColors.includes(color);
+                      const isSelected = selectedColor === color;
+
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          disabled={isTaken}
+                          onClick={() => setSelectedColor(color)}
+                          className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform relative ${
+                            isTaken
+                              ? 'opacity-25 cursor-not-allowed grayscale border-slate-700'
+                              : isSelected
+                              ? 'ring-2 ring-white scale-105 border-white shadow-lg cursor-pointer'
+                              : 'border-transparent opacity-80 hover:opacity-100 cursor-pointer active:scale-90'
+                          }`}
+                          style={{
+                            backgroundColor: color,
+                            boxShadow: isSelected && !isTaken ? `0 0 10px ${color}` : undefined
+                          }}
+                          title={isTaken ? 'Bu renk başka bir oyuncu/bot tarafından alındı' : undefined}
+                        >
+                          {isSelected && !isTaken && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
+                          {isTaken && <span className="text-[8px] font-black text-white/90">DOLU</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -820,27 +868,39 @@ export const Lobby: React.FC<LobbyProps> = ({
                       <Palette className="w-3.5 h-3.5 text-sky-400" />
                       <span>Renginizi Seçin</span>
                     </label>
-                    <span className="text-[10px] text-slate-400 font-semibold">6 Renk</span>
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} Müsait
+                    </span>
                   </div>
                   <div className="grid grid-cols-6 gap-2">
-                    {PLAYER_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setSelectedColor(color)}
-                        className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform active:scale-90 cursor-pointer ${
-                          selectedColor === color
-                            ? 'ring-2 ring-white scale-105 border-white shadow-lg'
-                            : 'border-transparent opacity-80 hover:opacity-100'
-                        }`}
-                        style={{
-                          backgroundColor: color,
-                          boxShadow: selectedColor === color ? `0 0 10px ${color}` : undefined
-                        }}
-                      >
-                        {selectedColor === color && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                      </button>
-                    ))}
+                    {PLAYER_COLORS.map((color) => {
+                      const isTaken = takenColors.includes(color);
+                      const isSelected = selectedColor === color;
+
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          disabled={isTaken}
+                          onClick={() => setSelectedColor(color)}
+                          className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform relative ${
+                            isTaken
+                              ? 'opacity-25 cursor-not-allowed grayscale border-slate-700'
+                              : isSelected
+                              ? 'ring-2 ring-white scale-105 border-white shadow-lg cursor-pointer'
+                              : 'border-transparent opacity-80 hover:opacity-100 cursor-pointer active:scale-90'
+                          }`}
+                          style={{
+                            backgroundColor: color,
+                            boxShadow: isSelected && !isTaken ? `0 0 10px ${color}` : undefined
+                          }}
+                          title={isTaken ? 'Bu renk başka bir oyuncu/bot tarafından alındı' : undefined}
+                        >
+                          {isSelected && !isTaken && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
+                          {isTaken && <span className="text-[8px] font-black text-white/90">DOLU</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -954,27 +1014,39 @@ export const Lobby: React.FC<LobbyProps> = ({
                         <Palette className="w-3.5 h-3.5 text-amber-400" />
                         <span>Renginizi Seçin</span>
                       </label>
-                      <span className="text-[10px] text-slate-400 font-semibold">6 Renk</span>
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} Müsait
+                      </span>
                     </div>
                     <div className="grid grid-cols-6 gap-2">
-                      {PLAYER_COLORS.map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          onClick={() => setSelectedColor(color)}
-                          className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform active:scale-90 cursor-pointer ${
-                            selectedColor === color
-                              ? 'ring-2 ring-white scale-105 border-white shadow-lg'
-                              : 'border-transparent opacity-80 hover:opacity-100'
-                          }`}
-                          style={{
-                            backgroundColor: color,
-                            boxShadow: selectedColor === color ? `0 0 10px ${color}` : undefined
-                          }}
-                        >
-                          {selectedColor === color && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                        </button>
-                      ))}
+                      {PLAYER_COLORS.map((color) => {
+                        const isTaken = takenColors.includes(color);
+                        const isSelected = selectedColor === color;
+
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            disabled={isTaken}
+                            onClick={() => setSelectedColor(color)}
+                            className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform relative ${
+                              isTaken
+                                ? 'opacity-25 cursor-not-allowed grayscale border-slate-700'
+                                : isSelected
+                                ? 'ring-2 ring-white scale-105 border-white shadow-lg cursor-pointer'
+                                : 'border-transparent opacity-80 hover:opacity-100 cursor-pointer active:scale-90'
+                            }`}
+                            style={{
+                              backgroundColor: color,
+                              boxShadow: isSelected && !isTaken ? `0 0 10px ${color}` : undefined
+                            }}
+                            title={isTaken ? 'Bu renk başka bir oyuncu/bot tarafından alındı' : undefined}
+                          >
+                            {isSelected && !isTaken && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
+                            {isTaken && <span className="text-[8px] font-black text-white/90">DOLU</span>}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 

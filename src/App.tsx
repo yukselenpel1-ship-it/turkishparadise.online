@@ -302,11 +302,20 @@ export const App: React.FC = () => {
 
   // Join Game as Player
   const handleJoin = (name: string, avatar: string, color?: string, isOnline = true, targetRoomCode?: string) => {
-    const finalRoom = targetRoomCode || gameState.settings.roomCode || 'TR-1001';
+    const finalRoom = targetRoomCode || gameState.roomId || gameState.settings.roomCode || 'TR-1001';
     const newId = userAccount?.uid || `player_${Math.random().toString(36).substring(2, 9)}`;
     const startMoney = gameState.settings?.startingMoney || 1500;
-    const chosenColor = color || PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length];
     
+    // Determine unique color not taken by existing players
+    const existingColors = gameState.players.map((p) => p.color);
+    let chosenColor = color || '';
+    if (!chosenColor || existingColors.includes(chosenColor)) {
+      const freeColor = PLAYER_COLORS.find((c) => !existingColors.includes(c));
+      chosenColor = freeColor || PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length];
+    }
+    
+    const isHostPlayer = gameState.players.length === 0;
+
     const newPlayer: Player = {
       id: newId,
       name: name || userAccount?.displayName || 'Oyuncu',
@@ -320,7 +329,7 @@ export const App: React.FC = () => {
       firstLapPurchases: 0,
       inGame: true,
       isBot: false,
-      isHost: gameState.players.length === 0
+      isHost: isHostPlayer
     };
 
     setMyPlayerId(newId);
@@ -360,6 +369,24 @@ export const App: React.FC = () => {
     setMyPlayerId(null);
   };
 
+  // Remove player or bot from room (Host Only)
+  const handleRemovePlayer = (playerIdToRemove: string) => {
+    updateAndBroadcastGameState((prev) => {
+      const isHost = prev.players.length === 0 || prev.players[0].id === myPlayerId;
+      if (!isHost) return prev;
+
+      const pToRemove = prev.players.find((p) => p.id === playerIdToRemove);
+      if (!pToRemove) return prev;
+
+      const updated = {
+        ...prev,
+        players: prev.players.filter((p) => p.id !== playerIdToRemove)
+      };
+      addLog(updated, `🚪 ${pToRemove.name} ${pToRemove.isBot ? 'botu silindi' : 'odadan çıkarıldı'}.`, 'warning');
+      return updated;
+    });
+  };
+
   // Update Game Settings (Host Only)
   const handleUpdateSettings = (newSettings: GameSettings) => {
     updateAndBroadcastGameState((prev) => ({
@@ -369,7 +396,7 @@ export const App: React.FC = () => {
     }));
   };
 
-  // Add Bot Player with Difficulty
+  // Add Bot Player with Difficulty & Guaranteed Unique Color
   const handleAddBot = (difficulty: BotDifficulty = 'medium') => {
     if (gameState.players.length >= 6) return;
 
@@ -377,16 +404,22 @@ export const App: React.FC = () => {
     const difficultyPrefix = difficulty === 'hard' ? 'Zor ' : difficulty === 'easy' ? 'Kolay ' : '';
     const botNames = [`${difficultyPrefix}Zeki Bot 🤖`, `${difficultyPrefix}Emlakçı Bot 🏠`, `${difficultyPrefix}Zengin Bot 💰`, `${difficultyPrefix}Hızlı Bot ⚡`];
     const botName = botNames[(botNumber - 1) % botNames.length];
+    
+    // Guaranteed Unique Avatar
     const availableAvatars = PLAYER_AVATARS.filter(
       (a) => !gameState.players.some((p) => p.avatar === a)
     );
+
+    // Guaranteed Unique Color
+    const takenColors = gameState.players.map((p) => p.color);
+    const availableColor = PLAYER_COLORS.find((c) => !takenColors.includes(c)) || PLAYER_COLORS[0];
 
     const startMoney = gameState.settings?.startingMoney || 1500;
     const botPlayer: Player = {
       id: `bot_${Math.random().toString(36).substring(2, 9)}`,
       name: botName,
       avatar: availableAvatars[0] || '🤖',
-      color: PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length],
+      color: availableColor,
       money: startMoney,
       position: 0,
       isJailed: false,
@@ -678,6 +711,7 @@ export const App: React.FC = () => {
           onUpdateSettings={handleUpdateSettings}
           onJoin={handleJoin}
           onAddBot={handleAddBot}
+          onRemovePlayer={handleRemovePlayer}
           onStartGame={handleStartGame}
           onLeaveLobby={handleLeaveLobby}
         />
