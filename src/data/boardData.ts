@@ -280,7 +280,7 @@ export const INITIAL_BOARD: BoardTile[] = [
     id: 23,
     name: 'BEŞİKTAŞ',
     type: 'station',
-    price: 260,
+    price: 200,
     rent: [50, 100, 150, 200],
     icon: '⚓',
     subtitle: 'İskele',

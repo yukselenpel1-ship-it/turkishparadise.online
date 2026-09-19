@@ -346,6 +346,44 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
 
   if (!fromPlayer || !toPlayer) return newState;
 
+  // Verify solvency of both participants
+  if (offer.offeredMoney > 0 && fromPlayer.money < offer.offeredMoney) {
+    addLog(newState, `❌ Takas iptal: ${fromPlayer.name} teklif ettiği ${offer.offeredMoney}₺ nakit paraya sahip değil!`, 'warning');
+    return newState;
+  }
+  if (offer.requestedMoney > 0 && toPlayer.money < offer.requestedMoney) {
+    addLog(newState, `❌ Takas iptal: ${toPlayer.name} talep edilen ${offer.requestedMoney}₺ nakit paraya sahip değil!`, 'warning');
+    return newState;
+  }
+
+  // Verify deed ownership of all offered & requested tiles
+  for (const id of offer.offeredTileIds) {
+    const tile = newState.board.find(b => b.id === id);
+    if (!tile || tile.ownerId !== fromPlayer.id) {
+      addLog(newState, `❌ Takas iptal: Teklif edilen "${tile?.name || 'Mülk'}" artık ${fromPlayer.name} mülkiyetinde değil!`, 'warning');
+      return newState;
+    }
+  }
+  for (const id of offer.requestedTileIds) {
+    const tile = newState.board.find(b => b.id === id);
+    if (!tile || tile.ownerId !== toPlayer.id) {
+      addLog(newState, `❌ Takas iptal: İstenen "${tile?.name || 'Mülk'}" artık ${toPlayer.name} mülkiyetinde değil!`, 'warning');
+      return newState;
+    }
+  }
+
+  // Verify that neither property set contains built houses/hotels
+  for (const id of [...offer.offeredTileIds, ...offer.requestedTileIds]) {
+    const tile = newState.board.find(b => b.id === id);
+    if (tile?.colorGroup) {
+      const groupTiles = newState.board.filter(t => t.colorGroup === tile.colorGroup);
+      if (groupTiles.some(t => t.houses > 0)) {
+        addLog(newState, `❌ Takas yapılamaz: "${tile.name}" grubundaki tüm ev ve oteller satılmadan mülk takas edilemez!`, 'warning');
+        return newState;
+      }
+    }
+  }
+
   // Bot AI Evaluation
   if (toPlayer.isBot) {
     const evalResult = evaluateTradeOfferByBot(newState, offer, toPlayer);
@@ -636,10 +674,28 @@ export function handleTileLanding(
   tile: BoardTile
 ): GameState {
   switch (tile.type) {
+    case 'start':
+      addLog(state, `🏁 ${player.name} Başlangıç karesinde mola verdi.`, 'info');
+      state.pendingAction = 'NONE';
+      break;
+
+    case 'parking':
+      addLog(state, `🅿️ ${player.name} Ücretsiz Otopark'ta dinleniyor.`, 'info');
+      state.pendingAction = 'NONE';
+      break;
+
+    case 'jail':
+      if (!player.isJailed) {
+        addLog(state, `🔒 ${player.name} Kodeste sadece ziyaretçi olarak bulunuyor.`, 'info');
+      }
+      state.pendingAction = 'NONE';
+      break;
+
     case 'gotojail':
       player.position = JAIL_TILE_INDEX;
       player.isJailed = true;
       player.jailTurns = 0;
+      state.doublesCount = 0; // Reset doubles streak on going to jail
       addLog(state, `🚨 ${player.name} doğrudan Kodese yollandı! (100₺ ödeyerek çıkabilir)`, 'danger');
       state.pendingAction = 'NONE';
       break;
@@ -716,6 +772,7 @@ export function applyChanceCard(state: GameState): GameState {
       player.position = JAIL_TILE_INDEX;
       player.isJailed = true;
       player.jailTurns = 0;
+      newState.doublesCount = 0;
       break;
 
     case 'MOVE_TO':
@@ -733,6 +790,19 @@ export function applyChanceCard(state: GameState): GameState {
           }
         }
         player.position = target;
+
+        // If card moves to a destination other than Start, execute tile landing mechanics (buying / rent)
+        newState.activeCard = undefined;
+        if (target !== 0) {
+          const destTile = newState.board[target];
+          addLog(newState, `📍 ${player.name} "${destTile.name}" karesine ilerledi.`, 'info');
+          const afterLanding = handleTileLanding(newState, player, destTile);
+          if ((afterLanding.doublesCount || 0) > 0 && !player.isJailed && afterLanding.pendingAction === 'NONE') {
+            afterLanding.diceRolled = false;
+            addLog(afterLanding, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
+          }
+          return afterLanding;
+        }
       }
       break;
 
@@ -864,12 +934,29 @@ export function sellPropertyToBank(state: GameState, tileId: number, playerId?: 
   return newState;
 }
 
-export function buildHouse(state: GameState, tileId: number): GameState {
+export function buildHouse(state: GameState, tileId: number, playerId?: string): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
-  const player = newState.players[newState.currentTurnIndex];
   const tile = newState.board[tileId];
+  if (!tile) return newState;
 
-  if (!tile || tile.ownerId !== player.id || !tile.houseCost || tile.houses >= 5) return newState;
+  const targetPlayerId = playerId || tile.ownerId || newState.players[newState.currentTurnIndex]?.id;
+  const player = newState.players.find(p => p.id === targetPlayerId);
+
+  if (!player || tile.ownerId !== player.id || !tile.houseCost || tile.houses >= 5) return newState;
+
+  if (tile.isMortgaged) {
+    addLog(newState, `⚠️ İpotekli mülke ev dikilemez! Önce ipoteği kaldırın.`, 'warning');
+    return newState;
+  }
+
+  // Check if any property in this color group is mortgaged
+  if (tile.colorGroup) {
+    const groupTiles = newState.board.filter(t => t.colorGroup === tile.colorGroup);
+    if (groupTiles.some(t => t.isMortgaged)) {
+      addLog(newState, `⚠️ Bu renk grubunda ipotekli mülk varken ev dikilemez! Önce ipoteği kaldırın.`, 'warning');
+      return newState;
+    }
+  }
 
   if (!hasColorGroupMonopoly(newState.board, tile.colorGroup, player.id)) {
     addLog(newState, `⚠️ Ev dikilemez: ${tile.name} için aynı renkteki tüm şehirlere sahip olmanız gerekir!`, 'warning');
@@ -882,17 +969,42 @@ export function buildHouse(state: GameState, tileId: number): GameState {
     const typeStr = tile.houses === 5 ? 'Otel' : `${tile.houses}. Ev`;
     addTransaction(newState, player, 'expense', 'build_house', tile.houseCost, `"${tile.name}" üzerine ${typeStr} inşa edildi`);
     addLog(newState, `🏗️ ${player.name}, "${tile.name}" üzerine ${typeStr} dikti! (${tile.houseCost}₺)`, 'success');
+  } else {
+    addLog(newState, `❌ ${player.name} ev dikmek için yeterli paraya (${tile.houseCost}₺) sahip değil.`, 'warning');
   }
 
   return newState;
 }
 
-export function toggleMortgage(state: GameState, tileId: number): GameState {
+// Mülk üzerindeki evi/oteli yarı fiyatına bankaya geri satma
+export function sellHouse(state: GameState, tileId: number, playerId?: string): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
-  const player = newState.players[newState.currentTurnIndex];
   const tile = newState.board[tileId];
+  if (!tile || !tile.houseCost || tile.houses <= 0) return newState;
 
-  if (!tile || tile.ownerId !== player.id || !tile.price) return newState;
+  const targetPlayerId = playerId || tile.ownerId || newState.players[newState.currentTurnIndex]?.id;
+  const player = newState.players.find(p => p.id === targetPlayerId);
+  if (!player || tile.ownerId !== player.id) return newState;
+
+  const refund = Math.floor(tile.houseCost / 2);
+  tile.houses -= 1;
+  player.money += refund;
+  const houseType = tile.houses === 4 ? 'Otel satıldı' : `${tile.houses + 1}. ev satıldı`;
+  addTransaction(newState, player, 'income', 'sell_house', refund, `"${tile.name}" üzerinden ${houseType}`);
+  addLog(newState, `🏚️ ${player.name}, "${tile.name}" üzerinden bina satarak ${refund}₺ geri aldı.`, 'info');
+
+  return newState;
+}
+
+export function toggleMortgage(state: GameState, tileId: number, playerId?: string): GameState {
+  const newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const tile = newState.board[tileId];
+  if (!tile || !tile.price) return newState;
+
+  const targetPlayerId = playerId || tile.ownerId || newState.players[newState.currentTurnIndex]?.id;
+  const player = newState.players.find(p => p.id === targetPlayerId);
+
+  if (!player || tile.ownerId !== player.id) return newState;
 
   const mortgageValue = Math.floor(tile.price / 2);
 
@@ -903,9 +1015,18 @@ export function toggleMortgage(state: GameState, tileId: number): GameState {
       tile.isMortgaged = false;
       addTransaction(newState, player, 'expense', 'mortgage', unmortgageCost, `"${tile.name}" ipoteği kaldırıldı`);
       addLog(newState, `🔓 ${player.name}, "${tile.name}" ipoteğini ${unmortgageCost}₺ ödeyerek kaldırdı.`, 'info');
+    } else {
+      addLog(newState, `❌ İpoteği kaldırmak için ${unmortgageCost}₺ gereklidir.`, 'warning');
     }
   } else {
-    if (tile.houses > 0) {
+    // Check if any property in this color group has houses
+    if (tile.colorGroup) {
+      const groupTiles = newState.board.filter(t => t.colorGroup === tile.colorGroup);
+      if (groupTiles.some(t => t.houses > 0)) {
+        addLog(newState, `⚠️ Bu renk grubunda binalar varken mülk ipotek edilemez! Önce tüm binaları satın.`, 'warning');
+        return newState;
+      }
+    } else if (tile.houses > 0) {
       addLog(newState, `⚠️ Üzerinde ev bulunan mülk ipotek ettirilemez!`, 'warning');
       return newState;
     }

@@ -12,6 +12,7 @@ interface PropertyModalProps {
   onClose: () => void;
   onBuy?: () => void;
   onBuildHouse?: () => void;
+  onSellHouse?: () => void;
   onToggleMortgage?: () => void;
   onSellToBank?: (tileId: number) => void;
   onStartTrade?: (tile: BoardTile) => void;
@@ -27,6 +28,7 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
   onClose,
   onBuy,
   onBuildHouse,
+  onSellHouse,
   onToggleMortgage,
   onSellToBank,
   onStartTrade,
@@ -234,6 +236,15 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                   ? 'Ev Dikmek İçin Tüm Şehirleri Alın' 
                   : `${tile.houses === 4 ? 'Otel Dik' : 'Ev Dik'} (₺${tile.houseCost})`
                 }
+              </button>
+            )}
+
+            {isOwner && onSellHouse && tile.type === 'property' && tile.houseCost && tile.houses > 0 && (
+              <button
+                onClick={onSellHouse}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-rose-300 font-bold py-2 rounded-xl border border-rose-500/30 transition flex items-center justify-center gap-2 text-xs cursor-pointer"
+              >
+                <span>🏚️ 1 Ev Sat (+₺{Math.floor(tile.houseCost / 2)} Geri Al)</span>
               </button>
             )}
 

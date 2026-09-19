@@ -9,6 +9,7 @@ interface MyPropertiesModalProps {
   onClose: () => void;
   onOpenTradeForTile: (tile: BoardTile) => void;
   onBuildHouse: (tileId: number) => void;
+  onSellHouse?: (tileId: number) => void;
   onToggleMortgage: (tileId: number) => void;
   onSellToBank?: (tileId: number) => void;
 }
@@ -20,6 +21,7 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
   onClose,
   onOpenTradeForTile,
   onBuildHouse,
+  onSellHouse,
   onToggleMortgage,
   onSellToBank,
 }) => {
@@ -146,6 +148,16 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
                         title="Ev Dik"
                       >
                         <Home className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {isCurrentMe && tile.type === 'property' && tile.houseCost && tile.houses > 0 && onSellHouse && (
+                      <button
+                        onClick={() => onSellHouse(tile.id)}
+                        className="p-2 bg-slate-900 hover:bg-slate-800 text-rose-400 rounded-xl border border-rose-500/30 transition text-xs cursor-pointer"
+                        title={`1 Ev Sat (+₺${Math.floor(tile.houseCost / 2)})`}
+                      >
+                        <span className="text-xs">🏚️</span>
                       </button>
                     )}
 

@@ -122,6 +122,7 @@ export type TransactionCategory =
   | 'bail' 
   | 'chance'
   | 'build_house'
+  | 'sell_house'
   | 'mortgage';
 
 export interface FinancialTransaction {

@@ -11,6 +11,7 @@ import {
   passProperty,
   sellPropertyToBank,
   buildHouse,
+  sellHouse,
   toggleMortgage,
   applyChanceCard,
   payJailBail,
@@ -291,6 +292,20 @@ export const App: React.FC = () => {
       return next;
     });
   };
+
+  // Live sync selectedTile if game state board updates (houses, owner, mortgage)
+  useEffect(() => {
+    if (selectedTile) {
+      const liveTile = gameState.board.find((t) => t.id === selectedTile.id);
+      if (liveTile && (
+        liveTile.houses !== selectedTile.houses ||
+        liveTile.isMortgaged !== selectedTile.isMortgaged ||
+        liveTile.ownerId !== selectedTile.ownerId
+      )) {
+        setSelectedTile(liveTile);
+      }
+    }
+  }, [gameState.board, selectedTile]);
 
   // 5. Turn Countdown Timer (Calculated directly from synchronized turnStartedAt timestamp)
   useEffect(() => {
@@ -800,18 +815,38 @@ export const App: React.FC = () => {
 
   // Build House Action
   const handleBuildHouseAction = (tileId: number) => {
-    updateAndBroadcastGameState((prev) => buildHouse(prev, tileId));
-    if (selectedTile) {
-      setSelectedTile((prev) => (prev ? { ...prev, houses: prev.houses + 1 } : null));
-    }
+    updateAndBroadcastGameState((prev) => {
+      const next = buildHouse(prev, tileId, myPlayerId || undefined);
+      if (selectedTile && selectedTile.id === tileId) {
+        const updatedTile = next.board.find(t => t.id === tileId);
+        if (updatedTile) setSelectedTile(updatedTile);
+      }
+      return next;
+    });
+  };
+
+  // Sell House Action
+  const handleSellHouseAction = (tileId: number) => {
+    updateAndBroadcastGameState((prev) => {
+      const next = sellHouse(prev, tileId, myPlayerId || undefined);
+      if (selectedTile && selectedTile.id === tileId) {
+        const updatedTile = next.board.find(t => t.id === tileId);
+        if (updatedTile) setSelectedTile(updatedTile);
+      }
+      return next;
+    });
   };
 
   // Toggle Mortgage Action
   const handleToggleMortgageAction = (tileId: number) => {
-    updateAndBroadcastGameState((prev) => toggleMortgage(prev, tileId));
-    if (selectedTile) {
-      setSelectedTile((prev) => (prev ? { ...prev, isMortgaged: !prev.isMortgaged } : null));
-    }
+    updateAndBroadcastGameState((prev) => {
+      const next = toggleMortgage(prev, tileId, myPlayerId || undefined);
+      if (selectedTile && selectedTile.id === tileId) {
+        const updatedTile = next.board.find(t => t.id === tileId);
+        if (updatedTile) setSelectedTile(updatedTile);
+      }
+      return next;
+    });
   };
 
   // Apply Chance Card
@@ -1095,6 +1130,7 @@ export const App: React.FC = () => {
           onClose={() => setSelectedTile(null)}
           onBuy={handleBuyPropertyAction}
           onBuildHouse={() => handleBuildHouseAction(selectedTile.id)}
+          onSellHouse={() => handleSellHouseAction(selectedTile.id)}
           onToggleMortgage={() => handleToggleMortgageAction(selectedTile.id)}
           onSellToBank={handleSellToBankAction}
           canBuy={gameState.pendingAction === 'BUY_PROPERTY' && me.position === selectedTile.id}
@@ -1114,6 +1150,7 @@ export const App: React.FC = () => {
             setIsTradeModalOpen(true);
           }}
           onBuildHouse={handleBuildHouseAction}
+          onSellHouse={handleSellHouseAction}
           onToggleMortgage={handleToggleMortgageAction}
           onSellToBank={handleSellToBankAction}
         />
