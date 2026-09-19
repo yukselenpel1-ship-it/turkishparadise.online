@@ -40,7 +40,7 @@ class MultiplayerSyncManager {
       if (typeof BroadcastChannel !== 'undefined') {
         this.localChannel = new BroadcastChannel('tp_global_multiplayer_channel');
         this.localChannel.onmessage = (event) => {
-          if (event.data) {
+          if (event.data && event.data.senderId !== LOCAL_CLIENT_ID) {
             this.notifyListeners(event.data);
           }
         };

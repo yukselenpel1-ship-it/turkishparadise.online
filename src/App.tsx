@@ -119,9 +119,6 @@ export const App: React.FC = () => {
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  
-  // Track last synced state timestamp to prevent echo loops
-  const isRemoteUpdateRef = useRef(false);
 
   // 1. Process Google OAuth callback on mount or load saved user session
   useEffect(() => {
@@ -190,8 +187,11 @@ export const App: React.FC = () => {
       gameState.roomId,
       (remoteState) => {
         if (remoteState && remoteState.roomId === gameState.roomId) {
-          isRemoteUpdateRef.current = true;
           setGameState(remoteState);
+          try {
+            sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(remoteState));
+            localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(remoteState));
+          } catch (e) {}
 
           // Auto-reconnect player to their seat if recovering after F5
           const savedId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY);
@@ -261,10 +261,9 @@ export const App: React.FC = () => {
         });
       },
       () => {
-        // Reply with current state when a new peer requests sync
+        // Reply with current state when a peer requests sync
         setGameState((prev) => {
-          const isHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
-          if (isHost && prev.roomId) {
+          if (prev.roomId && prev.players.length > 0 && prev.phase === 'PLAYING') {
             syncRoomState(prev.roomId, prev);
           }
           return prev;
@@ -278,14 +277,17 @@ export const App: React.FC = () => {
     };
   }, [gameState.roomId, myPlayerId, userAccount]);
 
-  // Sync state changes to room (only if not an incoming remote update)
+  // Sync state changes to room (always broadcast on deliberate local user / host action)
   const updateAndBroadcastGameState = (updater: (prev: GameState) => GameState) => {
     setGameState((prev) => {
       const next = updater(prev);
-      if (!isRemoteUpdateRef.current && next.roomId) {
+      if (next.roomId) {
         syncRoomState(next.roomId, next);
+        try {
+          sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(next));
+          localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(next));
+        } catch (e) {}
       }
-      isRemoteUpdateRef.current = false;
       return next;
     });
   };
@@ -754,7 +756,7 @@ export const App: React.FC = () => {
     let stepCount = 0;
     const interval = setInterval(() => {
       stepCount++;
-      updateAndBroadcastGameState(prev => {
+      setGameState(prev => {
         const { state } = advancePlayerStep(prev, currentPlayer.id);
         return state;
       });
@@ -766,7 +768,7 @@ export const App: React.FC = () => {
           setIsMoving(false);
         }, 120);
       }
-    }, 200);
+    }, 180);
   };
 
   // End Turn Action
