@@ -969,7 +969,11 @@ export const App: React.FC = () => {
   const me = gameState.players.find((p) => p.id === myPlayerId);
 
   return (
-    <div className="h-[100dvh] w-screen overflow-hidden bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none">
+    <div className={`w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none ${
+      gameState.phase === 'LOBBY'
+        ? 'min-h-[100dvh] overflow-y-auto overflow-x-hidden'
+        : 'h-[100dvh] w-screen overflow-hidden'
+    }`}>
       {gameState.phase === 'LOBBY' ? (
         <Lobby
           players={gameState.players}

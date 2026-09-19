@@ -169,7 +169,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#050811] text-white flex flex-col justify-between relative overflow-hidden select-none font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="min-h-[100dvh] w-full bg-[#050811] text-white flex flex-col justify-between relative select-none font-['Plus_Jakarta_Sans',sans-serif]">
       
       {/* Background Hero Atmosphere Image with Istanbul / Bosphorus Mood */}
       <div className="absolute inset-0 z-0 pointer-events-none">
@@ -310,27 +310,27 @@ export const Lobby: React.FC<LobbyProps> = ({
       </header>
 
       {/* 2. Main Hero Split Content */}
-      <main className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-20">
+      <main className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-3 sm:py-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center relative z-20">
         
         {/* Left Hero Section: Headline & Features */}
-        <div className="lg:col-span-6 space-y-6 text-left">
+        <div className="lg:col-span-6 space-y-4 sm:space-y-6 text-center lg:text-left">
           
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold mb-1">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span>Çevrimiçi Çok Oyunculu & Arkadaş Odaları</span>
             </div>
-            <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-tight">
-              Türkiye <br />
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-tight">
+              Türkiye <br className="hidden sm:inline" />
               Senin <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent">Oyun Alanın</span>
             </h1>
-            <p className="text-slate-300 text-sm sm:text-base font-medium max-w-md pt-2 leading-relaxed">
+            <p className="text-slate-300 text-xs sm:text-base font-medium max-w-md mx-auto lg:mx-0 pt-1 sm:pt-2 leading-relaxed">
               Şehirleri al, yatırımlarını büyüt, rakiplerini geride bırak. Strateji, ticaret ve eğlence bir arada!
             </p>
           </div>
 
-          {/* Feature List with Gold Icons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+          {/* Feature List with Gold Icons (Desktop view) */}
+          <div className="hidden lg:grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
             <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
               <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                 <TrendingUp className="w-4 h-4" />
@@ -360,8 +360,8 @@ export const Lobby: React.FC<LobbyProps> = ({
             </div>
           </div>
 
-          {/* Cursive Quote Bottom Left */}
-          <div className="pt-2">
+          {/* Cursive Quote Bottom Left (Desktop view) */}
+          <div className="hidden lg:block pt-2">
             <p className="font-['Caveat',cursive] text-2xl sm:text-3xl text-amber-200/90 tracking-wide drop-shadow">
               "Bu topraklarda her şehir bir hikaye..."
             </p>
@@ -370,7 +370,7 @@ export const Lobby: React.FC<LobbyProps> = ({
         </div>
 
         {/* Right Hero Section: Glassmorphism Login / Lobby Card */}
-        <div className="lg:col-span-6 flex flex-col items-center lg:items-end relative">
+        <div className="lg:col-span-6 flex flex-col items-center lg:items-end relative w-full">
           
           {/* Cursive Quote Top Right */}
           <div className="hidden lg:block absolute -top-8 right-6 pointer-events-none">
@@ -380,7 +380,7 @@ export const Lobby: React.FC<LobbyProps> = ({
             </p>
           </div>
 
-          <div className="w-full max-w-md bg-[#0a1020]/92 border border-slate-800/90 rounded-[32px] p-6 sm:p-7 shadow-2xl backdrop-blur-2xl relative overflow-hidden ring-1 ring-amber-500/20">
+          <div className="w-full max-w-md bg-[#0a1020]/92 border border-slate-800/90 rounded-[28px] sm:rounded-[32px] p-4.5 sm:p-7 shadow-2xl backdrop-blur-2xl relative overflow-hidden ring-1 ring-amber-500/20">
             
             {/* Top Glow Accent */}
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -1090,6 +1090,43 @@ export const Lobby: React.FC<LobbyProps> = ({
               </div>
             )}
 
+          </div>
+
+          {/* Mobile Features & Quote (rendered cleanly beneath the card on mobile devices) */}
+          <div className="lg:hidden w-full max-w-md mt-6 space-y-4">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-xs font-bold text-slate-200">Strateji Kur</span>
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <Handshake className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-xs font-bold text-slate-200">Şehirleri Fethet</span>
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <Coins className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-xs font-bold text-slate-200">Yatırımını Büyüt</span>
+              </div>
+
+              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <Users className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-xs font-bold text-slate-200">Arkadaşlarınla Oyna</span>
+              </div>
+            </div>
+
+            <p className="font-['Caveat',cursive] text-xl text-amber-200/90 text-center tracking-wide">
+              "Bu topraklarda her şehir bir hikaye..."
+            </p>
           </div>
 
         </div>
