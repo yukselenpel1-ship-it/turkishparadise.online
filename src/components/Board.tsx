@@ -135,18 +135,25 @@ export const Board: React.FC<BoardProps> = ({
           {/* Subtle Constellation Grid Background */}
           <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px] opacity-15 pointer-events-none" />
 
-          {/* Table Header: Golden POCOCOLY Logo */}
-          <div className="text-center relative z-10 w-full pt-0.5 space-y-1 flex flex-col items-center">
-            <img
-              src="/pococoly-logo.png"
-              alt="POCOCOLY"
-              className="h-8 sm:h-10 md:h-11 max-w-[260px] sm:max-w-xs object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)] filter brightness-105 transition hover:scale-105 duration-300"
-            />
+          {/* Table Header: Golden TURKISH PARADISE Branding */}
+          <div className="text-center relative z-10 w-full pt-1 space-y-0.5 flex flex-col items-center">
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-base sm:text-lg">🎲</span>
+              <div className="flex flex-col items-center">
+                <span className="font-['Cinzel',serif] text-[10px] sm:text-xs font-bold tracking-[0.25em] text-slate-300 uppercase">
+                  TURKISH
+                </span>
+                <span className="font-['Cinzel',serif] text-lg sm:text-2xl font-black bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-transparent drop-shadow tracking-wider leading-none">
+                  PARADISE
+                </span>
+              </div>
+            </div>
             
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 tracking-widest uppercase">
+            <p className="text-[8.5px] sm:text-[9.5px] font-bold text-slate-400 tracking-widest uppercase">
               Türkiye Web Tabanlı Masa Oyunu
             </p>
           </div>
+
 
           {/* Center Stage: Spacious Dice & Action Container */}
           <div className="w-full max-w-sm flex flex-col items-center justify-center relative z-10 my-auto py-1 space-y-2.5">

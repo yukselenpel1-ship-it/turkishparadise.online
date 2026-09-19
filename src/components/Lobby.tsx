@@ -110,28 +110,32 @@ export const Lobby: React.FC<LobbyProps> = ({
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#050811] text-white flex flex-col justify-between relative overflow-hidden select-none font-['Fredoka',sans-serif]">
+    <div className="min-h-screen w-full bg-[#050811] text-white flex flex-col justify-between relative overflow-hidden select-none font-['Plus_Jakarta_Sans',sans-serif]">
       
-      {/* Background Night Skyline with Istanbul / Bosphorus Mood Overlay */}
-      <div className="absolute inset-0 z-0 opacity-25 pointer-events-none">
+      {/* Background Hero Atmosphere Image with Istanbul / Bosphorus Mood */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
         <img
-          src="https://images.unsplash.com/photo-1524231757912-21f4fe3a7200?auto=format&fit=crop&w=2000&q=80"
-          alt="Istanbul Skyline"
-          className="w-full h-full object-cover object-center"
+          src="/hero-bg.jpg"
+          alt="Turkish Paradise Istanbul Skyline"
+          className="w-full h-full object-cover object-center filter brightness-90 contrast-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#050811] via-[#050811]/80 to-[#050811]/90" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#050811] via-[#050811]/40 to-[#050811]/70" />
       </div>
 
       {/* 1. Top Navbar Header */}
       <header className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-5 flex items-center justify-between relative z-20">
         
-        {/* Brand Logo */}
-        <div className="flex items-center gap-2.5 cursor-pointer">
-          <img
-            src="/pococoly-logo.png"
-            alt="POCOCOLY"
-            className="h-8 sm:h-9 object-contain drop-shadow-md transition hover:scale-105"
-          />
+        {/* Brand Logo: TURKISH PARADISE */}
+        <div className="flex items-center gap-2.5 cursor-pointer group">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-lg shadow-lg shadow-amber-500/30 group-hover:rotate-12 transition-transform duration-300">
+            🎲
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="font-['Cinzel',serif] text-base sm:text-lg font-black tracking-wider text-white flex items-center gap-1.5">
+              <span>TURKISH</span>
+              <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
+            </span>
+          </div>
         </div>
 
         {/* Center Nav Links */}
@@ -186,58 +190,55 @@ export const Lobby: React.FC<LobbyProps> = ({
       </header>
 
       {/* 2. Main Hero Split Content */}
-      <main className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-20">
+      <main className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-20">
         
         {/* Left Hero Section: Headline & Features */}
         <div className="lg:col-span-6 space-y-6 text-left">
           
           <div className="space-y-2">
             <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-tight">
-              Şehirler <br />
-              Sadece Yer Değil, <br />
-              <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-rose-400 bg-clip-text text-transparent">
-                Fırsattır.
-              </span>
+              Türkiye <br />
+              Senin <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent">Oyun Alanın</span>
             </h1>
-            <p className="text-slate-400 text-sm sm:text-base font-medium max-w-md pt-2">
-              Türkiye'nin 26 şehrini al, vapur iskelelerine hükmet, yatırımlarını büyüt ve rakiplerini geride bırak.
+            <p className="text-slate-300 text-sm sm:text-base font-medium max-w-md pt-2 leading-relaxed">
+              Şehirleri al, yatırımlarını büyüt, rakiplerini geride bırak. Strateji, ticaret ve eğlence bir arada!
             </p>
           </div>
 
           {/* Feature List with Gold Icons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                <Crown className="w-4 h-4" />
+            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <TrendingUp className="w-4 h-4" />
               </div>
               <span className="text-sm font-bold text-slate-200">Strateji Kur</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                 <Handshake className="w-4 h-4" />
               </div>
               <span className="text-sm font-bold text-slate-200">Şehirleri Fethet</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                <TrendingUp className="w-4 h-4" />
+            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <Coins className="w-4 h-4" />
               </div>
               <span className="text-sm font-bold text-slate-200">Yatırımını Büyüt</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                 <Users className="w-4 h-4" />
               </div>
               <span className="text-sm font-bold text-slate-200">Arkadaşlarınla Oyna</span>
             </div>
           </div>
 
-          {/* Cursive Quote */}
-          <div className="pt-4">
-            <p className="text-amber-400/80 font-serif italic text-base sm:text-lg">
+          {/* Cursive Quote Bottom Left */}
+          <div className="pt-2">
+            <p className="font-['Caveat',cursive] text-2xl sm:text-3xl text-amber-200/90 tracking-wide drop-shadow">
               "Bu topraklarda her şehir bir hikaye..."
             </p>
           </div>
@@ -245,24 +246,43 @@ export const Lobby: React.FC<LobbyProps> = ({
         </div>
 
         {/* Right Hero Section: Glassmorphism Login / Lobby Card */}
-        <div className="lg:col-span-6 flex justify-center lg:justify-end">
+        <div className="lg:col-span-6 flex flex-col items-center lg:items-end relative">
           
-          <div className="w-full max-w-md bg-[#0e1628]/90 border border-slate-800/90 rounded-[28px] p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+          {/* Cursive Quote Top Right */}
+          <div className="hidden lg:block absolute -top-8 right-6 pointer-events-none">
+            <p className="font-['Caveat',cursive] text-2xl text-amber-200/90 tracking-wide drop-shadow text-right">
+              Daha fazla şehir, <br />
+              daha fazla fırsat.
+            </p>
+          </div>
+
+          <div className="w-full max-w-md bg-[#0a1020]/92 border border-slate-800/90 rounded-[32px] p-6 sm:p-7 shadow-2xl backdrop-blur-2xl relative overflow-hidden ring-1 ring-amber-500/20">
             
             {/* Top Glow Accent */}
-            <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
 
-            {/* Card Header with Golden Logo */}
-            <div className="text-center mb-6 flex flex-col items-center">
-              <img
-                src="/pococoly-logo.png"
-                alt="POCOCOLY"
-                className="h-10 sm:h-12 object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] filter brightness-105"
-              />
-              <p className="text-slate-400 text-xs font-semibold mt-1">
-                Web Tabanlı Canlı Monopoly Oyunu
-              </p>
+            {/* Card Header: TURKISH PARADISE Luxury Golden Logo */}
+            <div className="text-center mb-5 flex flex-col items-center">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-lg shadow-lg shadow-amber-500/30 mb-1">
+                🎲
+              </div>
+              
+              <span className="font-['Cinzel',serif] font-bold text-xs sm:text-sm tracking-[0.25em] text-slate-300 uppercase">
+                TURKISH
+              </span>
+              <h2 className="font-['Cinzel',serif] font-black text-3xl sm:text-4xl bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-transparent drop-shadow-md leading-none tracking-wider my-0.5">
+                PARADISE
+              </h2>
+              
+              <div className="flex items-center gap-2 mt-1 w-full justify-center">
+                <div className="h-[1px] w-8 bg-gradient-to-r from-transparent to-amber-400/60" />
+                <p className="font-['Caveat',cursive] text-base text-amber-300/90 font-medium italic">
+                  Büyük Düşün, Tüm Türkiye Senin Olsun!
+                </p>
+                <div className="h-[1px] w-8 bg-gradient-to-l from-transparent to-amber-400/60" />
+              </div>
             </div>
+
 
             {hasJoined ? (
               /* Joined Players Room Lobby */
@@ -832,7 +852,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                 {/* Footer Tagline */}
                 <div className="pt-2 text-[10px] font-semibold text-slate-500 tracking-wider uppercase text-center">
-                  POCOCOLY • Strateji • Ticaret • Eğlence • Türkiye
+                  TURKISH PARADISE • Strateji • Ticaret • Eğlence • Türkiye
                 </div>
 
               </form>
@@ -846,7 +866,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
       {/* 3. Footer */}
       <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 text-center text-xs font-semibold text-slate-500 relative z-20">
-        © 2026 Pococoly - Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.
+        © 2026 Turkish Paradise - Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.
       </footer>
 
       {/* Info Modals (Nasıl Oynanır, Özellikler, Topluluk) */}
@@ -878,14 +898,15 @@ export const Lobby: React.FC<LobbyProps> = ({
             {activeModal === 'features' && (
               <>
                 <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" /> Pococoly Özellikleri
+                  <Sparkles className="w-5 h-5" /> Turkish Paradise Özellikleri
                 </h3>
                 <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
                   <p>• 26 Türkiye Şehri & Gerçek Manzara Kartları</p>
                   <p>• 4 Vapur İskelesi (Kadıköy, Kabataş, Beşiktaş, Üsküdar)</p>
                   <p>• 15 Kartlık Şans ve Kamu Fonu Havuzu</p>
-                  <p>• Zeki Yapay Zeka Botları (Bot AI)</p>
-                  <p>• Cloudflare & WebSocket Canlı Çok Oyunculu Altyapı</p>
+                  <p>• Zeki Yapay Zeka Botları (Kolay, Orta, Zor)</p>
+                  <p>• Hesap Hareketleri & Finansal Raporlama</p>
+                  <p>• Canlı Sohbet & Oyuncu Takas Sistemi</p>
                 </div>
               </>
             )}
@@ -896,7 +917,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <Globe className="w-5 h-5" /> Topluluk
                 </h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Pococoly oyuncu topluluğuna katılın, arkadaşlarınızla özel odalarda rekabet edin ve Türkiye'nin en büyük emlak kralı olun!
+                  Turkish Paradise oyuncu topluluğuna katılın, arkadaşlarınızla özel odalarda rekabet edin ve Türkiye'nin en büyük emlak kralı olun!
                 </p>
               </>
             )}
@@ -914,3 +935,4 @@ export const Lobby: React.FC<LobbyProps> = ({
     </div>
   );
 };
+

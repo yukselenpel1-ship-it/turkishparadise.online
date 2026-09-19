@@ -56,10 +56,11 @@ export function createInitialState(settings?: Partial<GameSettings>): GameState 
       {
         id: '1',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: 'Pococoly 26 Şehir, 4 İskele, Şans & Kamu Fonlu Masa Oyunu lobisi hazır!',
+        text: 'Turkish Paradise 26 Şehir, 4 İskele, Şans & Kamu Fonlu Masa Oyunu lobisi hazır!',
         type: 'info'
       }
     ],
+
     chatMessages: [
       {
         id: 'c1',

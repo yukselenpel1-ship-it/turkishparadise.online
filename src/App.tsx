@@ -354,11 +354,11 @@ export const App: React.FC = () => {
           {/* Top Navbar Header during Game */}
           <header className="h-12 px-4 flex items-center justify-between shrink-0 bg-slate-900/90 border-b border-slate-800/80 backdrop-blur-md z-40">
             <div className="flex items-center gap-2.5">
-              <img
-                src="/pococoly-logo.png"
-                alt="POCOCOLY"
-                className="h-6 sm:h-7 object-contain drop-shadow"
-              />
+              <div className="flex items-center gap-1.5 font-['Cinzel',serif] font-black text-sm tracking-wider">
+                <span className="text-base">🎲</span>
+                <span className="text-white">TURKISH</span>
+                <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
+              </div>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
                 Oyun Devam Ediyor
               </span>
@@ -366,6 +366,7 @@ export const App: React.FC = () => {
                 Oda: {gameState.settings?.roomCode}
               </span>
             </div>
+
 
             <div className="flex items-center gap-3">
               <button
