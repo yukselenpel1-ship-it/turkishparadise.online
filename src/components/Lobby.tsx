@@ -7,8 +7,6 @@ import {
   Gamepad2,
   Users,
   Play,
-  Bot,
-  Crown,
   TrendingUp,
   Volume2,
   VolumeX,
@@ -29,11 +27,8 @@ import {
   Sliders,
   Coins,
   Palette,
-  CheckCircle2,
-  Loader2,
   Trophy,
-  Mail,
-  ShieldCheck
+  Loader2
 } from 'lucide-react';
 
 interface LobbyProps {
@@ -41,7 +36,7 @@ interface LobbyProps {
   myPlayerId: string | null;
   settings: GameSettings;
   userAccount: UserAccount | null;
-  onGoogleLogin: (customEmail?: string, customName?: string) => Promise<void>;
+  onGoogleLogin: () => Promise<void>;
   onGuestLogin: (customName?: string) => Promise<void>;
   onLogout: () => void;
   onUpdateSettings: (newSettings: GameSettings) => void;
@@ -76,9 +71,6 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [activeModal, setActiveModal] = useState<'rules' | 'features' | 'community' | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
-  const [googleEmailInput, setGoogleEmailInput] = useState('');
-  const [googleNameInput, setGoogleNameInput] = useState('');
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
 
   // Check URL query parameters for invite link: ?room=TR-XXXX or ?oda=TR-XXXX
@@ -105,21 +97,12 @@ export const Lobby: React.FC<LobbyProps> = ({
   const me = players.find((p) => p.id === myPlayerId);
   const isHost = me?.isHost || (players.length > 0 && players[0].id === myPlayerId);
 
-  const handleOpenGoogleModal = () => {
-    setIsGoogleModalOpen(true);
-  };
-
-  const handleGoogleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleClick = async () => {
     try {
       setIsLoadingAuth(true);
-      const email = googleEmailInput.trim() || 'oyuncu@gmail.com';
-      const displayName = googleNameInput.trim() || email.split('@')[0];
-      await onGoogleLogin(email, displayName);
-      setIsGoogleModalOpen(false);
+      await onGoogleLogin();
     } catch (err) {
       console.error(err);
-    } finally {
       setIsLoadingAuth(false);
     }
   };
@@ -251,11 +234,33 @@ export const Lobby: React.FC<LobbyProps> = ({
             </button>
           ) : (
             <button
-              onClick={handleOpenGoogleModal}
-              className="hidden sm:flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/50 rounded-xl py-1.5 px-3 text-xs font-bold text-slate-200 hover:text-white transition cursor-pointer"
+              onClick={handleGoogleClick}
+              disabled={isLoadingAuth}
+              className="hidden sm:flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl py-1.5 px-3 text-xs font-black text-slate-800 transition cursor-pointer shadow"
             >
-              <User className="w-3.5 h-3.5 text-amber-400" />
-              <span>Giriş Yap</span>
+              {isLoadingAuth ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+              )}
+              <span>Google ile Giriş</span>
             </button>
           )}
 
@@ -827,34 +832,39 @@ export const Lobby: React.FC<LobbyProps> = ({
                 </button>
               </form>
             ) : (
-              /* Default Main Screen with Google Login & Guest Options */
+              /* Default Main Screen with Google OAuth & Guest Options */
               <div className="space-y-4">
                 
-                {/* 1. Google ile Giriş Butonu */}
+                {/* 1. Official Google OAuth Button */}
                 {!userAccount && (
                   <button
                     type="button"
-                    onClick={handleOpenGoogleModal}
+                    onClick={handleGoogleClick}
+                    disabled={isLoadingAuth}
                     className="w-full bg-white hover:bg-slate-100 text-slate-800 font-bold py-3.5 px-4 rounded-2xl shadow-lg transition transform active:scale-95 flex items-center justify-center gap-3 cursor-pointer border border-slate-200"
                   >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24">
-                      <path
-                        fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                      />
-                    </svg>
+                    {isLoadingAuth ? (
+                      <Loader2 className="w-5 h-5 animate-spin text-slate-600" />
+                    ) : (
+                      <svg className="w-5 h-5" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                    )}
                     <span className="text-sm font-extrabold tracking-wide">Google ile Giriş Yap</span>
                   </button>
                 )}
@@ -935,231 +945,141 @@ export const Lobby: React.FC<LobbyProps> = ({
                             selectedColor === color
                               ? 'ring-2 ring-white scale-105 border-white shadow-lg'
                               : 'border-transparent opacity-80 hover:opacity-100'
-                        }`}
-                        style={{
-                          backgroundColor: color,
-                          boxShadow: selectedColor === color ? `0 0 10px ${color}` : undefined
-                        }}
-                      >
-                        {selectedColor === color && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                      </button>
-                    ))}
+                          }`}
+                          style={{
+                            backgroundColor: color,
+                            boxShadow: selectedColor === color ? `0 0 10px ${color}` : undefined
+                          }}
+                        >
+                          {selectedColor === color && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* Primary Button */}
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-xl shadow-amber-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <span>Oda Kur & Oyuna Gir</span>
-                  <span className="text-lg">🎲</span>
-                </button>
-
-                {/* Secondary Quick Action Buttons */}
-                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  {/* Primary Button */}
                   <button
-                    type="button"
-                    onClick={() => setMode('guest')}
-                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition text-xs font-bold cursor-pointer"
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-xl shadow-amber-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <Gamepad2 className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Misafir Oyna</span>
+                    <span>Oda Kur & Oyuna Gir</span>
+                    <span className="text-lg">🎲</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setMode('friend')}
-                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition text-xs font-bold cursor-pointer"
-                  >
-                    <Users className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Arkadaşına Katıl</span>
-                  </button>
+                  {/* Secondary Quick Action Buttons */}
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMode('guest')}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition text-xs font-bold cursor-pointer"
+                    >
+                      <Gamepad2 className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Misafir Oyna</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setMode('friend')}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition text-xs font-bold cursor-pointer"
+                    >
+                      <Users className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Arkadaşına Katıl</span>
+                    </button>
+                  </div>
+
+                </form>
+
+                {/* Footer Tagline */}
+                <div className="pt-2 text-[10px] font-semibold text-slate-500 tracking-wider uppercase text-center">
+                  TURKISH PARADISE • Strateji • Ticaret • Eğlence • Türkiye
                 </div>
 
-              </form>
-
-              {/* Footer Tagline */}
-              <div className="pt-2 text-[10px] font-semibold text-slate-500 tracking-wider uppercase text-center">
-                TURKISH PARADISE • Strateji • Ticaret • Eğlence • Türkiye
               </div>
+            )}
 
-            </div>
-          )}
-
-        </div>
-
-      </div>
-
-    </main>
-
-    {/* 3. Footer */}
-    <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 text-center text-xs font-semibold text-slate-500 relative z-20">
-      © 2026 Turkish Paradise - Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.
-    </footer>
-
-    {/* Google Sign-in Pop-up Modal */}
-    {isGoogleModalOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-        <div className="bg-[#0a1020] border border-slate-800 rounded-3xl max-w-sm w-full p-6 text-left shadow-2xl relative space-y-4">
-          <button
-            onClick={() => setIsGoogleModalOpen(false)}
-            className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-900 text-slate-400 hover:text-white transition cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
-            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-md shrink-0">
-              <svg className="w-6 h-6" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-            </div>
-            <div>
-              <h3 className="font-extrabold text-white text-base leading-tight">Google ile Giriş Yap</h3>
-              <p className="text-xs text-slate-400">Gmail hesabınızla istatistiklerinizi kaydedin</p>
-            </div>
           </div>
 
-          <form onSubmit={handleGoogleSubmit} className="space-y-3.5">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-300">
-                Gmail Adresiniz
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  value={googleEmailInput}
-                  onChange={(e) => setGoogleEmailInput(e.target.value)}
-                  placeholder="ornek@gmail.com"
-                  required
-                  className="w-full bg-[#070b14] border border-slate-800 focus:border-amber-400 text-white rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium outline-none transition"
-                />
-              </div>
-            </div>
+        </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-300">
-                Oyundaki Adınız
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                  <User className="w-4 h-4" />
+      </main>
+
+      {/* 3. Footer */}
+      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 text-center text-xs font-semibold text-slate-500 relative z-20">
+        © 2026 Turkish Paradise - Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.
+      </footer>
+
+      {/* Profile & Stats Modal */}
+      {isProfileModalOpen && userAccount && (
+        <ProfileModal
+          userAccount={userAccount}
+          onClose={() => setIsProfileModalOpen(false)}
+          onLogout={onLogout}
+        />
+      )}
+
+      {/* Info Modals (Nasıl Oynanır, Özellikler, Topluluk) */}
+      {activeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-[#0e1628] border border-slate-800 rounded-3xl max-w-md w-full p-6 text-left shadow-2xl relative space-y-4">
+            <button
+              onClick={() => setActiveModal(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-900 text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {activeModal === 'rules' && (
+              <>
+                <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
+                  <HelpCircle className="w-5 h-5" /> Nasıl Oynanır?
+                </h3>
+                <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                  <p>• <strong>Zar At:</strong> Sıranız geldiğinde çift zar atarak haritada ilerleyin.</p>
+                  <p>• <strong>Şehirleri Satın Al:</strong> Sahipsiz şehirlere gelerek satın alın ve portföyünüzü kurun.</p>
+                  <p>• <strong>Renk Serisi Kuralı:</strong> Bir renkteki tüm şehirlere sahip olmadan ev dikemezsiniz!</p>
+                  <p>• <strong>İskeleler:</strong> 4 iskeleyi toplayarak kira gelirinizi katlayın (50₺'den 200₺'ye).</p>
+                  <p>• <strong>Kodes:</strong> Kodese düşerseniz 100₺ kefalet ödeyerek veya çift zar atarak çıkabilirsiniz.</p>
                 </div>
-                <input
-                  type="text"
-                  value={googleNameInput}
-                  onChange={(e) => setGoogleNameInput(e.target.value)}
-                  placeholder="Adınız veya Takma Adınız"
-                  maxLength={15}
-                  className="w-full bg-[#070b14] border border-slate-800 focus:border-amber-400 text-white rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium outline-none transition"
-                />
-              </div>
-            </div>
+              </>
+            )}
+
+            {activeModal === 'features' && (
+              <>
+                <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5" /> Turkish Paradise Özellikleri
+                </h3>
+                <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                  <p>• 26 Türkiye Şehri & Gerçek Manzara Kartları</p>
+                  <p>• 4 Vapur İskelesi (Kadıköy, Kabataş, Beşiktaş, Üsküdar)</p>
+                  <p>• 15 Kartlık Şans ve Kamu Fonu Havuzu</p>
+                  <p>• Zeki Yapay Zeka Botları (Kolay, Orta, Zor)</p>
+                  <p>• Hesap Hareketleri & Finansal Raporlama</p>
+                  <p>• Canlı Sohbet & Oyuncu Takas Sistemi</p>
+                </div>
+              </>
+            )}
+
+            {activeModal === 'community' && (
+              <>
+                <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
+                  <Globe className="w-5 h-5" /> Topluluk
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Turkish Paradise oyuncu topluluğuna katılın, arkadaşlarınızla özel odalarda rekabet edin ve Türkiye'nin en büyük emlak kralı olun!
+                </p>
+              </>
+            )}
 
             <button
-              type="submit"
-              disabled={isLoadingAuth}
-              className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black py-3 rounded-xl shadow-lg transition transform active:scale-95 text-xs tracking-wide flex items-center justify-center gap-2 cursor-pointer"
+              onClick={() => setActiveModal(null)}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold py-2.5 rounded-xl transition text-xs mt-2 cursor-pointer"
             >
-              {isLoadingAuth ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-              <span>Google Hesabımı Bağla & Giriş Yap</span>
+              Kapat
             </button>
-          </form>
+          </div>
         </div>
-      </div>
-    )}
+      )}
 
-    {/* Profile & Stats Modal */}
-    {isProfileModalOpen && userAccount && (
-      <ProfileModal
-        userAccount={userAccount}
-        onClose={() => setIsProfileModalOpen(false)}
-        onLogout={onLogout}
-      />
-    )}
-
-    {/* Info Modals (Nasıl Oynanır, Özellikler, Topluluk) */}
-    {activeModal && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-        <div className="bg-[#0e1628] border border-slate-800 rounded-3xl max-w-md w-full p-6 text-left shadow-2xl relative space-y-4">
-          <button
-            onClick={() => setActiveModal(null)}
-            className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-900 text-slate-400 hover:text-white transition cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          {activeModal === 'rules' && (
-            <>
-              <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
-                <HelpCircle className="w-5 h-5" /> Nasıl Oynanır?
-              </h3>
-              <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
-                <p>• <strong>Zar At:</strong> Sıranız geldiğinde çift zar atarak haritada ilerleyin.</p>
-                <p>• <strong>Şehirleri Satın Al:</strong> Sahipsiz şehirlere gelerek satın alın ve portföyünüzü kurun.</p>
-                <p>• <strong>Renk Serisi Kuralı:</strong> Bir renkteki tüm şehirlere sahip olmadan ev dikemezsiniz!</p>
-                <p>• <strong>İskeleler:</strong> 4 iskeleyi toplayarak kira gelirinizi katlayın (50₺'den 200₺'ye).</p>
-                <p>• <strong>Kodes:</strong> Kodese düşerseniz 100₺ kefalet ödeyerek veya çift zar atarak çıkabilirsiniz.</p>
-              </div>
-            </>
-          )}
-
-          {activeModal === 'features' && (
-            <>
-              <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
-                <Sparkles className="w-5 h-5" /> Turkish Paradise Özellikleri
-              </h3>
-              <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
-                <p>• 26 Türkiye Şehri & Gerçek Manzara Kartları</p>
-                <p>• 4 Vapur İskelesi (Kadıköy, Kabataş, Beşiktaş, Üsküdar)</p>
-                <p>• 15 Kartlık Şans ve Kamu Fonu Havuzu</p>
-                <p>• Zeki Yapay Zeka Botları (Kolay, Orta, Zor)</p>
-                <p>• Hesap Hareketleri & Finansal Raporlama</p>
-                <p>• Canlı Sohbet & Oyuncu Takas Sistemi</p>
-              </div>
-            </>
-          )}
-
-          {activeModal === 'community' && (
-            <>
-              <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
-                <Globe className="w-5 h-5" /> Topluluk
-              </h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Turkish Paradise oyuncu topluluğuna katılın, arkadaşlarınızla özel odalarda rekabet edin ve Türkiye'nin en büyük emlak kralı olun!
-              </p>
-            </>
-          )}
-
-          <button
-            onClick={() => setActiveModal(null)}
-            className="w-full bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold py-2.5 rounded-xl transition text-xs mt-2 cursor-pointer"
-          >
-            Kapat
-          </button>
-        </div>
-      </div>
-    )}
-
-  </div>
-);
+    </div>
+  );
 };

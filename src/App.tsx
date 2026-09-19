@@ -24,7 +24,6 @@ import {
   addTransaction
 } from './engine/gameEngine';
 import {
-  loginWithGoogle,
   loginAsGuest,
   logoutUser,
   getSavedUser,
@@ -32,6 +31,10 @@ import {
   subscribeToRoom,
   recordGameWin
 } from './services/firebase';
+import {
+  initiateGoogleOAuthRedirect,
+  handleGoogleOAuthCallback
+} from './services/googleAuth';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -62,12 +65,26 @@ export const App: React.FC = () => {
   // Track last synced state timestamp to prevent echo loops
   const isRemoteUpdateRef = useRef(false);
 
-  // 1. Load initial user on mount
+  // 1. Process Google OAuth callback on mount or load saved user session
   useEffect(() => {
-    const saved = getSavedUser();
-    if (saved) {
-      setUserAccount(saved);
+    async function initAuth() {
+      try {
+        const oauthUser = await handleGoogleOAuthCallback();
+        if (oauthUser) {
+          setUserAccount(oauthUser);
+          return;
+        }
+      } catch (e) {
+        console.error('[Auth] OAuth Callback error:', e);
+      }
+
+      const saved = getSavedUser();
+      if (saved) {
+        setUserAccount(saved);
+      }
     }
+
+    initAuth();
   }, []);
 
   // 2. Real-time Room State Synchronization
@@ -116,13 +133,8 @@ export const App: React.FC = () => {
   }, [gameState.currentTurnIndex, gameState.phase, gameState.diceRolled, gameState.pendingAction, isMoving, myPlayerId]);
 
   // Auth Handlers
-  const handleGoogleLogin = async (customEmail?: string, customName?: string) => {
-    try {
-      const account = await loginWithGoogle(customEmail, customName);
-      setUserAccount(account);
-    } catch (err) {
-      console.error('Google login failed:', err);
-    }
+  const handleGoogleLogin = async () => {
+    initiateGoogleOAuthRedirect();
   };
 
   const handleGuestLogin = async (customName?: string) => {
