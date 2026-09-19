@@ -195,8 +195,8 @@ export function calculatePropertyStrategicValue(
   board: BoardTile[]
 ): number {
   if (!tile.price) return 0;
-  let multiplier = 1.0;
   const difficulty = evaluator.botDifficulty || 'medium';
+  let multiplier = difficulty === 'hard' ? 1.5 : difficulty === 'medium' ? 1.25 : 1.1;
 
   // 1. Color Group Monopoly Analysis
   if (tile.colorGroup) {
@@ -205,37 +205,37 @@ export function calculatePropertyStrategicValue(
     const evaluatorGroupCount = groupTiles.filter(t => t.ownerId === evaluator.id).length;
     const totalGroupCount = groupTiles.length;
 
-    // A. Does this tile complete a FULL MONOPOLY for the buyer/evaluator?
+    // A. Does this tile complete a FULL MONOPOLY for the evaluator?
     if (evaluatorGroupCount === totalGroupCount - 1 && tile.ownerId !== evaluator.id) {
-      if (difficulty === 'hard') multiplier += 2.5; // +250% value
-      else if (difficulty === 'medium') multiplier += 1.8; // +180% value
-      else multiplier += 1.0; // +100% value
+      if (difficulty === 'hard') multiplier += 3.0; // +300% value
+      else if (difficulty === 'medium') multiplier += 2.0; // +200% value
+      else multiplier += 1.2; // +120% value
     }
 
     // B. Does the current owner already own other tiles in this set?
     if (ownerGroupCount >= 2 && totalGroupCount === 3 && tile.ownerId === owner.id) {
-      if (difficulty === 'hard') multiplier += 2.0;
-      else if (difficulty === 'medium') multiplier += 1.5;
-      else multiplier += 0.8;
+      if (difficulty === 'hard') multiplier += 2.5;
+      else if (difficulty === 'medium') multiplier += 1.8;
+      else multiplier += 1.0;
     } else if (ownerGroupCount === 1 && totalGroupCount === 2 && tile.ownerId === owner.id) {
-      multiplier += 1.2;
+      multiplier += 1.4;
     }
   }
 
   // 2. Stations (İskeleler) analysis
   if (tile.type === 'station') {
     const ownedStations = board.filter(t => t.type === 'station' && t.ownerId === evaluator.id).length;
-    if (ownedStations >= 3) multiplier += 1.8;
-    else if (ownedStations >= 2) multiplier += 1.2;
-    else if (ownedStations >= 1) multiplier += 0.6;
+    if (ownedStations >= 3) multiplier += 2.0;
+    else if (ownedStations >= 2) multiplier += 1.4;
+    else if (ownedStations >= 1) multiplier += 0.8;
   }
 
   // 3. Mortgaged discount
   if (tile.isMortgaged) {
-    multiplier *= 0.6;
+    multiplier *= 0.75;
   }
 
-  return Math.round(tile.price * multiplier);
+  return Math.max(Math.round(tile.price * 0.9), Math.round(tile.price * multiplier));
 }
 
 // Evaluate trade offer made to a bot
@@ -248,15 +248,30 @@ export function evaluateTradeOfferByBot(
   if (offer.requestedMoney > bot.money) {
     return {
       accepted: false,
-      reason: `${bot.name}: "Kasamdada bu teklifi karşılayacak kadar nakit para (${offer.requestedMoney}₺) yok!"`
+      reason: `${bot.name}: "Kasamda bu teklifi karşılayacak kadar nakit para (${offer.requestedMoney}₺) yok!"`
     };
   }
 
   const difficulty = bot.botDifficulty || 'medium';
   const fromPlayer = state.players.find(p => p.id === offer.fromPlayerId);
-  const fromName = fromPlayer?.name || 'Oyuncu';
 
-  // Calculate Value Bot Gives Away
+  // 1. Strict Anti-Exploit Check: Bot NEVER sells property below fair deed price for cash
+  for (const id of offer.requestedTileIds) {
+    const tile = state.board.find(b => b.id === id);
+    if (tile && tile.price) {
+      const minCashMultiplier = difficulty === 'hard' ? 2.0 : difficulty === 'medium' ? 1.4 : 1.1;
+      const minAcceptablePrice = Math.round(tile.price * (tile.isMortgaged ? 0.8 : minCashMultiplier));
+
+      if (offer.offeredTileIds.length === 0 && offer.offeredMoney < minAcceptablePrice) {
+        return {
+          accepted: false,
+          reason: `${bot.name} (${difficulty === 'hard' ? '🔴 ZOR BOT' : difficulty === 'medium' ? '🟡 ORTA BOT' : '🟢 KOLAY BOT'}): "${tile.name}" tapusu ${tile.price}₺ değerindedir. Teklifiniz (${offer.offeredMoney}₺) çok düşük! En az ${minAcceptablePrice}₺ teklif etmelisiniz.`
+        };
+      }
+    }
+  }
+
+  // 2. Calculate Total Value Bot Gives Away
   let valueBotGives = offer.requestedMoney;
   for (const id of offer.requestedTileIds) {
     const tile = state.board.find(b => b.id === id);
@@ -269,16 +284,18 @@ export function evaluateTradeOfferByBot(
         const fromPlayerHas = groupTiles.filter(t => t.ownerId === fromPlayer.id).length;
         if (fromPlayerHas === groupTiles.length - 1) {
           if (difficulty === 'hard') {
-            valueBotGives += (tile.price || 0) * 2.5; // Huge premium to prevent opponent win
+            valueBotGives += (tile.price || 0) * 3.0; // Block opponent win
           } else if (difficulty === 'medium') {
-            valueBotGives += (tile.price || 0) * 1.5;
+            valueBotGives += (tile.price || 0) * 1.8;
+          } else {
+            valueBotGives += (tile.price || 0) * 1.0;
           }
         }
       }
     }
   }
 
-  // Calculate Value Bot Receives
+  // 3. Calculate Total Value Bot Receives
   let valueBotReceives = offer.offeredMoney;
   for (const id of offer.offeredTileIds) {
     const tile = state.board.find(b => b.id === id);
@@ -287,12 +304,12 @@ export function evaluateTradeOfferByBot(
     }
   }
 
-  // Decision Threshold based on Difficulty
-  let requiredRatio = 1.05; // Medium
+  // 4. Decision Threshold based on Difficulty
+  let requiredRatio = 1.1; // Medium: needs 10% gain
   if (difficulty === 'hard') {
-    requiredRatio = 1.25; // Hard bot wants a 25% profit margin on trades
+    requiredRatio = 1.35; // Hard: needs 35% profit margin
   } else if (difficulty === 'easy') {
-    requiredRatio = 0.95; // Easy bot accepts slightly below fair
+    requiredRatio = 1.0; // Easy: must be at least equal value (never loss)
   }
 
   if (valueBotReceives < valueBotGives * requiredRatio) {
@@ -300,24 +317,24 @@ export function evaluateTradeOfferByBot(
     if (difficulty === 'hard') {
       return {
         accepted: false,
-        reason: `${bot.name} (🔴 ZOR BOT): "Bu takas benim aleyhime! Değerli mülklerimi ucuza veremem. En az +${diff}₺ daha eklemelisin!"`
+        reason: `${bot.name} (🔴 ZOR BOT): "Bu takas aleyhime! Değerli mülklerimi ucuza veremem. En az +${diff}₺ veya eşdeğer mülk eklemelisin!"`
       };
     } else if (difficulty === 'medium') {
       return {
         accepted: false,
-        reason: `${bot.name} (🟡 ORTA BOT): "Teklifin yetersiz. Bu araziler portföyüm için kritik (Fark: ~${diff}₺)."`
+        reason: `${bot.name} (🟡 ORTA BOT): "Teklifin yetersiz. Bu araziler portföyüm için kritik (Eksik Değer: ~${diff}₺)."`
       };
     } else {
       return {
         accepted: false,
-        reason: `${bot.name} (🟢 KOLAY BOT): "Bu teklif pek dengeli görünmüyor, teşekkürler."`
+        reason: `${bot.name} (🟢 KOLAY BOT): "Bu teklif dengeli değil, tapu değerinin altında satış yapamam. (Fark: ~${diff}₺)"`
       };
     }
   }
 
   return {
     accepted: true,
-    reason: `${bot.name}: "Mantıklı bir teklif, el sıkışıyoruz! 🤝"`
+    reason: `${bot.name}: "Mantıklı ve adil bir teklif, el sıkışıyoruz! 🤝"`
   };
 }
 

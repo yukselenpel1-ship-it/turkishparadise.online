@@ -576,12 +576,42 @@ export const App: React.FC = () => {
     updateAndBroadcastGameState((prev) => applyChanceCard(prev));
   };
 
-  // Trade Execution Action
+  // Trade Offer Action (Human-to-Bot or Human-to-Human)
   const handleExecuteTradeAction = (offer: TradeOffer) => {
-    updateAndBroadcastGameState((prev) => executeTrade(prev, offer));
+    const targetPlayer = gameState.players.find((p) => p.id === offer.toPlayerId);
+    const senderPlayer = gameState.players.find((p) => p.id === offer.fromPlayerId);
+    if (!targetPlayer || !senderPlayer) return;
+
+    if (targetPlayer.isBot) {
+      // For Bot: immediate AI evaluation & transaction
+      updateAndBroadcastGameState((prev) => executeTrade(prev, offer));
+    } else {
+      // For Human Player: DO NOT execute immediately, route offer to recipient for review!
+      updateAndBroadcastGameState((prev) => {
+        const updated = {
+          ...prev,
+          incomingTradeOffer: {
+            ...offer,
+            fromPlayerName: senderPlayer.name,
+            fromPlayerAvatar: senderPlayer.avatar
+          }
+        };
+        addLog(
+          updated,
+          `📬 ${senderPlayer.name}, ${targetPlayer.name} oyuncusuna takas teklifinde bulundu. Karar bekleniyor...`,
+          'action'
+        );
+        addChatMessage(
+          updated,
+          senderPlayer,
+          `@${targetPlayer.name} sana bir takas teklifi gönderdim! 🤝`
+        );
+        return updated;
+      });
+    }
   };
 
-  // Handle Accept Incoming Trade from Bot
+  // Handle Accept Incoming Trade from Bot or Human Player
   const handleAcceptIncomingTrade = () => {
     if (!gameState.incomingTradeOffer) return;
     updateAndBroadcastGameState((prev) => {
@@ -590,12 +620,14 @@ export const App: React.FC = () => {
     });
   };
 
-  // Handle Decline Incoming Trade from Bot
+  // Handle Decline Incoming Trade from Bot or Human Player
   const handleDeclineIncomingTrade = () => {
     updateAndBroadcastGameState((prev) => {
+      const fromPlayer = prev.players.find((p) => p.id === prev.incomingTradeOffer?.fromPlayerId);
+      const toPlayer = prev.players.find((p) => p.id === prev.incomingTradeOffer?.toPlayerId);
       const updated = { ...prev, incomingTradeOffer: undefined };
-      if (me) {
-        addLog(updated, `❌ ${me.name} takas teklifini reddetti.`, 'info');
+      if (toPlayer) {
+        addLog(updated, `❌ ${toPlayer.name}, ${fromPlayer?.name || 'gelen'} takas teklifini reddetti.`, 'warning');
       }
       return updated;
     });
@@ -762,8 +794,8 @@ export const App: React.FC = () => {
         </>
       )}
 
-      {/* Incoming Trade Offer Modal from Bot or Player */}
-      {gameState.incomingTradeOffer && me && (
+      {/* Incoming Trade Offer Modal from Bot or Player (Rendered ONLY for target recipient) */}
+      {gameState.incomingTradeOffer && me && gameState.incomingTradeOffer.toPlayerId === me.id && (
         <IncomingTradeModal
           incomingOffer={gameState.incomingTradeOffer}
           currentPlayer={me}
@@ -773,6 +805,21 @@ export const App: React.FC = () => {
           onDecline={handleDeclineIncomingTrade}
           onCounterOffer={handleCounterOfferIncomingTrade}
         />
+      )}
+
+      {/* Floating Indicator for Sender when waiting for target player response */}
+      {gameState.incomingTradeOffer && me && gameState.incomingTradeOffer.fromPlayerId === me.id && (
+        <div className="fixed bottom-6 right-6 z-40 bg-slate-900/95 border border-amber-500/50 rounded-2xl p-4 shadow-2xl backdrop-blur-md flex items-center gap-3 animate-pulse">
+          <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold">
+            ⏳
+          </div>
+          <div className="text-left text-xs">
+            <p className="font-extrabold text-amber-300">Takas Teklifi Gönderildi</p>
+            <p className="text-slate-300 text-[11px]">
+              {gameState.players.find(p => p.id === gameState.incomingTradeOffer?.toPlayerId)?.name || 'Oyuncunun'} onayı bekleniyor...
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Profile & Stats Modal */}
