@@ -443,6 +443,7 @@ export const App: React.FC = () => {
     gameState.diceRolled,
     gameState.pendingAction,
     gameState.incomingTradeOffer,
+    gameState.players,
     isMoving,
     myPlayerId
   ]);
@@ -676,10 +677,6 @@ export const App: React.FC = () => {
     // Allow manual roll by current player OR auto roll for bot / AFK human on host
     if (!isMeCurrent && !currentPlayer.isBot && !(currentPlayer.isAfk && isMeHost)) {
       return;
-    }
-
-    if (isMeCurrent && currentPlayer.isAfk) {
-      handleTakeBackControl();
     }
 
     const dice = rollDice();
