@@ -215,10 +215,10 @@ export const INITIAL_BOARD: BoardTile[] = [
     isMortgaged: false,
     image: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=300&q=80'
   },
-  // 18: Kırmızı Grubu 1/4
+  // 18: Kırmızı Grubu 1/3 (Sinop)
   {
     id: 18,
-    name: 'BATMAN',
+    name: 'SİNOP',
     type: 'property',
     price: 220,
     rent: [18, 90, 250, 700, 875, 1050],
@@ -238,10 +238,10 @@ export const INITIAL_BOARD: BoardTile[] = [
     houses: 0,
     isMortgaged: false
   },
-  // 20-22: Kırmızı Grubu 2,3,4
+  // 20-21: Kırmızı Grubu 2,3 (Kastamonu, Giresun)
   {
     id: 20,
-    name: 'MARDİN',
+    name: 'KASTAMONU',
     type: 'property',
     price: 220,
     rent: [18, 90, 250, 700, 875, 1050],
@@ -253,7 +253,7 @@ export const INITIAL_BOARD: BoardTile[] = [
   },
   {
     id: 21,
-    name: 'DİYARBAKIR',
+    name: 'GİRESUN',
     type: 'property',
     price: 240,
     rent: [20, 100, 300, 750, 925, 1100],
@@ -263,17 +263,16 @@ export const INITIAL_BOARD: BoardTile[] = [
     isMortgaged: false,
     image: 'https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?auto=format&fit=crop&w=300&q=80'
   },
+  // 22: Gelir Vergisi
   {
     id: 22,
-    name: 'SİİRT',
-    type: 'property',
-    price: 240,
-    rent: [20, 100, 300, 750, 925, 1100],
-    houseCost: 150,
-    colorGroup: 'red',
+    name: 'GELİR VERGİSİ',
+    type: 'tax',
+    taxAmount: 100,
+    icon: '🏛️',
+    subtitle: '₺100 Vergi Öde',
     houses: 0,
-    isMortgaged: false,
-    image: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=300&q=80'
+    isMortgaged: false
   },
   // 23: İskele 3
   {
@@ -372,7 +371,7 @@ export const INITIAL_BOARD: BoardTile[] = [
   },
   {
     id: 31,
-    name: 'AYDIN',
+    name: 'İZMİR',
     type: 'property',
     price: 320,
     rent: [28, 150, 450, 1000, 1200, 1400],
@@ -405,31 +404,28 @@ export const INITIAL_BOARD: BoardTile[] = [
     houses: 0,
     isMortgaged: false
   },
-  // 34-37: Koyu Mavi Grubu (4 Şehir)
+  // 34-35: Özel Vergiler / Boğaz Geçişi
   {
     id: 34,
-    name: 'MANİSA',
-    type: 'property',
-    price: 340,
-    rent: [30, 160, 480, 1050, 1250, 1450],
-    houseCost: 200,
-    colorGroup: 'blue',
+    name: 'BOĞAZ KÖPRÜSÜ',
+    type: 'tax',
+    taxAmount: 100,
+    icon: '🌉',
+    subtitle: '₺100 Geçiş Ücreti',
     houses: 0,
-    isMortgaged: false,
-    image: 'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&w=300&q=80'
+    isMortgaged: false
   },
   {
     id: 35,
-    name: 'İZMİR',
-    type: 'property',
-    price: 350,
-    rent: [35, 175, 500, 1100, 1300, 1500],
-    houseCost: 200,
-    colorGroup: 'blue',
+    name: 'LÜKS VERGİSİ',
+    type: 'tax',
+    taxAmount: 100,
+    icon: '💎',
+    subtitle: '₺100 Vergi Öde',
     houses: 0,
-    isMortgaged: false,
-    image: 'https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?auto=format&fit=crop&w=300&q=80'
+    isMortgaged: false
   },
+  // 36-37: Koyu Mavi Grubu (2 Şehirli En Değerli Özel Seri: Ankara & İstanbul)
   {
     id: 36,
     name: 'ANKARA',

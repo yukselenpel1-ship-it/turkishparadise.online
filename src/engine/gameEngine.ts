@@ -717,6 +717,15 @@ export function handleTileLanding(
       state.pendingAction = 'NONE';
       break;
 
+    case 'tax':
+      const tax = tile.taxAmount || 100;
+      player.money -= tax;
+      addTransaction(state, player, 'expense', 'tax', tax, `${tile.name}: Vergi ödendi`);
+      addLog(state, `🏛️ ${player.name}, ${tile.name} için ${tax}₺ vergi ödedi.`, 'warning');
+      checkBankruptcy(state, player);
+      state.pendingAction = 'NONE';
+      break;
+
     case 'chance':
     case 'chest':
       const randomCard = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];

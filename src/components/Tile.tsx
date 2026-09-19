@@ -39,6 +39,7 @@ export const Tile: React.FC<TileProps> = ({
   const isChest = tile.type === 'chest';
   const isStation = tile.type === 'station';
   const isProperty = tile.type === 'property';
+  const isTax = tile.type === 'tax';
 
   const colorBg = tile.colorGroup ? COLOR_MAP[tile.colorGroup] : null;
 
@@ -54,6 +55,8 @@ export const Tile: React.FC<TileProps> = ({
           ? 'bg-gradient-to-b from-rose-600 to-rose-900 border-rose-400/80 text-white'
           : isChest
           ? 'bg-gradient-to-b from-sky-600 to-blue-900 border-sky-400/80 text-white'
+          : isTax
+          ? 'bg-gradient-to-b from-purple-950 via-slate-900 to-indigo-950 border-purple-500/70 text-white'
           : isStart
           ? 'bg-gradient-to-b from-amber-500 to-amber-700 border-amber-300 text-slate-950'
           : isJail
@@ -173,6 +176,19 @@ export const Tile: React.FC<TileProps> = ({
           <span className="text-xs sm:text-xl mb-0.5 animate-pulse leading-none">🚨</span>
           <span className="text-[6.5px] sm:text-[10px] font-bold text-white tracking-tight leading-none uppercase">
             KODES
+          </span>
+        </div>
+      )}
+
+      {/* Special Graphic for TAX */}
+      {isTax && (
+        <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
+          <span className="text-xs sm:text-xl mb-0.5 leading-none">{tile.icon || '🏛️'}</span>
+          <span className="text-[6.5px] sm:text-[9.5px] font-black text-white tracking-tight leading-none uppercase truncate max-w-full px-0.5">
+            {tile.name}
+          </span>
+          <span className="text-[6px] sm:text-[8.5px] font-bold text-rose-300 mt-0.5 leading-none">
+            -₺{tile.taxAmount || 100}
           </span>
         </div>
       )}

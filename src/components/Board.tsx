@@ -49,13 +49,13 @@ const TILE_GRID_POSITIONS: Record<number, { row: number; col: number }> = {
   15: { row: 5, col: 1 },  // MALATYA
   16: { row: 4, col: 1 },  // GAZİANTEP
   17: { row: 3, col: 1 },  // ŞANLIURFA
-  18: { row: 2, col: 1 },  // BATMAN
+  18: { row: 2, col: 1 },  // SİNOP
 
   // Top row (Left to Right: Col 1 up to Col 10)
   19: { row: 1, col: 1 },  // ÜCRETSİZ OTOPARK
-  20: { row: 1, col: 2 },  // MARDİN
-  21: { row: 1, col: 3 },  // DİYARBAKIR
-  22: { row: 1, col: 4 },  // SİİRT
+  20: { row: 1, col: 2 },  // KASTAMONU
+  21: { row: 1, col: 3 },  // GİRESUN
+  22: { row: 1, col: 4 },  // GELİR VERGİSİ
   23: { row: 1, col: 5 },  // BEŞİKTAŞ
   24: { row: 1, col: 6 },  // ŞANS 2
   25: { row: 1, col: 7 },  // DENİZLİ
@@ -66,11 +66,11 @@ const TILE_GRID_POSITIONS: Record<number, { row: number; col: number }> = {
   // Right column (Top to Bottom: Row 2 down to Row 10)
   29: { row: 2, col: 10 }, // BALIKESİR
   30: { row: 3, col: 10 }, // ÇANAKKALE
-  31: { row: 4, col: 10 }, // AYDIN
+  31: { row: 4, col: 10 }, // İZMİR
   32: { row: 5, col: 10 }, // ÜSKÜDAR
   33: { row: 6, col: 10 }, // KAMU FONU 2
-  34: { row: 7, col: 10 }, // MANİSA
-  35: { row: 8, col: 10 }, // İZMİR
+  34: { row: 7, col: 10 }, // BOĞAZ KÖPRÜSÜ
+  35: { row: 8, col: 10 }, // LÜKS VERGİSİ
   36: { row: 9, col: 10 }, // ANKARA
   37: { row: 10, col: 10 }, // İSTANBUL
 };

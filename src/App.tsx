@@ -499,12 +499,14 @@ export const App: React.FC = () => {
     if (!currentPlayer || (!currentPlayer.isBot && !currentPlayer.isAfk) || !currentPlayer.inGame || !isMeHost) return;
 
     const difficulty = currentPlayer.botDifficulty || gameState.settings?.botDifficulty || 'medium';
+    // When a human player is AFK, give an extra 2 seconds before each automatic action so they can comfortably take back control
+    const afkDelay = currentPlayer.isAfk ? 2000 : 0;
 
     // Step A: Not rolled yet -> roll and animate walk
     if (!gameState.diceRolled) {
       const timer = setTimeout(() => {
         handleRollDiceAction();
-      }, 1000);
+      }, 1000 + afkDelay);
       return () => clearTimeout(timer);
     }
 
@@ -525,7 +527,7 @@ export const App: React.FC = () => {
           } else {
             handlePassPropertyAction();
           }
-        }, 1200);
+        }, 1200 + afkDelay);
         return () => clearTimeout(timer);
       }
 
@@ -533,7 +535,7 @@ export const App: React.FC = () => {
       if (gameState.pendingAction === 'CHANCE_CARD') {
         const timer = setTimeout(() => {
           handleConfirmChanceCard();
-        }, 1200);
+        }, 1200 + afkDelay);
         return () => clearTimeout(timer);
       }
 
@@ -576,7 +578,7 @@ export const App: React.FC = () => {
             }
             return next;
           });
-        }, 1200);
+        }, 1200 + afkDelay);
         return () => clearTimeout(timer);
       }
     }
