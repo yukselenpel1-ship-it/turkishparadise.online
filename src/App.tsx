@@ -55,6 +55,7 @@ import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck } from 'lucide-reac
 const SESSION_PLAYER_ID_KEY = 'tp_active_player_id';
 const SESSION_ROOM_ID_KEY = 'tp_active_room_id';
 const SESSION_PLAYER_NAME_KEY = 'tp_active_player_name';
+const SESSION_GAME_STATE_KEY = 'tp_saved_game_state';
 
 export const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => {
@@ -71,15 +72,40 @@ export const App: React.FC = () => {
             initialRoom = savedRoom.trim().toUpperCase();
           }
         }
+
+        // Check if there is a saved game state (e.g. from before F5 refresh)
+        const rawSavedState = sessionStorage.getItem(SESSION_GAME_STATE_KEY) || localStorage.getItem(SESSION_GAME_STATE_KEY);
+        if (rawSavedState) {
+          const parsed = JSON.parse(rawSavedState) as GameState;
+          if (parsed && parsed.players && parsed.players.length > 0) {
+            // If room matches or no specific room override was specified in URL
+            if (!initialRoom || parsed.roomId === initialRoom) {
+              return parsed;
+            }
+          }
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[Session] Failed to parse saved gameState:', e);
+    }
     return createInitialState(initialRoom ? { roomCode: initialRoom } : undefined);
   });
   const [userAccount, setUserAccount] = useState<UserAccount | null>(() => getSavedUser());
   const [myPlayerId, setMyPlayerId] = useState<string | null>(() => {
     try {
       if (typeof window !== 'undefined') {
-        return sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY) || null;
+        const savedId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY);
+        if (savedId) return savedId;
+        
+        // If restoring a saved game state, find the first human player
+        const rawSavedState = sessionStorage.getItem(SESSION_GAME_STATE_KEY) || localStorage.getItem(SESSION_GAME_STATE_KEY);
+        if (rawSavedState) {
+          const parsed = JSON.parse(rawSavedState) as GameState;
+          if (parsed && parsed.players && parsed.players.length > 0) {
+            const human = parsed.players.find(p => !p.isBot);
+            if (human) return human.id;
+          }
+        }
       }
     } catch (e) {}
     return null;
@@ -119,7 +145,7 @@ export const App: React.FC = () => {
     initAuth();
   }, []);
 
-  // 2. Keep URL query param and Session Storage always synced with active room
+  // 2. Keep URL query param and Session Storage always synced with active room & game state
   useEffect(() => {
     if (typeof window !== 'undefined' && gameState.roomId) {
       try {
@@ -130,9 +156,15 @@ export const App: React.FC = () => {
         }
         sessionStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
         localStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
+
+        // Always preserve full game state if match is ongoing or players have joined
+        if (gameState.phase === 'PLAYING' || gameState.players.length > 0) {
+          sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(gameState));
+          localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(gameState));
+        }
       } catch (e) {}
     }
-  }, [gameState.roomId]);
+  }, [gameState]);
 
   // 3. Keep myPlayerId persisted in sessionStorage/localStorage
   useEffect(() => {
@@ -529,6 +561,8 @@ export const App: React.FC = () => {
       sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
       localStorage.removeItem(SESSION_PLAYER_ID_KEY);
       sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
+      sessionStorage.removeItem(SESSION_GAME_STATE_KEY);
+      localStorage.removeItem(SESSION_GAME_STATE_KEY);
     } catch (e) {}
     setMyPlayerId(null);
   };
@@ -864,6 +898,8 @@ export const App: React.FC = () => {
       sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
       localStorage.removeItem(SESSION_PLAYER_ID_KEY);
       sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
+      sessionStorage.removeItem(SESSION_GAME_STATE_KEY);
+      localStorage.removeItem(SESSION_GAME_STATE_KEY);
     } catch (e) {}
     setMyPlayerId(null);
     setSelectedTile(null);
