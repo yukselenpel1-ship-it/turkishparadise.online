@@ -187,6 +187,140 @@ export function payJailBail(state: GameState): GameState {
   return newState;
 }
 
+// Calculate strategic valuation of a property based on monopolies and sets
+export function calculatePropertyStrategicValue(
+  tile: BoardTile,
+  owner: Player,
+  evaluator: Player,
+  board: BoardTile[]
+): number {
+  if (!tile.price) return 0;
+  let multiplier = 1.0;
+  const difficulty = evaluator.botDifficulty || 'medium';
+
+  // 1. Color Group Monopoly Analysis
+  if (tile.colorGroup) {
+    const groupTiles = board.filter(t => t.colorGroup === tile.colorGroup);
+    const ownerGroupCount = groupTiles.filter(t => t.ownerId === owner.id).length;
+    const evaluatorGroupCount = groupTiles.filter(t => t.ownerId === evaluator.id).length;
+    const totalGroupCount = groupTiles.length;
+
+    // A. Does this tile complete a FULL MONOPOLY for the buyer/evaluator?
+    if (evaluatorGroupCount === totalGroupCount - 1 && tile.ownerId !== evaluator.id) {
+      if (difficulty === 'hard') multiplier += 2.5; // +250% value
+      else if (difficulty === 'medium') multiplier += 1.8; // +180% value
+      else multiplier += 1.0; // +100% value
+    }
+
+    // B. Does the current owner already own other tiles in this set?
+    if (ownerGroupCount >= 2 && totalGroupCount === 3 && tile.ownerId === owner.id) {
+      if (difficulty === 'hard') multiplier += 2.0;
+      else if (difficulty === 'medium') multiplier += 1.5;
+      else multiplier += 0.8;
+    } else if (ownerGroupCount === 1 && totalGroupCount === 2 && tile.ownerId === owner.id) {
+      multiplier += 1.2;
+    }
+  }
+
+  // 2. Stations (İskeleler) analysis
+  if (tile.type === 'station') {
+    const ownedStations = board.filter(t => t.type === 'station' && t.ownerId === evaluator.id).length;
+    if (ownedStations >= 3) multiplier += 1.8;
+    else if (ownedStations >= 2) multiplier += 1.2;
+    else if (ownedStations >= 1) multiplier += 0.6;
+  }
+
+  // 3. Mortgaged discount
+  if (tile.isMortgaged) {
+    multiplier *= 0.6;
+  }
+
+  return Math.round(tile.price * multiplier);
+}
+
+// Evaluate trade offer made to a bot
+export function evaluateTradeOfferByBot(
+  state: GameState,
+  offer: TradeOffer,
+  bot: Player
+): { accepted: boolean; reason: string } {
+  // Check if bot has enough money
+  if (offer.requestedMoney > bot.money) {
+    return {
+      accepted: false,
+      reason: `${bot.name}: "Kasamdada bu teklifi karşılayacak kadar nakit para (${offer.requestedMoney}₺) yok!"`
+    };
+  }
+
+  const difficulty = bot.botDifficulty || 'medium';
+  const fromPlayer = state.players.find(p => p.id === offer.fromPlayerId);
+  const fromName = fromPlayer?.name || 'Oyuncu';
+
+  // Calculate Value Bot Gives Away
+  let valueBotGives = offer.requestedMoney;
+  for (const id of offer.requestedTileIds) {
+    const tile = state.board.find(b => b.id === id);
+    if (tile) {
+      valueBotGives += calculatePropertyStrategicValue(tile, bot, bot, state.board);
+      
+      // Extra strict penalty if giving this tile hands the opponent a complete monopoly!
+      if (tile.colorGroup && fromPlayer) {
+        const groupTiles = state.board.filter(t => t.colorGroup === tile.colorGroup);
+        const fromPlayerHas = groupTiles.filter(t => t.ownerId === fromPlayer.id).length;
+        if (fromPlayerHas === groupTiles.length - 1) {
+          if (difficulty === 'hard') {
+            valueBotGives += (tile.price || 0) * 2.5; // Huge premium to prevent opponent win
+          } else if (difficulty === 'medium') {
+            valueBotGives += (tile.price || 0) * 1.5;
+          }
+        }
+      }
+    }
+  }
+
+  // Calculate Value Bot Receives
+  let valueBotReceives = offer.offeredMoney;
+  for (const id of offer.offeredTileIds) {
+    const tile = state.board.find(b => b.id === id);
+    if (tile && fromPlayer) {
+      valueBotReceives += calculatePropertyStrategicValue(tile, fromPlayer, bot, state.board);
+    }
+  }
+
+  // Decision Threshold based on Difficulty
+  let requiredRatio = 1.05; // Medium
+  if (difficulty === 'hard') {
+    requiredRatio = 1.25; // Hard bot wants a 25% profit margin on trades
+  } else if (difficulty === 'easy') {
+    requiredRatio = 0.95; // Easy bot accepts slightly below fair
+  }
+
+  if (valueBotReceives < valueBotGives * requiredRatio) {
+    const diff = Math.round(valueBotGives * requiredRatio - valueBotReceives);
+    if (difficulty === 'hard') {
+      return {
+        accepted: false,
+        reason: `${bot.name} (🔴 ZOR BOT): "Bu takas benim aleyhime! Değerli mülklerimi ucuza veremem. En az +${diff}₺ daha eklemelisin!"`
+      };
+    } else if (difficulty === 'medium') {
+      return {
+        accepted: false,
+        reason: `${bot.name} (🟡 ORTA BOT): "Teklifin yetersiz. Bu araziler portföyüm için kritik (Fark: ~${diff}₺)."`
+      };
+    } else {
+      return {
+        accepted: false,
+        reason: `${bot.name} (🟢 KOLAY BOT): "Bu teklif pek dengeli görünmüyor, teşekkürler."`
+      };
+    }
+  }
+
+  return {
+    accepted: true,
+    reason: `${bot.name}: "Mantıklı bir teklif, el sıkışıyoruz! 🤝"`
+  };
+}
+
 // Execute Trade Offer between players or with Bot AI
 export function executeTrade(state: GameState, offer: TradeOffer): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
@@ -197,29 +331,14 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
 
   // Bot AI Evaluation
   if (toPlayer.isBot) {
-    let offeredTotal = offer.offeredMoney;
-    let requestedTotal = offer.requestedMoney;
-
-    offer.offeredTileIds.forEach(id => {
-      const t = newState.board.find(b => b.id === id);
-      if (t?.price) offeredTotal += t.price;
-    });
-
-    offer.requestedTileIds.forEach(id => {
-      const t = newState.board.find(b => b.id === id);
-      if (t?.price) requestedTotal += t.price;
-    });
-
-    // Check if bot can afford requested money
-    if (toPlayer.money < offer.requestedMoney) {
-      addLog(newState, `❌ ${toPlayer.name} yeterli parası olmadığı için takas teklifini reddetti.`, 'warning');
+    const evalResult = evaluateTradeOfferByBot(newState, offer, toPlayer);
+    if (!evalResult.accepted) {
+      addLog(newState, `❌ ${evalResult.reason}`, 'warning');
+      addChatMessage(newState, toPlayer, evalResult.reason);
       return newState;
-    }
-
-    // Bot accepts if offered value >= 90% of requested value
-    if (offeredTotal < requestedTotal * 0.9) {
-      addLog(newState, `❌ ${toPlayer.name} takas teklifini yetersiz bularak reddetti. (Teklif: ₺${offeredTotal}, İstenen: ₺${requestedTotal})`, 'warning');
-      return newState;
+    } else {
+      addLog(newState, `💬 ${evalResult.reason}`, 'success');
+      addChatMessage(newState, toPlayer, evalResult.reason);
     }
   }
 
@@ -255,8 +374,103 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
 
   addLog(newState, `🤝 ${fromPlayer.name} ile ${toPlayer.name} arasında takas başarıyla gerçekleşti!`, 'success');
 
+  // Check if this created a monopoly
+  offer.offeredTileIds.concat(offer.requestedTileIds).forEach(id => {
+    const tile = newState.board.find(b => b.id === id);
+    if (tile?.colorGroup && tile.ownerId) {
+      if (hasColorGroupMonopoly(newState.board, tile.colorGroup, tile.ownerId)) {
+        const owner = newState.players.find(p => p.id === tile.ownerId);
+        addLog(newState, `🎉 TEBRİKLER! ${owner?.name} takas ile ${tile.colorGroup.toUpperCase()} renk serisini tamamladı! Artık ev dikebilir!`, 'success');
+      }
+    }
+  });
+
+  // Clear pending incoming trade offer if matched
+  if (newState.incomingTradeOffer) {
+    newState.incomingTradeOffer = undefined;
+  }
+
   return newState;
 }
+
+// Proactive Bot Trading: Bot scans for missing set pieces and initiates trades
+export function attemptBotProactiveTrade(state: GameState, bot: Player): GameState {
+  const newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const difficulty = bot.botDifficulty || 'medium';
+
+  // Easy bot trades rarely, Medium trades often, Hard bot aggressively hunts sets
+  const tradeChance = difficulty === 'hard' ? 0.75 : difficulty === 'medium' ? 0.45 : 0.2;
+  if (Math.random() > tradeChance) return newState;
+
+  // 1. Scan for Color Groups where bot is missing only 1 tile to complete Monopoly
+  const colorGroups: ColorGroup[] = ['brown', 'lightblue', 'pink', 'orange', 'red', 'yellow', 'green', 'blue'];
+  
+  for (const group of colorGroups) {
+    const groupTiles = newState.board.filter(t => t.colorGroup === group);
+    const botOwned = groupTiles.filter(t => t.ownerId === bot.id);
+    const totalGroup = groupTiles.length;
+
+    // Bot has (total - 1) tiles, e.g. 2 of 3, or 1 of 2!
+    if (botOwned.length === totalGroup - 1) {
+      const missingTile = groupTiles.find(t => t.ownerId && t.ownerId !== bot.id);
+      if (!missingTile || !missingTile.ownerId || !missingTile.price) continue;
+
+      const targetOwner = newState.players.find(p => p.id === missingTile.ownerId && p.inGame);
+      if (!targetOwner) continue;
+
+      // Find a spare property that bot owns which is NOT part of a bot set
+      const spareProperties = newState.board.filter(
+        t => t.ownerId === bot.id &&
+             t.colorGroup !== group &&
+             !hasColorGroupMonopoly(newState.board, t.colorGroup, bot.id)
+      );
+
+      // Calculate a generous cash offer to entice the seller
+      const cashMultiplier = difficulty === 'hard' ? 1.6 : difficulty === 'medium' ? 1.4 : 1.2;
+      let cashOffer = Math.round(missingTile.price * cashMultiplier);
+      const maxAffordable = Math.max(0, Math.floor(bot.money * 0.75));
+      cashOffer = Math.min(cashOffer, maxAffordable);
+
+      const offeredTileIds: number[] = [];
+      if (spareProperties.length > 0 && Math.random() > 0.4) {
+        offeredTileIds.push(spareProperties[0].id);
+      }
+
+      const offer: TradeOffer = {
+        fromPlayerId: bot.id,
+        toPlayerId: targetOwner.id,
+        offeredTileIds: offeredTileIds,
+        offeredMoney: cashOffer,
+        requestedTileIds: [missingTile.id],
+        requestedMoney: 0
+      };
+
+      // Case A: Target is ANOTHER BOT $\rightarrow$ Bilateral evaluation
+      if (targetOwner.isBot) {
+        const evalResult = evaluateTradeOfferByBot(newState, offer, targetOwner);
+        if (evalResult.accepted) {
+          // Execute immediate Bot-to-Bot Trade!
+          return executeTrade(newState, offer);
+        }
+      } 
+      // Case B: Target is HUMAN PLAYER $\rightarrow$ Show interactive incoming trade modal!
+      else {
+        newState.incomingTradeOffer = {
+          ...offer,
+          fromPlayerName: bot.name,
+          fromPlayerAvatar: bot.avatar
+        };
+        const spareName = offeredTileIds.length > 0 ? ` + "${newState.board.find(b => b.id === offeredTileIds[0])?.name}"` : '';
+        addChatMessage(newState, bot, `Merhaba! "${missingTile.name}" tapunu bana satmak ister misin? ${cashOffer}₺ nakit${spareName} teklif ediyorum!`);
+        addLog(newState, `📬 ${bot.name} size "${missingTile.name}" için ${cashOffer}₺ teklifinde bulundu!`, 'action');
+        return newState;
+      }
+    }
+  }
+
+  return newState;
+}
+
 
 export function handleRollDice(state: GameState): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
@@ -798,8 +1012,11 @@ export function runBotTurn(state: GameState): GameState {
     newState = applyChanceCard(newState);
   }
 
-  // 3. Try building houses based on bot difficulty
-  const minCashForHouse = difficulty === 'hard' ? 100 : difficulty === 'medium' ? 250 : 500;
+  // 3. Proactive Bot-to-Bot & Bot-to-Human Trading (Attempt to complete sets!)
+  newState = attemptBotProactiveTrade(newState, currentBot);
+
+  // 4. Try building houses based on bot difficulty
+  const minCashForHouse = difficulty === 'hard' ? 80 : difficulty === 'medium' ? 200 : 400;
   if (currentBot.money > minCashForHouse) {
     const ownedMonopolies = newState.board.filter(
       t => t.ownerId === currentBot.id && t.type === 'property' && hasColorGroupMonopoly(newState.board, t.colorGroup, currentBot.id)
@@ -813,7 +1030,7 @@ export function runBotTurn(state: GameState): GameState {
     }
   }
 
-  // 4. If Hard/Medium bot is low on cash (< 50) and has non-monopoly properties, sell to bank for 2/3 price
+  // 5. If Hard/Medium bot is low on cash (< 50) and has non-monopoly properties, sell to bank for 2/3 price
   if (currentBot.money < 50 && (difficulty === 'hard' || difficulty === 'medium')) {
     const spareProps = newState.board.filter(
       t => t.ownerId === currentBot.id && !hasColorGroupMonopoly(newState.board, t.colorGroup, currentBot.id)
@@ -823,10 +1040,10 @@ export function runBotTurn(state: GameState): GameState {
     }
   }
 
-  // 5. End turn or roll again if double
+  // 6. End turn or roll again if double
   if ((newState.doublesCount || 0) > 0 && !currentBot.isJailed) {
     newState.diceRolled = false; // Bot will roll again on next loop
-  } else if (newState.pendingAction === 'NONE') {
+  } else if (newState.pendingAction === 'NONE' && !newState.incomingTradeOffer) {
     newState = nextTurn(newState);
   }
 

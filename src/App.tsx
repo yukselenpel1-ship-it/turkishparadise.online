@@ -15,8 +15,9 @@ import {
   applyChanceCard,
   payJailBail,
   nextTurn,
-  runBotTurn,
   executeTrade,
+  attemptBotProactiveTrade,
+  hasColorGroupMonopoly,
   addChatMessage,
   PLAYER_COLORS,
   PLAYER_AVATARS,
@@ -46,6 +47,7 @@ import { WinnerModal } from './components/WinnerModal';
 import { MyPropertiesModal } from './components/MyPropertiesModal';
 import { TradeModal } from './components/TradeModal';
 import { TransactionsModal } from './components/TransactionsModal';
+import { IncomingTradeModal } from './components/IncomingTradeModal';
 import { ProfileModal } from './components/ProfileModal';
 import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck } from 'lucide-react';
 
@@ -115,22 +117,107 @@ export const App: React.FC = () => {
     });
   };
 
-  // 3. Handle Bot Turns Automatically (Host controls bots)
+  // 3. Handle Bot Turns with Smooth Pacing & Visible Animation
   useEffect(() => {
     if (gameState.phase !== 'PLAYING' || isMoving) return;
+
+    // If human is reviewing an incoming trade offer from bot, don't interrupt
+    if (gameState.incomingTradeOffer) return;
 
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     const isMeHost = gameState.players[0]?.id === myPlayerId;
 
-    // Only host triggers bot turns to prevent duplicate bot actions
-    if (currentPlayer && currentPlayer.isBot && currentPlayer.inGame && isMeHost) {
-      const botTimer = setTimeout(() => {
-        updateAndBroadcastGameState((prev) => runBotTurn(prev));
-      }, 1200);
+    if (!currentPlayer || !currentPlayer.isBot || !currentPlayer.inGame || !isMeHost) return;
 
-      return () => clearTimeout(botTimer);
+    const difficulty = currentPlayer.botDifficulty || gameState.settings?.botDifficulty || 'medium';
+
+    // Step A: Bot has NOT rolled yet -> roll and animate walk
+    if (!gameState.diceRolled) {
+      const timer = setTimeout(() => {
+        handleRollDiceAction();
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [gameState.currentTurnIndex, gameState.phase, gameState.diceRolled, gameState.pendingAction, isMoving, myPlayerId]);
+
+    // Step B: Bot has rolled and is not moving -> evaluate landing action
+    if (gameState.diceRolled && !isMoving) {
+      // 1. Pending Property Decision
+      if (gameState.pendingAction === 'BUY_PROPERTY') {
+        const timer = setTimeout(() => {
+          const tile = gameState.board[currentPlayer.position];
+          let shouldBuy = false;
+          if (tile && tile.price) {
+            if (difficulty === 'hard') shouldBuy = currentPlayer.money >= tile.price;
+            else if (difficulty === 'medium') shouldBuy = currentPlayer.money >= tile.price + 80;
+            else shouldBuy = currentPlayer.money >= tile.price + 120 && Math.random() > 0.3;
+          }
+          if (shouldBuy) {
+            handleBuyPropertyAction();
+          } else {
+            handlePassPropertyAction();
+          }
+        }, 1200);
+        return () => clearTimeout(timer);
+      }
+
+      // 2. Pending Chance Card
+      if (gameState.pendingAction === 'CHANCE_CARD') {
+        const timer = setTimeout(() => {
+          handleConfirmChanceCard();
+        }, 1400);
+        return () => clearTimeout(timer);
+      }
+
+      // 3. Pending Action is NONE -> Execute Proactive Trade, Build Houses & End Turn
+      if (gameState.pendingAction === 'NONE') {
+        const timer = setTimeout(() => {
+          updateAndBroadcastGameState((prev) => {
+            let next = JSON.parse(JSON.stringify(prev)) as GameState;
+            const bot = next.players[next.currentTurnIndex];
+            if (!bot || !bot.isBot) return next;
+
+            // Proactive Bot-to-Bot or Bot-to-Human Trade
+            next = attemptBotProactiveTrade(next, bot);
+            if (next.incomingTradeOffer) {
+              return next; // Wait for player response
+            }
+
+            // House Building
+            const minCash = difficulty === 'hard' ? 80 : difficulty === 'medium' ? 200 : 400;
+            if (bot.money > minCash) {
+              const ownedMonopolies = next.board.filter(
+                t => t.ownerId === bot.id && t.type === 'property' && hasColorGroupMonopoly(next.board, t.colorGroup, bot.id)
+              );
+              for (const prop of ownedMonopolies) {
+                const maxHouses = difficulty === 'hard' ? 5 : difficulty === 'medium' ? 4 : 2;
+                if (prop.houseCost && bot.money >= prop.houseCost + minCash && prop.houses < maxHouses) {
+                  next = buildHouse(next, prop.id);
+                  break;
+                }
+              }
+            }
+
+            // Turn progression (if doubles, roll again; else next turn)
+            if ((next.doublesCount || 0) > 0 && !bot.isJailed) {
+              next.diceRolled = false;
+            } else {
+              next = nextTurn(next);
+            }
+            return next;
+          });
+        }, 1400);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [
+    gameState.currentTurnIndex,
+    gameState.phase,
+    gameState.diceRolled,
+    gameState.pendingAction,
+    gameState.incomingTradeOffer,
+    isMoving,
+    myPlayerId
+  ]);
 
   // Auth Handlers
   const handleGoogleLogin = async () => {
@@ -374,7 +461,7 @@ export const App: React.FC = () => {
           setIsMoving(false);
         }, 120);
       }
-    }, 180);
+    }, 200);
   };
 
   // End Turn Action
@@ -426,6 +513,37 @@ export const App: React.FC = () => {
   // Trade Execution Action
   const handleExecuteTradeAction = (offer: TradeOffer) => {
     updateAndBroadcastGameState((prev) => executeTrade(prev, offer));
+  };
+
+  // Handle Accept Incoming Trade from Bot
+  const handleAcceptIncomingTrade = () => {
+    if (!gameState.incomingTradeOffer) return;
+    updateAndBroadcastGameState((prev) => {
+      if (!prev.incomingTradeOffer) return prev;
+      return executeTrade(prev, prev.incomingTradeOffer);
+    });
+  };
+
+  // Handle Decline Incoming Trade from Bot
+  const handleDeclineIncomingTrade = () => {
+    updateAndBroadcastGameState((prev) => {
+      const updated = { ...prev, incomingTradeOffer: undefined };
+      if (me) {
+        addLog(updated, `❌ ${me.name} takas teklifini reddetti.`, 'info');
+      }
+      return updated;
+    });
+  };
+
+  // Handle Counter-Offer: opens trade modal
+  const handleCounterOfferIncomingTrade = () => {
+    if (gameState.incomingTradeOffer) {
+      const targetTileId = gameState.incomingTradeOffer.requestedTileIds[0];
+      const targetTile = gameState.board.find((t) => t.id === targetTileId);
+      setTradeSelectedTile(targetTile);
+      updateAndBroadcastGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
+      setIsTradeModalOpen(true);
+    }
   };
 
   // Send Chat Message
@@ -576,6 +694,19 @@ export const App: React.FC = () => {
 
           </main>
         </>
+      )}
+
+      {/* Incoming Trade Offer Modal from Bot or Player */}
+      {gameState.incomingTradeOffer && me && (
+        <IncomingTradeModal
+          incomingOffer={gameState.incomingTradeOffer}
+          currentPlayer={me}
+          players={gameState.players}
+          board={gameState.board}
+          onAccept={handleAcceptIncomingTrade}
+          onDecline={handleDeclineIncomingTrade}
+          onCounterOffer={handleCounterOfferIncomingTrade}
+        />
       )}
 
       {/* Profile & Stats Modal */}

@@ -168,8 +168,14 @@ export interface GameState {
   pendingAction: ActionType;
   actionMessage?: string;
   winner?: Player;
+  incomingTradeOffer?: TradeOffer & {
+    fromPlayerName: string;
+    fromPlayerAvatar: string;
+  };
+  botStatusMessage?: string;
   isOnlineGame?: boolean;
   networkStatus?: 'connected' | 'connecting' | 'disconnected';
 }
+
 
 
