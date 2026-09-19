@@ -260,12 +260,12 @@ export const Lobby: React.FC<LobbyProps> = ({
             <button
               onClick={handleGoogleClick}
               disabled={isLoadingAuth}
-              className="hidden sm:flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl py-1.5 px-3 text-xs font-black text-slate-800 transition cursor-pointer shadow shrink-0"
+              className="flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl py-1.5 px-2.5 sm:px-3 text-xs font-black text-slate-800 transition cursor-pointer shadow shrink-0 active:scale-95"
             >
               {isLoadingAuth ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -284,7 +284,8 @@ export const Lobby: React.FC<LobbyProps> = ({
                   />
                 </svg>
               )}
-              <span>Google ile Giriş</span>
+              <span className="hidden xs:inline">Google ile Giriş</span>
+              <span className="xs:hidden inline">Giriş Yap</span>
             </button>
           )}
 

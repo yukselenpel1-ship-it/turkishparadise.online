@@ -20,7 +20,7 @@ import {
   serverTimestamp,
   DatabaseReference
 } from 'firebase/database';
-import { GameState, Player, UserAccount, ChatMessage } from '../types/game';
+import { GameState, Player, UserAccount, UserStats, MatchRecord, ChatMessage } from '../types/game';
 
 // Firebase configuration from environment variables or default placeholder
 const firebaseConfig = {
@@ -104,7 +104,7 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
     photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanId}`,
     isAnonymous: false,
     provider: 'google',
-    stats: existingStats.gamesPlayed > 0 ? existingStats : { gamesWon: 0, gamesPlayed: 0, totalMoneyEarned: 0 }
+    stats: existingStats
   };
   saveLocalUser(googleAccount);
   return googleAccount;
@@ -141,7 +141,7 @@ export async function loginAsGuest(customName?: string, avatar?: string): Promis
     displayName: guestName,
     isAnonymous: true,
     provider: 'guest',
-    stats: { gamesWon: 0, gamesPlayed: 0, totalMoneyEarned: 0 }
+    stats: { gamesWon: 0, gamesLost: 0, gamesPlayed: 0, totalMoneyEarned: 0, history: [] }
   };
   saveLocalUser(guestAccount);
   return guestAccount;
@@ -173,7 +173,7 @@ export function getSavedUser(): UserAccount | null {
   }
 }
 
-function saveLocalUser(user: UserAccount) {
+export function saveLocalUser(user: UserAccount) {
   try {
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(user));
   } catch (e) {
@@ -181,22 +181,80 @@ function saveLocalUser(user: UserAccount) {
   }
 }
 
-export function getUserStats(uid: string) {
+export function getUserStats(uid: string): UserStats {
   try {
     const raw = localStorage.getItem(STATS_KEY_PREFIX + uid);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        gamesWon: parsed.gamesWon || 0,
+        gamesLost: parsed.gamesLost || 0,
+        gamesPlayed: parsed.gamesPlayed || 0,
+        totalMoneyEarned: parsed.totalMoneyEarned || 0,
+        history: Array.isArray(parsed.history) ? parsed.history : []
+      };
+    }
   } catch {}
-  return { gamesWon: 0, gamesPlayed: 0, totalMoneyEarned: 0 };
+  return { gamesWon: 0, gamesLost: 0, gamesPlayed: 0, totalMoneyEarned: 0, history: [] };
+}
+
+export function saveUserStats(uid: string, stats: UserStats): void {
+  try {
+    localStorage.setItem(STATS_KEY_PREFIX + uid, JSON.stringify(stats));
+    
+    // Also update saved user account stats if current user matches
+    const savedUser = getSavedUser();
+    if (savedUser && savedUser.uid === uid) {
+      savedUser.stats = stats;
+      saveLocalUser(savedUser);
+    }
+  } catch (e) {
+    console.warn('[Stats] Could not save stats:', e);
+  }
+}
+
+/**
+ * Record a game outcome (WIN, LOSS, BANKRUPTCY) with match details
+ */
+export function recordGameMatch(
+  uid: string,
+  result: 'WIN' | 'LOSS' | 'BANKRUPTCY',
+  moneyEarned: number,
+  roomId: string,
+  opponentsCount: number
+): UserStats {
+  const current = getUserStats(uid);
+  const isWin = result === 'WIN';
+  const newWon = isWin ? current.gamesWon + 1 : current.gamesWon;
+  const newLost = !isWin ? current.gamesLost + 1 : current.gamesLost;
+  const newPlayed = current.gamesPlayed + 1;
+  const newMoney = current.totalMoneyEarned + Math.max(0, moneyEarned);
+
+  const newRecord: MatchRecord = {
+    id: `match_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    roomId: roomId || 'TR-1001',
+    result,
+    moneyEarned: Math.max(0, moneyEarned),
+    date: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    opponentsCount
+  };
+
+  const updatedHistory = [newRecord, ...(current.history || [])].slice(0, 20); // Keep last 20 matches
+
+  const updatedStats: UserStats = {
+    gamesWon: newWon,
+    gamesLost: newLost,
+    gamesPlayed: newPlayed,
+    totalMoneyEarned: newMoney,
+    history: updatedHistory
+  };
+
+  saveUserStats(uid, updatedStats);
+  return updatedStats;
 }
 
 export function recordGameWin(uid: string, moneyEarned: number) {
-  const current = getUserStats(uid);
-  const updated = {
-    gamesWon: current.gamesWon + 1,
-    gamesPlayed: current.gamesPlayed + 1,
-    totalMoneyEarned: current.totalMoneyEarned + moneyEarned
-  };
-  localStorage.setItem(STATS_KEY_PREFIX + uid, JSON.stringify(updated));
+  return recordGameMatch(uid, 'WIN', moneyEarned, 'TR-1001', 2);
 }
 
 import { syncManager } from './multiplayerSync';

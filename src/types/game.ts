@@ -139,6 +139,23 @@ export interface FinancialTransaction {
   timestamp: string;
 }
 
+export interface MatchRecord {
+  id: string;
+  roomId: string;
+  result: 'WIN' | 'LOSS' | 'BANKRUPTCY';
+  moneyEarned: number;
+  date: string;
+  opponentsCount: number;
+}
+
+export interface UserStats {
+  gamesWon: number;
+  gamesLost: number;
+  gamesPlayed: number;
+  totalMoneyEarned: number;
+  history?: MatchRecord[];
+}
+
 export interface UserAccount {
   uid: string;
   displayName: string;
@@ -146,11 +163,7 @@ export interface UserAccount {
   photoURL?: string | null;
   isAnonymous: boolean;
   provider: 'google' | 'guest';
-  stats?: {
-    gamesWon: number;
-    gamesPlayed: number;
-    totalMoneyEarned: number;
-  };
+  stats?: UserStats;
 }
 
 export interface GameState {

@@ -26,11 +26,15 @@ import {
   addTransaction
 } from './engine/gameEngine';
 import {
+  loginWithGoogle,
   loginAsGuest,
   logoutUser,
   getSavedUser,
+  saveLocalUser,
+  getUserStats,
   syncRoomState,
   subscribeToRoom,
+  recordGameMatch,
   recordGameWin
 } from './services/firebase';
 import { syncManager } from './services/multiplayerSync';
@@ -140,13 +144,16 @@ export const App: React.FC = () => {
     setUnreadChatCount(0);
   };
 
-  // 1. Process Google OAuth callback on mount or load saved user session
+  // 1. Process Google OAuth callback on mount or load saved user session with fresh stats
   useEffect(() => {
     async function initAuth() {
       try {
         const oauthUser = await handleGoogleOAuthCallback();
         if (oauthUser) {
-          setUserAccount(oauthUser);
+          const freshStats = getUserStats(oauthUser.uid);
+          const fullUser = { ...oauthUser, stats: freshStats };
+          saveLocalUser(fullUser);
+          setUserAccount(fullUser);
           return;
         }
       } catch (e) {
@@ -155,7 +162,8 @@ export const App: React.FC = () => {
 
       const saved = getSavedUser();
       if (saved) {
-        setUserAccount(saved);
+        const freshStats = getUserStats(saved.uid);
+        setUserAccount({ ...saved, stats: freshStats });
       }
     }
 
@@ -409,6 +417,74 @@ export const App: React.FC = () => {
     }
   }, [gameState.currentTurnIndex, gameState.phase, gameState.players, isMoving, myPlayerId]);
 
+  // 6.6 Automatic Game Outcome Stats Tracking (Wins, Losses, Bankruptcy, Matches Played)
+  const recordedMatchKeyRef = useRef<string>('');
+  const recordedBankruptcyRef = useRef<string>('');
+
+  useEffect(() => {
+    if (gameState.phase === 'ENDED' && gameState.winner && userAccount) {
+      const matchKey = `${gameState.roomId}_${gameState.winner.id}_${gameState.players.length}_${gameState.turnStartedAt || 0}`;
+      if (recordedMatchKeyRef.current === matchKey) return;
+      recordedMatchKeyRef.current = matchKey;
+
+      const myPlayer = gameState.players.find(
+        (p) => p.id === myPlayerId || p.id === userAccount.uid || p.name === userAccount.displayName
+      );
+      if (!myPlayer) return;
+
+      const isMeWinner = gameState.winner.id === myPlayer.id || gameState.winner.name === myPlayer.name;
+      const result: 'WIN' | 'LOSS' | 'BANKRUPTCY' = isMeWinner
+        ? 'WIN'
+        : (!myPlayer.inGame ? 'BANKRUPTCY' : 'LOSS');
+
+      const prizeMoney = isMeWinner
+        ? (gameState.winner.money || 0)
+        : (myPlayer.money > 0 ? myPlayer.money : 0);
+
+      const updatedStats = recordGameMatch(
+        userAccount.uid,
+        result,
+        prizeMoney,
+        gameState.roomId || 'TR-1001',
+        gameState.players.length
+      );
+
+      setUserAccount((prev) => {
+        if (!prev) return null;
+        const next = { ...prev, stats: updatedStats };
+        saveLocalUser(next);
+        return next;
+      });
+    }
+  }, [gameState.phase, gameState.winner, gameState.roomId, gameState.players, gameState.turnStartedAt, myPlayerId, userAccount]);
+
+  // 6.7 Immediate In-Game Bankruptcy Loss Tracking
+  useEffect(() => {
+    if (gameState.phase === 'PLAYING' && userAccount && myPlayerId) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId || p.id === userAccount.uid);
+      if (myPlayer && !myPlayer.inGame) {
+        const bankKey = `bank_${gameState.roomId}_${userAccount.uid}_${gameState.turnStartedAt || 0}`;
+        if (recordedBankruptcyRef.current === bankKey) return;
+        recordedBankruptcyRef.current = bankKey;
+
+        const updatedStats = recordGameMatch(
+          userAccount.uid,
+          'BANKRUPTCY',
+          0,
+          gameState.roomId || 'TR-1001',
+          gameState.players.length
+        );
+
+        setUserAccount((prev) => {
+          if (!prev) return null;
+          const next = { ...prev, stats: updatedStats };
+          saveLocalUser(next);
+          return next;
+        });
+      }
+    }
+  }, [gameState.phase, gameState.players, gameState.roomId, gameState.turnStartedAt, myPlayerId, userAccount]);
+
   // 3. Handle Bot & AFK Auto-Takeover Turns with Smooth Pacing & Visible Animation
   useEffect(() => {
     if (gameState.phase !== 'PLAYING' || isMoving) return;
@@ -531,6 +607,15 @@ export const App: React.FC = () => {
 
   // Auth Handlers
   const handleGoogleLogin = async () => {
+    try {
+      const account = await loginWithGoogle();
+      if (account) {
+        setUserAccount(account);
+        return;
+      }
+    } catch (err) {
+      console.warn('[Auth] Google login popup fallback:', err);
+    }
     initiateGoogleOAuthRedirect();
   };
 
@@ -1053,21 +1138,37 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              {userAccount && (
+              {userAccount ? (
                 <button
                   onClick={() => setIsProfileModalOpen(true)}
-                  className="hidden md:flex items-center gap-2 bg-slate-800/90 hover:bg-slate-700/90 border border-amber-500/40 rounded-xl px-3 py-1 text-xs transition cursor-pointer group"
+                  className="flex items-center gap-1.5 sm:gap-2 bg-slate-800/90 hover:bg-slate-700/90 border border-amber-500/40 rounded-xl px-2 sm:px-3 py-1 text-xs transition cursor-pointer group shrink-0 active:scale-95"
                   title="Profil & İstatistikleri Gör"
                 >
                   {userAccount.photoURL ? (
-                    <img src={userAccount.photoURL} alt="" className="w-4 h-4 rounded-full object-cover" />
+                    <img src={userAccount.photoURL} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
                   ) : (
-                    <span className="text-amber-400 font-bold">👤</span>
+                    <span className="text-amber-400 font-bold shrink-0">👤</span>
                   )}
-                  <span className="text-white font-bold group-hover:text-amber-300 transition">{userAccount.displayName}</span>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-black border border-amber-500/30">
+                  <span className="text-white font-bold group-hover:text-amber-300 transition hidden sm:inline truncate max-w-[90px]">
+                    {userAccount.displayName}
+                  </span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-black border border-amber-500/30 shrink-0">
                     🏆 {userAccount.stats?.gamesWon || 0}
                   </span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleGoogleLogin}
+                  className="flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl px-2 sm:px-3 py-1 text-xs font-black text-slate-800 transition cursor-pointer shadow shrink-0 active:scale-95"
+                  title="Google ile Giriş Yap"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                  <span className="hidden xs:inline">Giriş Yap</span>
                 </button>
               )}
 
@@ -1341,12 +1442,9 @@ export const App: React.FC = () => {
       {gameState.phase === 'ENDED' && gameState.winner && (
         <WinnerModal
           winner={gameState.winner}
-          onRestart={() => {
-            if (gameState.winner && userAccount && gameState.winner.id === userAccount.uid) {
-              recordGameWin(userAccount.uid, gameState.winner.money);
-            }
-            handleRestart();
-          }}
+          currentPlayer={me}
+          onRestart={handleRestart}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
         />
       )}
 
