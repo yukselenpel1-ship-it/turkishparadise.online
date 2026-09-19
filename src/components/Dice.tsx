@@ -137,12 +137,12 @@ export const Dice: React.FC<DiceProps> = ({
         Math.floor(Math.random() * 6) + 1,
       ]);
       count += 1;
-      if (count > 12) {
+      if (count > 7) {
         if (rollIntervalRef.current) clearInterval(rollIntervalRef.current);
         setIsRolling(false);
         onRoll();
       }
-    }, 50);
+    }, 40);
   };
 
   const timerValue = typeof turnSecondsRemaining === 'number' ? turnSecondsRemaining : 60;

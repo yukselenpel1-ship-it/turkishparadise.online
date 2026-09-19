@@ -292,25 +292,25 @@ export const App: React.FC = () => {
     });
   };
 
-  // 5. Turn Countdown Timer (60s AFK Tracking)
+  // 5. Turn Countdown Timer (Calculated directly from synchronized turnStartedAt timestamp)
   useEffect(() => {
     if (gameState.phase !== 'PLAYING') {
       setTurnSecondsRemaining(60);
       return;
     }
 
-    // Reset turn timer on new turn
-    setTurnSecondsRemaining(60);
+    const calculateRemaining = () => {
+      const turnStart = gameState.turnStartedAt || Date.now();
+      const elapsedSeconds = Math.floor((Date.now() - turnStart) / 1000);
+      const remaining = Math.max(0, 60 - elapsedSeconds);
+      setTurnSecondsRemaining(remaining);
+    };
 
-    const timerInterval = setInterval(() => {
-      setTurnSecondsRemaining((prev) => {
-        if (prev <= 1) return 0;
-        return prev - 1;
-      });
-    }, 1000);
+    calculateRemaining();
+    const timerInterval = setInterval(calculateRemaining, 500);
 
     return () => clearInterval(timerInterval);
-  }, [gameState.currentTurnIndex, gameState.phase]);
+  }, [gameState.currentTurnIndex, gameState.phase, gameState.turnStartedAt]);
 
   // 6. AFK Auto-Takeover: When 60s timer expires on a human player's turn, mark AFK
   useEffect(() => {
@@ -361,7 +361,7 @@ export const App: React.FC = () => {
     if (!gameState.diceRolled) {
       const timer = setTimeout(() => {
         handleRollDiceAction();
-      }, 1000);
+      }, 500);
       return () => clearTimeout(timer);
     }
 
@@ -382,7 +382,7 @@ export const App: React.FC = () => {
           } else {
             handlePassPropertyAction();
           }
-        }, 1200);
+        }, 600);
         return () => clearTimeout(timer);
       }
 
@@ -390,7 +390,7 @@ export const App: React.FC = () => {
       if (gameState.pendingAction === 'CHANCE_CARD') {
         const timer = setTimeout(() => {
           handleConfirmChanceCard();
-        }, 1400);
+        }, 600);
         return () => clearTimeout(timer);
       }
 
@@ -433,7 +433,7 @@ export const App: React.FC = () => {
             }
             return next;
           });
-        }, 1400);
+        }, 600);
         return () => clearTimeout(timer);
       }
     }
@@ -652,7 +652,12 @@ export const App: React.FC = () => {
         firstLapPurchases: 0
       }));
 
-      const updated = { ...prev, players: updatedPlayers, phase: 'PLAYING' as const };
+      const updated = {
+        ...prev,
+        players: updatedPlayers,
+        phase: 'PLAYING' as const,
+        turnStartedAt: Date.now()
+      };
       addLog(updated, '🎮 Turkish Paradise oyunu başladı! İyi şanslar!', 'success');
       return updated;
     });
@@ -766,9 +771,9 @@ export const App: React.FC = () => {
         setTimeout(() => {
           updateAndBroadcastGameState(prev => finalizePlayerLanding(prev, currentPlayer.id));
           setIsMoving(false);
-        }, 120);
+        }, 60);
       }
-    }, 180);
+    }, 130);
   };
 
   // End Turn Action

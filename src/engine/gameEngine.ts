@@ -975,6 +975,7 @@ export function nextTurn(state: GameState): GameState {
   newState.doublesCount = 0;
   newState.pendingAction = 'NONE';
   newState.activeCard = undefined;
+  newState.turnStartedAt = Date.now();
 
   const nextPlayer = newState.players[nextIndex];
   addLog(newState, `🔄 Sıra ${nextPlayer.name} oyuncusunda!`, 'info');
