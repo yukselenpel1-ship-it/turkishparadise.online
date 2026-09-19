@@ -1,0 +1,516 @@
+import React, { useState, useEffect } from 'react';
+import { GameState, BoardTile, Player, TradeOffer, GameSettings, BotDifficulty } from './types/game';
+import {
+  createInitialState,
+  handleRollDice,
+  advancePlayerStep,
+  finalizePlayerLanding,
+  rollDice,
+  JAIL_TILE_INDEX,
+  buyProperty,
+  passProperty,
+  sellPropertyToBank,
+  buildHouse,
+  toggleMortgage,
+  applyChanceCard,
+  payJailBail,
+  nextTurn,
+  runBotTurn,
+  executeTrade,
+  addChatMessage,
+  PLAYER_COLORS,
+  PLAYER_AVATARS,
+  addLog,
+  addTransaction
+} from './engine/gameEngine';
+import { Lobby } from './components/Lobby';
+import { Board } from './components/Board';
+import { PlayerList } from './components/PlayerList';
+import { Chat } from './components/Chat';
+import { GameLogs } from './components/GameLogs';
+import { PropertyModal } from './components/PropertyModal';
+import { ChanceModal } from './components/ChanceModal';
+import { WinnerModal } from './components/WinnerModal';
+import { MyPropertiesModal } from './components/MyPropertiesModal';
+import { TradeModal } from './components/TradeModal';
+import { TransactionsModal } from './components/TransactionsModal';
+import { RotateCcw, Volume2, VolumeX } from 'lucide-react';
+
+export const App: React.FC = () => {
+  const [gameState, setGameState] = useState<GameState>(() => createInitialState());
+  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
+  const [selectedTile, setSelectedTile] = useState<BoardTile | null>(null);
+  const [isPropertiesModalOpen, setIsPropertiesModalOpen] = useState(false);
+  const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
+  const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
+  const [isMoving, setIsMoving] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Handle Bot Turns Automatically
+  useEffect(() => {
+    if (gameState.phase !== 'PLAYING' || isMoving) return;
+
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    if (currentPlayer && currentPlayer.isBot && currentPlayer.inGame) {
+      const botTimer = setTimeout(() => {
+        setGameState((prev) => runBotTurn(prev));
+      }, 1200);
+
+      return () => clearTimeout(botTimer);
+    }
+  }, [gameState.currentTurnIndex, gameState.phase, gameState.diceRolled, gameState.pendingAction, isMoving]);
+
+  // Join Game as Human Player with selected avatar and color
+  const handleJoin = (name: string, avatar: string, color?: string) => {
+    const newId = `player_${Math.random().toString(36).substring(2, 9)}`;
+    const startMoney = gameState.settings?.startingMoney || 1500;
+    const chosenColor = color || PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length];
+    const newPlayer: Player = {
+      id: newId,
+      name,
+      avatar,
+      color: chosenColor,
+      money: startMoney,
+      position: 0,
+      isJailed: false,
+      jailTurns: 0,
+      lapsCompleted: 0,
+      firstLapPurchases: 0,
+      inGame: true,
+      isBot: false,
+      isHost: gameState.players.length === 0
+    };
+
+    setMyPlayerId(newId);
+    setGameState((prev) => {
+      const updated = { ...prev, players: [...prev.players, newPlayer] };
+      addLog(updated, `👋 ${name} oyuna katıldı! (Başlangıç: ${startMoney}₺)`, 'success');
+      return updated;
+    });
+  };
+
+  // Leave Lobby / Go Back
+  const handleLeaveLobby = () => {
+    if (!myPlayerId) return;
+    setGameState((prev) => ({
+      ...prev,
+      players: prev.players.filter((p) => p.id !== myPlayerId)
+    }));
+    setMyPlayerId(null);
+  };
+
+  // Update Game Settings (Host Only)
+  const handleUpdateSettings = (newSettings: GameSettings) => {
+    setGameState((prev) => ({
+      ...prev,
+      settings: newSettings,
+      roomId: newSettings.roomCode
+    }));
+  };
+
+  // Add Bot Player with Difficulty
+  const handleAddBot = (difficulty: BotDifficulty = 'medium') => {
+    if (gameState.players.length >= 6) return;
+
+    const botNumber = gameState.players.filter((p) => p.isBot).length + 1;
+    const difficultyPrefix = difficulty === 'hard' ? 'Zor ' : difficulty === 'easy' ? 'Kolay ' : '';
+    const botNames = [`${difficultyPrefix}Zeki Bot 🤖`, `${difficultyPrefix}Emlakçı Bot 🏠`, `${difficultyPrefix}Zengin Bot 💰`, `${difficultyPrefix}Hızlı Bot ⚡`];
+    const botName = botNames[(botNumber - 1) % botNames.length];
+    const availableAvatars = PLAYER_AVATARS.filter(
+      (a) => !gameState.players.some((p) => p.avatar === a)
+    );
+
+    const startMoney = gameState.settings?.startingMoney || 1500;
+    const botPlayer: Player = {
+      id: `bot_${Math.random().toString(36).substring(2, 9)}`,
+      name: botName,
+      avatar: availableAvatars[0] || '🤖',
+      color: PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length],
+      money: startMoney,
+      position: 0,
+      isJailed: false,
+      jailTurns: 0,
+      lapsCompleted: 0,
+      firstLapPurchases: 0,
+      inGame: true,
+      isBot: true,
+      botDifficulty: difficulty
+    };
+
+    setGameState((prev) => {
+      const updated = { ...prev, players: [...prev.players, botPlayer] };
+      addLog(updated, `🤖 ${botName} (${difficulty.toUpperCase()}) odaya eklendi.`, 'info');
+      return updated;
+    });
+  };
+
+  // Start Game
+  const handleStartGame = () => {
+    if (gameState.players.length < 2) return;
+
+    setGameState((prev) => {
+      const startMoney = prev.settings?.startingMoney || 1500;
+      const updatedPlayers = prev.players.map(p => ({
+        ...p,
+        money: startMoney,
+        lapsCompleted: 0,
+        firstLapPurchases: 0
+      }));
+
+      const updated = { ...prev, players: updatedPlayers, phase: 'PLAYING' as const };
+      addLog(updated, '🎮 Pococoly oyunu başladı! İyi şanslar!', 'success');
+      return updated;
+    });
+  };
+
+  // Step-by-Step Animated Roll Dice Action
+  const handleRollDiceAction = () => {
+    if (isMoving || gameState.diceRolled || gameState.phase !== 'PLAYING') return;
+
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    if (!currentPlayer) return;
+
+    const dice = rollDice();
+    const diceTotal = dice[0] + dice[1];
+    const isDouble = dice[0] === dice[1];
+
+    // Check jail condition
+    if (currentPlayer.isJailed) {
+      if (isDouble) {
+        setGameState(prev => {
+          const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+          const p = updated.players[updated.currentTurnIndex];
+          p.isJailed = false;
+          p.jailTurns = 0;
+          updated.dice = dice;
+          updated.diceRolled = true;
+          addLog(updated, `🎉 ${p.name} çift zar atarak (${dice[0]}-${dice[1]}) kodesten ücretsiz çıktı!`, 'success');
+          return updated;
+        });
+      } else {
+        setGameState(prev => {
+          const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+          const p = updated.players[updated.currentTurnIndex];
+          p.jailTurns += 1;
+          updated.dice = dice;
+          updated.diceRolled = true;
+          if (p.jailTurns >= 3) {
+            p.isJailed = false;
+            p.money -= 100;
+            p.jailTurns = 0;
+            addTransaction(updated, p, 'expense', 'bail', 100, '3 tur kodes sonrası zorunlu kefalet ödendi');
+            addLog(updated, `⚠️ ${p.name} 3 tur bekledi ve 100₺ ödeyerek kodesten çıktı.`, 'warning');
+          } else {
+            addLog(updated, `🔒 ${p.name} (${dice[0]}-${dice[1]}) attı ve kodeste kaldı (${p.jailTurns}/3 tur).`, 'info');
+            updated.pendingAction = 'NONE';
+          }
+          return updated;
+        });
+        return;
+      }
+    }
+
+    // Doubles streak
+    if (isDouble && !currentPlayer.isJailed) {
+      const nextDoubles = gameState.doublesCount + 1;
+      if (nextDoubles >= 3) {
+        setGameState(prev => {
+          const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+          const p = updated.players[updated.currentTurnIndex];
+          p.position = JAIL_TILE_INDEX;
+          p.isJailed = true;
+          p.jailTurns = 0;
+          updated.doublesCount = 0;
+          updated.dice = dice;
+          updated.diceRolled = true;
+          addLog(updated, `🚨 3 kez üst üste çift atan ${p.name} kodese tıkıldı!`, 'danger');
+          updated.pendingAction = 'NONE';
+          return updated;
+        });
+        return;
+      }
+    }
+
+    // Start Step-by-Step Movement
+    setIsMoving(true);
+    setGameState(prev => {
+      const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+      updated.dice = dice;
+      updated.diceRolled = true;
+      if (isDouble) {
+        updated.doublesCount += 1;
+      } else {
+        updated.doublesCount = 0;
+      }
+      addLog(updated, `${currentPlayer.name} zar attı: 🎲 ${dice[0]} - ${dice[1]} (Toplam: ${diceTotal})`, 'action');
+      return updated;
+    });
+
+    let stepCount = 0;
+    const interval = setInterval(() => {
+      stepCount++;
+      setGameState(prev => {
+        const { state } = advancePlayerStep(prev, currentPlayer.id);
+        return state;
+      });
+
+      if (stepCount >= diceTotal) {
+        clearInterval(interval);
+        setTimeout(() => {
+          setGameState(prev => finalizePlayerLanding(prev, currentPlayer.id));
+          setIsMoving(false);
+        }, 120);
+      }
+    }, 180);
+  };
+
+
+  // End Turn Action
+  const handleEndTurnAction = () => {
+    setGameState((prev) => nextTurn(prev));
+  };
+
+  // Buy Property Action
+  const handleBuyPropertyAction = () => {
+    setGameState((prev) => buyProperty(prev));
+  };
+
+  // Pass Property Action (Skip buying)
+  const handlePassPropertyAction = () => {
+    setGameState((prev) => passProperty(prev));
+  };
+
+  // Sell Property to Bank for 2/3 price
+  const handleSellToBankAction = (tileId: number) => {
+    setGameState((prev) => sellPropertyToBank(prev, tileId));
+  };
+
+  // Pay 100 Bail to leave Kodes (Jail)
+  const handlePayJailBailAction = () => {
+    setGameState((prev) => payJailBail(prev));
+  };
+
+  // Build House Action
+  const handleBuildHouseAction = (tileId: number) => {
+    setGameState((prev) => buildHouse(prev, tileId));
+    if (selectedTile) {
+      setSelectedTile((prev) => (prev ? { ...prev, houses: prev.houses + 1 } : null));
+    }
+  };
+
+  // Toggle Mortgage Action
+  const handleToggleMortgageAction = (tileId: number) => {
+    setGameState((prev) => toggleMortgage(prev, tileId));
+    if (selectedTile) {
+      setSelectedTile((prev) => (prev ? { ...prev, isMortgaged: !prev.isMortgaged } : null));
+    }
+  };
+
+  // Apply Chance Card
+  const handleConfirmChanceCard = () => {
+    setGameState((prev) => applyChanceCard(prev));
+  };
+
+  // Trade Execution Action
+  const handleExecuteTradeAction = (offer: TradeOffer) => {
+    setGameState((prev) => executeTrade(prev, offer));
+  };
+
+  // Send Chat Message
+  const handleSendMessageAction = (text: string) => {
+    const mePlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!mePlayer) return;
+    setGameState((prev) => addChatMessage(prev, mePlayer, text));
+  };
+
+  // Restart Game
+  const handleRestart = () => {
+    setGameState(createInitialState(gameState.settings));
+    setMyPlayerId(null);
+    setSelectedTile(null);
+    setIsPropertiesModalOpen(false);
+    setIsTradeModalOpen(false);
+    setTradeSelectedTile(undefined);
+  };
+
+  const me = gameState.players.find((p) => p.id === myPlayerId);
+
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none">
+      {gameState.phase === 'LOBBY' ? (
+        <Lobby
+          players={gameState.players}
+          myPlayerId={myPlayerId}
+          settings={gameState.settings}
+          onUpdateSettings={handleUpdateSettings}
+          onJoin={handleJoin}
+          onAddBot={handleAddBot}
+          onStartGame={handleStartGame}
+          onLeaveLobby={handleLeaveLobby}
+        />
+      ) : (
+        <>
+          {/* Top Navbar Header during Game */}
+          <header className="h-12 px-4 flex items-center justify-between shrink-0 bg-slate-900/90 border-b border-slate-800/80 backdrop-blur-md z-40">
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/pococoly-logo.png"
+                alt="POCOCOLY"
+                className="h-6 sm:h-7 object-contain drop-shadow"
+              />
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
+                Oyun Devam Ediyor
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700 hidden sm:inline-block">
+                Oda: {gameState.settings?.roomCode}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                title="Ses Efektleri"
+              >
+                {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+              </button>
+
+              <button
+                onClick={handleRestart}
+                className="flex items-center gap-1 text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-3 py-1.5 rounded-xl border border-rose-500/30 transition cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Yeniden Başlat
+              </button>
+            </div>
+          </header>
+
+          {/* Main Gameplay Screen (100% Viewport Fitted) */}
+          <main className="flex-1 min-h-0 px-2 sm:px-4 py-2 flex items-center justify-center gap-3 sm:gap-4 overflow-hidden">
+            
+            {/* Left Sidebar: Player List & In-game Chat */}
+            <div className="h-full w-56 xl:w-64 shrink-0 hidden md:flex flex-col gap-2 justify-between overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <PlayerList
+                  players={gameState.players}
+                  currentTurnIndex={gameState.currentTurnIndex}
+                  board={gameState.board}
+                  myPlayerId={myPlayerId}
+                />
+              </div>
+              <div className="shrink-0">
+                <Chat
+                  messages={gameState.chatMessages || []}
+                  currentPlayer={me || null}
+                  onSendMessage={handleSendMessageAction}
+                />
+              </div>
+            </div>
+
+            {/* Center: Viewport-Fitted Monopoly Board */}
+            <div className="h-full flex-1 max-h-full flex items-center justify-center overflow-hidden">
+              <Board
+                board={gameState.board}
+                players={gameState.players}
+                currentTurnIndex={gameState.currentTurnIndex}
+                dice={gameState.dice}
+                diceRolled={gameState.diceRolled}
+                pendingAction={gameState.pendingAction}
+                actionMessage={gameState.actionMessage}
+                myPlayerId={myPlayerId}
+                onTileClick={(tile) => setSelectedTile(tile)}
+                onRollDice={handleRollDiceAction}
+                onEndTurn={handleEndTurnAction}
+                onBuyProperty={handleBuyPropertyAction}
+                onPassProperty={handlePassPropertyAction}
+                onPayJailBail={handlePayJailBailAction}
+                onOpenProperties={() => setIsPropertiesModalOpen(true)}
+                onOpenTrade={() => {
+                  setTradeSelectedTile(undefined);
+                  setIsTradeModalOpen(true);
+                }}
+                onOpenTransactions={() => setIsTransactionsModalOpen(true)}
+              />
+            </div>
+
+            {/* Right Sidebar: Game Logs */}
+            <div className="h-full w-60 xl:w-72 shrink-0 hidden lg:flex flex-col justify-center">
+              <GameLogs logs={gameState.logs} />
+            </div>
+
+          </main>
+        </>
+      )}
+
+      {/* Property Details Modal */}
+      {selectedTile && me && (
+        <PropertyModal
+          tile={selectedTile}
+          owner={gameState.players.find((p) => p.id === selectedTile.ownerId)}
+          currentPlayer={me}
+          players={gameState.players}
+          board={gameState.board}
+          onClose={() => setSelectedTile(null)}
+          onBuy={handleBuyPropertyAction}
+          onBuildHouse={() => handleBuildHouseAction(selectedTile.id)}
+          onToggleMortgage={() => handleToggleMortgageAction(selectedTile.id)}
+          onSellToBank={handleSellToBankAction}
+          canBuy={gameState.pendingAction === 'BUY_PROPERTY' && me.position === selectedTile.id}
+        />
+      )}
+
+      {/* Owned Properties Portfolio Modal */}
+      {isPropertiesModalOpen && me && (
+        <MyPropertiesModal
+          currentPlayer={me}
+          players={gameState.players}
+          board={gameState.board}
+          onClose={() => setIsPropertiesModalOpen(false)}
+          onOpenTradeForTile={(tile) => {
+            setTradeSelectedTile(tile);
+            setIsPropertiesModalOpen(false);
+            setIsTradeModalOpen(true);
+          }}
+          onBuildHouse={handleBuildHouseAction}
+          onToggleMortgage={handleToggleMortgageAction}
+          onSellToBank={handleSellToBankAction}
+        />
+      )}
+
+      {/* Financial Transactions Modal */}
+      {isTransactionsModalOpen && me && (
+        <TransactionsModal
+          transactions={gameState.transactions || []}
+          currentPlayer={me}
+          players={gameState.players}
+          onClose={() => setIsTransactionsModalOpen(false)}
+        />
+      )}
+
+      {/* Trade Modal */}
+      {isTradeModalOpen && me && (
+        <TradeModal
+          currentPlayer={me}
+          players={gameState.players}
+          board={gameState.board}
+          initialOfferedTile={tradeSelectedTile}
+          onClose={() => setIsTradeModalOpen(false)}
+          onExecuteTrade={handleExecuteTradeAction}
+        />
+      )}
+
+      {/* Chance Card Modal */}
+      {gameState.pendingAction === 'CHANCE_CARD' && gameState.activeCard && (
+        <ChanceModal card={gameState.activeCard} onConfirm={handleConfirmChanceCard} />
+      )}
+
+      {/* Winner Modal */}
+      {gameState.phase === 'ENDED' && gameState.winner && (
+        <WinnerModal winner={gameState.winner} onRestart={handleRestart} />
+      )}
+
+    </div>
+  );
+};
+
