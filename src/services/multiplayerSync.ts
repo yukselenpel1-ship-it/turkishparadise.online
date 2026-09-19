@@ -1,4 +1,5 @@
 import mqtt, { MqttClient } from 'mqtt';
+import Peer, { DataConnection } from 'peerjs';
 import { GameState, Player, ChatMessage, TradeOffer } from '../types/game';
 
 // Unique client session ID
@@ -10,7 +11,7 @@ const BROKER_URLS = [
   'wss://broker.emqx.io:8084/mqtt'
 ];
 
-type SyncMessage =
+export type SyncMessage =
   | { type: 'STATE_SYNC'; senderId: string; roomId: string; version: number; state: GameState }
   | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; player: Player }
   | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; playerId: string }
@@ -18,19 +19,23 @@ type SyncMessage =
   | { type: 'CHAT_MESSAGE'; senderId: string; roomId: string; message: ChatMessage }
   | { type: 'TRADE_OFFER'; senderId: string; roomId: string; offer: TradeOffer };
 
-type MessageCallback = (msg: SyncMessage) => void;
+export type MessageCallback = (msg: SyncMessage) => void;
 
 class MultiplayerSyncManager {
-  private client: MqttClient | null = null;
+  private mqttClient: MqttClient | null = null;
+  private peer: Peer | null = null;
+  private peerConnections: Map<string, DataConnection> = new Map();
+  private hostConnection: DataConnection | null = null;
   private currentRoomId: string | null = null;
   private localChannel: BroadcastChannel | null = null;
   private listeners: Set<MessageCallback> = new Set();
-  private isConnected = false;
-  private currentBrokerIndex = 0;
+  private isMqttConnected = false;
+  private isHost = false;
   private currentVersion = 0;
+  private brokerIndex = 0;
 
   constructor() {
-    // Setup local BroadcastChannel for same-device tab communication
+    // 1. Setup local BroadcastChannel for multi-tab on same machine
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         this.localChannel = new BroadcastChannel('tp_global_multiplayer_channel');
@@ -46,32 +51,151 @@ class MultiplayerSyncManager {
   }
 
   /**
-   * Connect to MQTT WebSocket broker and subscribe to room
+   * Initialize and join room over WebRTC (PeerJS) & MQTT WebSocket
    */
-  public joinRoom(roomId: string, onMessage: MessageCallback): () => void {
+  public joinRoom(roomId: string, onMessage: MessageCallback, isHostRole = false): () => void {
     const cleanRoomId = roomId.trim().toUpperCase();
     this.currentRoomId = cleanRoomId;
+    this.isHost = isHostRole;
     this.listeners.add(onMessage);
 
-    this.ensureConnection();
+    // 1. Connect MQTT WebSockets
+    this.ensureMqttConnection();
 
-    // Send a sync request to ask the host for current game state upon joining
+    // 2. Setup PeerJS WebRTC P2P mesh
+    this.initPeerJs(cleanRoomId);
+
+    // 3. Request initial state from host
     setTimeout(() => {
       this.send({
         type: 'REQUEST_SYNC',
         senderId: LOCAL_CLIENT_ID,
         roomId: cleanRoomId
       });
-    }, 500);
+    }, 400);
 
-    // Return unbind function
     return () => {
       this.listeners.delete(onMessage);
     };
   }
 
   /**
-   * Send state or message to everyone in the room
+   * Setup PeerJS WebRTC Direct DataChannel
+   */
+  private initPeerJs(roomId: string) {
+    try {
+      // Clean peer room ID
+      const safeRoomId = roomId.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const hostPeerId = `tp-host-${safeRoomId}`;
+
+      if (this.peer) {
+        try {
+          this.peer.destroy();
+        } catch (e) {}
+      }
+
+      if (this.isHost) {
+        // HOST: Register fixed host ID
+        this.peer = new Peer(hostPeerId, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+          }
+        });
+
+        this.peer.on('open', (id) => {
+          console.log(`[WebRTC] Host peer opened with ID: ${id}`);
+        });
+
+        this.peer.on('connection', (conn) => {
+          console.log(`[WebRTC] Client connected to Host: ${conn.peer}`);
+          this.peerConnections.set(conn.peer, conn);
+
+          conn.on('data', (data) => {
+            try {
+              const msg = (typeof data === 'string' ? JSON.parse(data) : data) as SyncMessage;
+              if (msg && msg.senderId !== LOCAL_CLIENT_ID) {
+                this.notifyListeners(msg);
+              }
+            } catch (e) {
+              console.warn('[WebRTC] Data parse error:', e);
+            }
+          });
+
+          conn.on('close', () => {
+            this.peerConnections.delete(conn.peer);
+          });
+        });
+
+        this.peer.on('error', (err: any) => {
+          console.warn('[WebRTC] Host peer error:', err);
+          // If ID is already taken, connect as client
+          if (err.type === 'unavailable-id') {
+            this.isHost = false;
+            this.initPeerJsClient(roomId, hostPeerId);
+          }
+        });
+      } else {
+        // CLIENT: Connect to host
+        this.initPeerJsClient(roomId, hostPeerId);
+      }
+    } catch (e) {
+      console.warn('[WebRTC] Failed to init PeerJS:', e);
+    }
+  }
+
+  private initPeerJsClient(roomId: string, hostPeerId: string) {
+    try {
+      this.peer = new Peer(undefined as any, {
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
+
+      this.peer.on('open', (myPeerId) => {
+        console.log(`[WebRTC] Client peer opened: ${myPeerId}, connecting to host: ${hostPeerId}`);
+        const conn = this.peer!.connect(hostPeerId, { reliable: true });
+        this.hostConnection = conn;
+
+        conn.on('open', () => {
+          console.log(`[WebRTC] Connected directly to host ${hostPeerId}!`);
+          // Request sync immediately over WebRTC
+          conn.send({
+            type: 'REQUEST_SYNC',
+            senderId: LOCAL_CLIENT_ID,
+            roomId: roomId.toUpperCase()
+          });
+        });
+
+        conn.on('data', (data) => {
+          try {
+            const msg = (typeof data === 'string' ? JSON.parse(data) : data) as SyncMessage;
+            if (msg && msg.senderId !== LOCAL_CLIENT_ID) {
+              this.notifyListeners(msg);
+            }
+          } catch (e) {
+            console.warn('[WebRTC] Client data parse error:', e);
+          }
+        });
+      });
+
+      this.peer.on('error', (err) => {
+        console.warn('[WebRTC] Client peer error:', err);
+      });
+    } catch (e) {
+      console.warn('[WebRTC] Error in client peer init:', e);
+    }
+  }
+
+  /**
+   * Broadcast state to all connected peers and relay brokers
    */
   public broadcastState(roomId: string, state: GameState): void {
     this.currentVersion++;
@@ -86,7 +210,7 @@ class MultiplayerSyncManager {
   }
 
   /**
-   * Send player join request to room host
+   * Send player join request
    */
   public sendJoinRequest(roomId: string, player: Player): void {
     const msg: SyncMessage = {
@@ -99,84 +223,96 @@ class MultiplayerSyncManager {
   }
 
   /**
-   * Send custom sync message over all active transports
+   * Send message across all 3 active transports (WebRTC + MQTT + BroadcastChannel)
    */
   public send(msg: SyncMessage): void {
-    const topic = `turkishparadise/rooms/${msg.roomId.toLowerCase()}`;
+    const cleanRoom = msg.roomId.trim().toUpperCase();
+    const topic = `turkishparadise/rooms/${cleanRoom.toLowerCase()}`;
     const payload = JSON.stringify(msg);
 
-    // 1. BroadcastChannel (instant local)
+    // 1. WebRTC Direct DataChannels
+    try {
+      if (this.isHost) {
+        // Send to all connected clients
+        this.peerConnections.forEach((conn) => {
+          if (conn.open) {
+            conn.send(msg);
+          }
+        });
+      } else if (this.hostConnection && this.hostConnection.open) {
+        // Send directly to host
+        this.hostConnection.send(msg);
+      }
+    } catch (e) {
+      console.warn('[WebRTC] Send error:', e);
+    }
+
+    // 2. Local BroadcastChannel
     if (this.localChannel) {
       try {
         this.localChannel.postMessage(msg);
-      } catch (e) {
-        console.warn('[Sync] Local broadcast error:', e);
-      }
+      } catch (e) {}
     }
 
-    // 2. MQTT WebSocket (Internet global)
-    if (this.client && this.isConnected) {
+    // 3. MQTT WebSocket Global Relay
+    if (this.mqttClient && this.isMqttConnected) {
       try {
-        this.client.publish(topic, payload, { qos: 1 });
+        this.mqttClient.publish(topic, payload, { qos: 1 });
       } catch (err) {
         console.warn('[Sync] MQTT Publish error:', err);
       }
     }
   }
 
-  private ensureConnection(): void {
-    if (this.client && (this.isConnected || this.client.reconnecting)) {
+  private ensureMqttConnection(): void {
+    if (this.mqttClient && (this.isMqttConnected || this.mqttClient.reconnecting)) {
       if (this.currentRoomId) {
         const topic = `turkishparadise/rooms/${this.currentRoomId.toLowerCase()}`;
-        this.client.subscribe(topic, { qos: 1 });
+        this.mqttClient.subscribe(topic, { qos: 1 });
       }
       return;
     }
 
-    const brokerUrl = BROKER_URLS[this.currentBrokerIndex % BROKER_URLS.length];
-    const clientId = `tp_${LOCAL_CLIENT_ID}`;
+    const brokerUrl = BROKER_URLS[this.brokerIndex % BROKER_URLS.length];
+    const clientId = `tp_${LOCAL_CLIENT_ID}_${Math.floor(Math.random() * 1000)}`;
 
     try {
-      this.client = mqtt.connect(brokerUrl, {
+      this.mqttClient = mqtt.connect(brokerUrl, {
         clientId,
         clean: true,
         connectTimeout: 8000,
-        reconnectPeriod: 3000,
+        reconnectPeriod: 2500,
         keepalive: 30
       });
 
-      this.client.on('connect', () => {
-        this.isConnected = true;
-        console.log(`[Sync] Connected to global relay broker: ${brokerUrl}`);
+      this.mqttClient.on('connect', () => {
+        this.isMqttConnected = true;
+        console.log(`[MQTT] Connected to global relay broker: ${brokerUrl}`);
         if (this.currentRoomId) {
           const topic = `turkishparadise/rooms/${this.currentRoomId.toLowerCase()}`;
-          this.client?.subscribe(topic, { qos: 1 });
+          this.mqttClient?.subscribe(topic, { qos: 1 });
         }
       });
 
-      this.client.on('message', (topic, message) => {
+      this.mqttClient.on('message', (_topic, message) => {
         try {
           const parsed = JSON.parse(message.toString()) as SyncMessage;
-          // Ignore own messages from MQTT to avoid echo
           if (parsed.senderId === LOCAL_CLIENT_ID) return;
           this.notifyListeners(parsed);
-        } catch (e) {
-          console.warn('[Sync] Message parse error:', e);
-        }
+        } catch (e) {}
       });
 
-      this.client.on('error', (err) => {
-        console.warn(`[Sync] MQTT connection error with ${brokerUrl}:`, err);
-        this.isConnected = false;
-        // Try fallback broker
-        this.currentBrokerIndex++;
+      this.mqttClient.on('error', (err) => {
+        console.warn(`[MQTT] Connection error with ${brokerUrl}:`, err);
+        this.isMqttConnected = false;
+        this.brokerIndex++;
       });
 
-      this.client.on('offline', () => {
-        this.isConnected = false;
+      this.mqttClient.on('offline', () => {
+        this.isMqttConnected = false;
       });
     } catch (e) {
-      console.warn('[Sync] Failed to initialize MQTT client:', e);
+      console.warn('[MQTT] Failed to initialize MQTT client:', e);
     }
   }
 
@@ -187,7 +323,7 @@ class MultiplayerSyncManager {
       try {
         callback(msg);
       } catch (err) {
-        console.error('[Sync] Listener error:', err);
+        console.error('[Sync] Listener callback error:', err);
       }
     });
   }

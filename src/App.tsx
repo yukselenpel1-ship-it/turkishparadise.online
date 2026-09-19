@@ -53,7 +53,19 @@ import { ProfileModal } from './components/ProfileModal';
 import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [gameState, setGameState] = useState<GameState>(() => createInitialState());
+  const [gameState, setGameState] = useState<GameState>(() => {
+    let initialRoom: string | undefined = undefined;
+    try {
+      if (typeof window !== 'undefined' && window.location.search) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryRoom = urlParams.get('room') || urlParams.get('oda') || urlParams.get('code');
+        if (queryRoom && queryRoom.trim()) {
+          initialRoom = queryRoom.trim().toUpperCase();
+        }
+      }
+    } catch (e) {}
+    return createInitialState(initialRoom ? { roomCode: initialRoom } : undefined);
+  });
   const [userAccount, setUserAccount] = useState<UserAccount | null>(() => getSavedUser());
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [selectedTile, setSelectedTile] = useState<BoardTile | null>(null);
@@ -94,6 +106,10 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!gameState.roomId) return;
 
+    const isMeHost = Boolean(
+      gameState.players.length === 0 || (gameState.players.length > 0 && gameState.players[0].id === myPlayerId)
+    );
+
     const unsubscribe = subscribeToRoom(
       gameState.roomId,
       (remoteState) => {
@@ -105,8 +121,8 @@ export const App: React.FC = () => {
       (newPlayer) => {
         // Host adds incoming player and broadcasts updated state
         setGameState((prev) => {
-          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
-          if (!isMeHost) return prev;
+          const isHost = prev.players.length === 0 || prev.players[0].id === myPlayerId;
+          if (!isHost) return prev;
 
           const exists = prev.players.some((p) => p.id === newPlayer.id || p.name === newPlayer.name);
           if (exists || prev.players.length >= 6) return prev;
@@ -136,13 +152,14 @@ export const App: React.FC = () => {
       () => {
         // Reply with current state when a new peer requests sync
         setGameState((prev) => {
-          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
-          if (isMeHost && prev.roomId) {
+          const isHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
+          if (isHost && prev.roomId) {
             syncRoomState(prev.roomId, prev);
           }
           return prev;
         });
-      }
+      },
+      isMeHost
     );
 
     return () => {

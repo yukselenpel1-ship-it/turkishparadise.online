@@ -231,18 +231,23 @@ export function subscribeToRoom(
   roomId: string,
   onUpdate: (state: GameState) => void,
   onJoinRequest?: (player: Player) => void,
-  onRequestSync?: () => void
+  onRequestSync?: () => void,
+  isHost = false
 ): () => void {
-  // 1. Global Sync Manager Subscription
-  const unsubscribeSyncManager = syncManager.joinRoom(roomId, (msg) => {
-    if (msg.type === 'STATE_SYNC' && msg.state) {
-      onUpdate(msg.state);
-    } else if (msg.type === 'JOIN_REQUEST' && msg.player && onJoinRequest) {
-      onJoinRequest(msg.player);
-    } else if (msg.type === 'REQUEST_SYNC' && onRequestSync) {
-      onRequestSync();
-    }
-  });
+  // 1. Global Sync Manager Subscription (WebRTC + MQTT + BroadcastChannel)
+  const unsubscribeSyncManager = syncManager.joinRoom(
+    roomId,
+    (msg) => {
+      if (msg.type === 'STATE_SYNC' && msg.state) {
+        onUpdate(msg.state);
+      } else if (msg.type === 'JOIN_REQUEST' && msg.player && onJoinRequest) {
+        onJoinRequest(msg.player);
+      } else if (msg.type === 'REQUEST_SYNC' && onRequestSync) {
+        onRequestSync();
+      }
+    },
+    isHost
+  );
 
   // 2. Firebase Realtime DB Listener (if configured)
   let roomRef: any = null;
