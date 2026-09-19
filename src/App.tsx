@@ -51,7 +51,7 @@ import { TradeModal } from './components/TradeModal';
 import { TransactionsModal } from './components/TransactionsModal';
 import { IncomingTradeModal } from './components/IncomingTradeModal';
 import { ProfileModal } from './components/ProfileModal';
-import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck } from 'lucide-react';
+import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins } from 'lucide-react';
 
 const SESSION_PLAYER_ID_KEY = 'tp_active_player_id';
 const SESSION_ROOM_ID_KEY = 'tp_active_room_id';
@@ -120,6 +120,25 @@ export const App: React.FC = () => {
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [mobileSheet, setMobileSheet] = useState<'players' | 'chat' | 'logs' | null>(null);
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const prevChatCountRef = useRef<number>(gameState.chatMessages?.length || 0);
+
+  // Track unread chat messages for mobile badge
+  useEffect(() => {
+    const currentLen = gameState.chatMessages?.length || 0;
+    if (currentLen > prevChatCountRef.current) {
+      if (mobileSheet !== 'chat') {
+        setUnreadChatCount((prev) => prev + (currentLen - prevChatCountRef.current));
+      }
+    }
+    prevChatCountRef.current = currentLen;
+  }, [gameState.chatMessages, mobileSheet]);
+
+  const openMobileChat = () => {
+    setMobileSheet('chat');
+    setUnreadChatCount(0);
+  };
 
   // 1. Process Google OAuth callback on mount or load saved user session
   useEffect(() => {
@@ -950,7 +969,7 @@ export const App: React.FC = () => {
   const me = gameState.players.find((p) => p.id === myPlayerId);
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none">
+    <div className="h-[100dvh] w-screen overflow-hidden bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none">
       {gameState.phase === 'LOBBY' ? (
         <Lobby
           players={gameState.players}
@@ -970,23 +989,31 @@ export const App: React.FC = () => {
       ) : (
         <>
           {/* Top Navbar Header during Game */}
-          <header className="h-12 px-4 flex items-center justify-between shrink-0 bg-slate-900/90 border-b border-slate-800/80 backdrop-blur-md z-40">
-            <div className="flex items-center gap-2.5">
-              <div className="flex items-center gap-1.5 font-['Cinzel',serif] font-black text-sm tracking-wider">
-                <span className="text-base">🎲</span>
-                <span className="text-white">TURKISH</span>
+          <header className="h-11 sm:h-12 px-2 sm:px-4 flex items-center justify-between shrink-0 bg-slate-900/90 border-b border-slate-800/80 backdrop-blur-md z-40">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+              <div className="flex items-center gap-1 sm:gap-1.5 font-['Cinzel',serif] font-black text-xs sm:text-sm tracking-wider shrink-0">
+                <span className="text-sm sm:text-base">🎲</span>
+                <span className="text-white hidden xs:inline">TURKISH</span>
                 <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
               </div>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1">
-                <Wifi className="w-3 h-3 text-emerald-400 animate-pulse" />
-                <span>Canlı Çevrimiçi</span>
+              <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0">
+                <Wifi className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 animate-pulse" />
+                <span className="hidden xs:inline">Canlı</span>
               </span>
-              <span className="text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700 hidden sm:inline-block">
+              <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono bg-slate-800/80 px-1.5 sm:px-2 py-0.5 rounded-full border border-slate-700 hidden sm:inline-block">
                 Oda: {gameState.roomId || gameState.settings?.roomCode}
               </span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-3">
+              {/* User Balance Display (Visible on Mobile & Desktop) */}
+              {me && (
+                <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 px-2 sm:px-2.5 py-1 rounded-xl text-xs font-black text-amber-300 shrink-0">
+                  <Coins className="w-3.5 h-3.5 text-amber-400" />
+                  <span>₺{me.money.toLocaleString('tr-TR')}</span>
+                </div>
+              )}
+
               {userAccount && (
                 <button
                   onClick={() => setIsProfileModalOpen(true)}
@@ -1007,24 +1034,24 @@ export const App: React.FC = () => {
 
               <button
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
+                className="p-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
                 title="Ses Efektleri"
               >
-                {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+                {soundEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />}
               </button>
 
               <button
                 onClick={handleRestart}
-                className="flex items-center gap-1 text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-3 py-1.5 rounded-xl border border-rose-500/30 transition cursor-pointer"
+                className="flex items-center gap-1 text-[11px] sm:text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-rose-500/30 transition cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Yeniden Başlat
+                <RotateCcw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                <span className="hidden xs:inline">Yeniden</span>
               </button>
             </div>
           </header>
 
           {/* Main Gameplay Screen (100% Viewport Fitted) */}
-          <main className="flex-1 min-h-0 px-2 sm:px-4 py-2 flex items-center justify-center gap-3 sm:gap-4 overflow-hidden">
+          <main className="flex-1 min-h-0 px-1 sm:px-4 py-1 sm:py-2 flex items-center justify-center gap-2 sm:gap-4 overflow-hidden">
             
             {/* Left Sidebar: Player List & In-game Chat */}
             <div className="h-full w-56 xl:w-64 shrink-0 hidden md:flex flex-col gap-2 justify-between overflow-hidden">
@@ -1079,7 +1106,95 @@ export const App: React.FC = () => {
             </div>
 
           </main>
+
+          {/* Mobile Bottom Navigation Bar (Visible only on < md screens) */}
+          <div className="md:hidden shrink-0 h-12 bg-slate-900/95 border-t border-slate-800/90 px-3 flex items-center justify-around z-40 backdrop-blur-md pb-safe">
+            <button
+              onClick={() => setMobileSheet(mobileSheet === 'players' ? null : 'players')}
+              className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer ${
+                mobileSheet === 'players' ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Oyuncular ({gameState.players.length})</span>
+            </button>
+
+            <button
+              onClick={openMobileChat}
+              className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer relative ${
+                mobileSheet === 'chat' ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Sohbet</span>
+              {unreadChatCount > 0 && (
+                <span className="absolute -top-1 right-1.5 bg-rose-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.2 animate-bounce shadow">
+                  {unreadChatCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setMobileSheet(mobileSheet === 'logs' ? null : 'logs')}
+              className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer ${
+                mobileSheet === 'logs' ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ScrollText className="w-4 h-4" />
+              <span>Kayıtlar</span>
+            </button>
+          </div>
         </>
+      )}
+
+      {/* Mobile Drawer / Slide-up Sheet (< md) */}
+      {mobileSheet && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/80 backdrop-blur-sm animate-fade-in md:hidden">
+          <div
+            className="fixed inset-0"
+            onClick={() => setMobileSheet(null)}
+          />
+          <div className="bg-[#0b1222] border-t-2 border-amber-500/40 rounded-t-3xl p-4 w-full max-h-[82dvh] flex flex-col shadow-2xl relative z-10 animate-fade-in">
+            <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-3 shrink-0" />
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3 shrink-0">
+              <span className="text-sm font-black text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                {mobileSheet === 'players' && <><Users className="w-4 h-4" /> Oyuncu Durumu</>}
+                {mobileSheet === 'chat' && <><MessageSquare className="w-4 h-4" /> Oyun Sohbeti</>}
+                {mobileSheet === 'logs' && <><ScrollText className="w-4 h-4" /> Bildirimler & Kayıtlar</>}
+              </span>
+              <button
+                onClick={() => setMobileSheet(null)}
+                className="p-1 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {mobileSheet === 'players' && (
+                <PlayerList
+                  players={gameState.players}
+                  currentTurnIndex={gameState.currentTurnIndex}
+                  board={gameState.board}
+                  myPlayerId={myPlayerId}
+                />
+              )}
+              {mobileSheet === 'chat' && (
+                <div className="h-[55dvh]">
+                  <Chat
+                    messages={gameState.chatMessages || []}
+                    currentPlayer={me || null}
+                    onSendMessage={handleSendMessageAction}
+                  />
+                </div>
+              )}
+              {mobileSheet === 'logs' && (
+                <div className="h-[55dvh]">
+                  <GameLogs logs={gameState.logs} />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Incoming Trade Offer Modal from Bot or Player (Rendered ONLY for target recipient) */}
