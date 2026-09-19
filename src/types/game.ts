@@ -137,6 +137,20 @@ export interface FinancialTransaction {
   timestamp: string;
 }
 
+export interface UserAccount {
+  uid: string;
+  displayName: string;
+  email?: string | null;
+  photoURL?: string | null;
+  isAnonymous: boolean;
+  provider: 'google' | 'guest';
+  stats?: {
+    gamesWon: number;
+    gamesPlayed: number;
+    totalMoneyEarned: number;
+  };
+}
+
 export interface GameState {
   roomId: string;
   settings: GameSettings;
@@ -154,5 +168,8 @@ export interface GameState {
   pendingAction: ActionType;
   actionMessage?: string;
   winner?: Player;
+  isOnlineGame?: boolean;
+  networkStatus?: 'connected' | 'connecting' | 'disconnected';
 }
+
 

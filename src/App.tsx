@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { GameState, BoardTile, Player, TradeOffer, GameSettings, BotDifficulty } from './types/game';
+import React, { useState, useEffect, useRef } from 'react';
+import { GameState, BoardTile, Player, TradeOffer, GameSettings, BotDifficulty, UserAccount } from './types/game';
 import {
   createInitialState,
   handleRollDice,
@@ -23,6 +23,15 @@ import {
   addLog,
   addTransaction
 } from './engine/gameEngine';
+import {
+  loginWithGoogle,
+  loginAsGuest,
+  logoutUser,
+  getSavedUser,
+  syncRoomState,
+  subscribeToRoom,
+  recordGameWin
+} from './services/firebase';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -34,10 +43,11 @@ import { WinnerModal } from './components/WinnerModal';
 import { MyPropertiesModal } from './components/MyPropertiesModal';
 import { TradeModal } from './components/TradeModal';
 import { TransactionsModal } from './components/TransactionsModal';
-import { RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => createInitialState());
+  const [userAccount, setUserAccount] = useState<UserAccount | null>(() => getSavedUser());
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [selectedTile, setSelectedTile] = useState<BoardTile | null>(null);
   const [isPropertiesModalOpen, setIsPropertiesModalOpen] = useState(false);
@@ -46,29 +56,97 @@ export const App: React.FC = () => {
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  
+  // Track last synced state timestamp to prevent echo loops
+  const isRemoteUpdateRef = useRef(false);
 
-  // Handle Bot Turns Automatically
+  // 1. Load initial user on mount
+  useEffect(() => {
+    const saved = getSavedUser();
+    if (saved) {
+      setUserAccount(saved);
+    }
+  }, []);
+
+  // 2. Real-time Room State Synchronization
+  useEffect(() => {
+    if (!gameState.roomId) return;
+
+    const unsubscribe = subscribeToRoom(gameState.roomId, (remoteState) => {
+      if (remoteState && remoteState.roomId === gameState.roomId) {
+        isRemoteUpdateRef.current = true;
+        setGameState(remoteState);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [gameState.roomId]);
+
+  // Sync state changes to room (only if not an incoming remote update)
+  const updateAndBroadcastGameState = (updater: (prev: GameState) => GameState) => {
+    setGameState((prev) => {
+      const next = updater(prev);
+      if (!isRemoteUpdateRef.current && next.roomId) {
+        syncRoomState(next.roomId, next);
+      }
+      isRemoteUpdateRef.current = false;
+      return next;
+    });
+  };
+
+  // 3. Handle Bot Turns Automatically (Host controls bots)
   useEffect(() => {
     if (gameState.phase !== 'PLAYING' || isMoving) return;
 
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
-    if (currentPlayer && currentPlayer.isBot && currentPlayer.inGame) {
+    const isMeHost = gameState.players[0]?.id === myPlayerId;
+
+    // Only host triggers bot turns to prevent duplicate bot actions
+    if (currentPlayer && currentPlayer.isBot && currentPlayer.inGame && isMeHost) {
       const botTimer = setTimeout(() => {
-        setGameState((prev) => runBotTurn(prev));
+        updateAndBroadcastGameState((prev) => runBotTurn(prev));
       }, 1200);
 
       return () => clearTimeout(botTimer);
     }
-  }, [gameState.currentTurnIndex, gameState.phase, gameState.diceRolled, gameState.pendingAction, isMoving]);
+  }, [gameState.currentTurnIndex, gameState.phase, gameState.diceRolled, gameState.pendingAction, isMoving, myPlayerId]);
 
-  // Join Game as Human Player with selected avatar and color
-  const handleJoin = (name: string, avatar: string, color?: string) => {
-    const newId = `player_${Math.random().toString(36).substring(2, 9)}`;
+  // Auth Handlers
+  const handleGoogleLogin = async () => {
+    try {
+      const account = await loginWithGoogle();
+      setUserAccount(account);
+    } catch (err) {
+      console.error('Google login failed:', err);
+    }
+  };
+
+  const handleGuestLogin = async (customName?: string) => {
+    try {
+      const account = await loginAsGuest(customName);
+      setUserAccount(account);
+    } catch (err) {
+      console.error('Guest login failed:', err);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    setUserAccount(null);
+  };
+
+  // Join Game as Player
+  const handleJoin = (name: string, avatar: string, color?: string, isOnline = true, targetRoomCode?: string) => {
+    const finalRoom = targetRoomCode || gameState.settings.roomCode || 'TR-1001';
+    const newId = userAccount?.uid || `player_${Math.random().toString(36).substring(2, 9)}`;
     const startMoney = gameState.settings?.startingMoney || 1500;
     const chosenColor = color || PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length];
+    
     const newPlayer: Player = {
       id: newId,
-      name,
+      name: name || userAccount?.displayName || 'Oyuncu',
       avatar,
       color: chosenColor,
       money: startMoney,
@@ -83,9 +161,24 @@ export const App: React.FC = () => {
     };
 
     setMyPlayerId(newId);
-    setGameState((prev) => {
-      const updated = { ...prev, players: [...prev.players, newPlayer] };
-      addLog(updated, `👋 ${name} oyuna katıldı! (Başlangıç: ${startMoney}₺)`, 'success');
+    updateAndBroadcastGameState((prev) => {
+      // Avoid duplicate join if already exists
+      const existingIdx = prev.players.findIndex(p => p.id === newId);
+      let nextPlayers = [...prev.players];
+      if (existingIdx >= 0) {
+        nextPlayers[existingIdx] = newPlayer;
+      } else {
+        nextPlayers.push(newPlayer);
+      }
+
+      const updated = {
+        ...prev,
+        roomId: finalRoom,
+        isOnlineGame: isOnline,
+        settings: { ...prev.settings, roomCode: finalRoom },
+        players: nextPlayers
+      };
+      addLog(updated, `👋 ${newPlayer.name} odaya katıldı! (${finalRoom})`, 'success');
       return updated;
     });
   };
@@ -93,7 +186,7 @@ export const App: React.FC = () => {
   // Leave Lobby / Go Back
   const handleLeaveLobby = () => {
     if (!myPlayerId) return;
-    setGameState((prev) => ({
+    updateAndBroadcastGameState((prev) => ({
       ...prev,
       players: prev.players.filter((p) => p.id !== myPlayerId)
     }));
@@ -102,7 +195,7 @@ export const App: React.FC = () => {
 
   // Update Game Settings (Host Only)
   const handleUpdateSettings = (newSettings: GameSettings) => {
-    setGameState((prev) => ({
+    updateAndBroadcastGameState((prev) => ({
       ...prev,
       settings: newSettings,
       roomId: newSettings.roomCode
@@ -138,7 +231,7 @@ export const App: React.FC = () => {
       botDifficulty: difficulty
     };
 
-    setGameState((prev) => {
+    updateAndBroadcastGameState((prev) => {
       const updated = { ...prev, players: [...prev.players, botPlayer] };
       addLog(updated, `🤖 ${botName} (${difficulty.toUpperCase()}) odaya eklendi.`, 'info');
       return updated;
@@ -149,7 +242,7 @@ export const App: React.FC = () => {
   const handleStartGame = () => {
     if (gameState.players.length < 2) return;
 
-    setGameState((prev) => {
+    updateAndBroadcastGameState((prev) => {
       const startMoney = prev.settings?.startingMoney || 1500;
       const updatedPlayers = prev.players.map(p => ({
         ...p,
@@ -159,7 +252,7 @@ export const App: React.FC = () => {
       }));
 
       const updated = { ...prev, players: updatedPlayers, phase: 'PLAYING' as const };
-      addLog(updated, '🎮 Pococoly oyunu başladı! İyi şanslar!', 'success');
+      addLog(updated, '🎮 Turkish Paradise oyunu başladı! İyi şanslar!', 'success');
       return updated;
     });
   };
@@ -171,6 +264,11 @@ export const App: React.FC = () => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     if (!currentPlayer) return;
 
+    // Check if it's my turn
+    if (currentPlayer.id !== myPlayerId && !currentPlayer.isBot) {
+      return;
+    }
+
     const dice = rollDice();
     const diceTotal = dice[0] + dice[1];
     const isDouble = dice[0] === dice[1];
@@ -178,7 +276,7 @@ export const App: React.FC = () => {
     // Check jail condition
     if (currentPlayer.isJailed) {
       if (isDouble) {
-        setGameState(prev => {
+        updateAndBroadcastGameState(prev => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
           p.isJailed = false;
@@ -189,7 +287,7 @@ export const App: React.FC = () => {
           return updated;
         });
       } else {
-        setGameState(prev => {
+        updateAndBroadcastGameState(prev => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
           p.jailTurns += 1;
@@ -211,11 +309,11 @@ export const App: React.FC = () => {
       }
     }
 
-    // Doubles streak
+    // Doubles streak 3rd time check
     if (isDouble && !currentPlayer.isJailed) {
       const nextDoubles = gameState.doublesCount + 1;
       if (nextDoubles >= 3) {
-        setGameState(prev => {
+        updateAndBroadcastGameState(prev => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
           p.position = JAIL_TILE_INDEX;
@@ -234,7 +332,7 @@ export const App: React.FC = () => {
 
     // Start Step-by-Step Movement
     setIsMoving(true);
-    setGameState(prev => {
+    updateAndBroadcastGameState(prev => {
       const updated = JSON.parse(JSON.stringify(prev)) as GameState;
       updated.dice = dice;
       updated.diceRolled = true;
@@ -250,7 +348,7 @@ export const App: React.FC = () => {
     let stepCount = 0;
     const interval = setInterval(() => {
       stepCount++;
-      setGameState(prev => {
+      updateAndBroadcastGameState(prev => {
         const { state } = advancePlayerStep(prev, currentPlayer.id);
         return state;
       });
@@ -258,42 +356,41 @@ export const App: React.FC = () => {
       if (stepCount >= diceTotal) {
         clearInterval(interval);
         setTimeout(() => {
-          setGameState(prev => finalizePlayerLanding(prev, currentPlayer.id));
+          updateAndBroadcastGameState(prev => finalizePlayerLanding(prev, currentPlayer.id));
           setIsMoving(false);
         }, 120);
       }
     }, 180);
   };
 
-
   // End Turn Action
   const handleEndTurnAction = () => {
-    setGameState((prev) => nextTurn(prev));
+    updateAndBroadcastGameState((prev) => nextTurn(prev));
   };
 
   // Buy Property Action
   const handleBuyPropertyAction = () => {
-    setGameState((prev) => buyProperty(prev));
+    updateAndBroadcastGameState((prev) => buyProperty(prev));
   };
 
   // Pass Property Action (Skip buying)
   const handlePassPropertyAction = () => {
-    setGameState((prev) => passProperty(prev));
+    updateAndBroadcastGameState((prev) => passProperty(prev));
   };
 
   // Sell Property to Bank for 2/3 price
   const handleSellToBankAction = (tileId: number) => {
-    setGameState((prev) => sellPropertyToBank(prev, tileId));
+    updateAndBroadcastGameState((prev) => sellPropertyToBank(prev, tileId));
   };
 
   // Pay 100 Bail to leave Kodes (Jail)
   const handlePayJailBailAction = () => {
-    setGameState((prev) => payJailBail(prev));
+    updateAndBroadcastGameState((prev) => payJailBail(prev));
   };
 
   // Build House Action
   const handleBuildHouseAction = (tileId: number) => {
-    setGameState((prev) => buildHouse(prev, tileId));
+    updateAndBroadcastGameState((prev) => buildHouse(prev, tileId));
     if (selectedTile) {
       setSelectedTile((prev) => (prev ? { ...prev, houses: prev.houses + 1 } : null));
     }
@@ -301,7 +398,7 @@ export const App: React.FC = () => {
 
   // Toggle Mortgage Action
   const handleToggleMortgageAction = (tileId: number) => {
-    setGameState((prev) => toggleMortgage(prev, tileId));
+    updateAndBroadcastGameState((prev) => toggleMortgage(prev, tileId));
     if (selectedTile) {
       setSelectedTile((prev) => (prev ? { ...prev, isMortgaged: !prev.isMortgaged } : null));
     }
@@ -309,24 +406,25 @@ export const App: React.FC = () => {
 
   // Apply Chance Card
   const handleConfirmChanceCard = () => {
-    setGameState((prev) => applyChanceCard(prev));
+    updateAndBroadcastGameState((prev) => applyChanceCard(prev));
   };
 
   // Trade Execution Action
   const handleExecuteTradeAction = (offer: TradeOffer) => {
-    setGameState((prev) => executeTrade(prev, offer));
+    updateAndBroadcastGameState((prev) => executeTrade(prev, offer));
   };
 
   // Send Chat Message
   const handleSendMessageAction = (text: string) => {
     const mePlayer = gameState.players.find((p) => p.id === myPlayerId);
     if (!mePlayer) return;
-    setGameState((prev) => addChatMessage(prev, mePlayer, text));
+    updateAndBroadcastGameState((prev) => addChatMessage(prev, mePlayer, text));
   };
 
   // Restart Game
   const handleRestart = () => {
-    setGameState(createInitialState(gameState.settings));
+    const nextInit = createInitialState(gameState.settings);
+    updateAndBroadcastGameState(() => nextInit);
     setMyPlayerId(null);
     setSelectedTile(null);
     setIsPropertiesModalOpen(false);
@@ -343,6 +441,10 @@ export const App: React.FC = () => {
           players={gameState.players}
           myPlayerId={myPlayerId}
           settings={gameState.settings}
+          userAccount={userAccount}
+          onGoogleLogin={handleGoogleLogin}
+          onGuestLogin={handleGuestLogin}
+          onLogout={handleLogout}
           onUpdateSettings={handleUpdateSettings}
           onJoin={handleJoin}
           onAddBot={handleAddBot}
@@ -359,16 +461,27 @@ export const App: React.FC = () => {
                 <span className="text-white">TURKISH</span>
                 <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
               </div>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
-                Oyun Devam Ediyor
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1">
+                <Wifi className="w-3 h-3 text-emerald-400 animate-pulse" />
+                <span>Canlı Çevrimiçi</span>
               </span>
               <span className="text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700 hidden sm:inline-block">
-                Oda: {gameState.settings?.roomCode}
+                Oda: {gameState.roomId || gameState.settings?.roomCode}
               </span>
             </div>
 
-
             <div className="flex items-center gap-3">
+              {userAccount && (
+                <div className="hidden md:flex items-center gap-2 bg-slate-800/80 border border-slate-700/60 rounded-xl px-2.5 py-1 text-xs">
+                  {userAccount.photoURL ? (
+                    <img src={userAccount.photoURL} alt="" className="w-4 h-4 rounded-full" />
+                  ) : (
+                    <span className="text-amber-400 font-bold">👤</span>
+                  )}
+                  <span className="text-slate-200 font-bold">{userAccount.displayName}</span>
+                </div>
+              )}
+
               <button
                 onClick={() => setSoundEnabled(!soundEnabled)}
                 className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
@@ -508,10 +621,17 @@ export const App: React.FC = () => {
 
       {/* Winner Modal */}
       {gameState.phase === 'ENDED' && gameState.winner && (
-        <WinnerModal winner={gameState.winner} onRestart={handleRestart} />
+        <WinnerModal
+          winner={gameState.winner}
+          onRestart={() => {
+            if (gameState.winner && userAccount && gameState.winner.id === userAccount.uid) {
+              recordGameWin(userAccount.uid, gameState.winner.money);
+            }
+            handleRestart();
+          }}
+        />
       )}
 
     </div>
   );
 };
-
