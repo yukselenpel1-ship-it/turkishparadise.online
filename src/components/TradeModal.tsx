@@ -21,15 +21,20 @@ export const TradeModal: React.FC<TradeModalProps> = ({
 }) => {
   const otherPlayers = players.filter((p) => p.id !== currentPlayer.id && p.inGame);
   
-  const [selectedTargetPlayerId, setSelectedTargetPlayerId] = useState<string>(
-    otherPlayers[0]?.id || ''
-  );
+  const isInitialTileMine = initialOfferedTile ? initialOfferedTile.ownerId === currentPlayer.id : false;
+  const initialTargetPlayerId = (initialOfferedTile && !isInitialTileMine && initialOfferedTile.ownerId)
+    ? initialOfferedTile.ownerId
+    : (otherPlayers[0]?.id || '');
+
+  const [selectedTargetPlayerId, setSelectedTargetPlayerId] = useState<string>(initialTargetPlayerId);
   const [selectedMyTileIds, setSelectedMyTileIds] = useState<number[]>(
-    initialOfferedTile ? [initialOfferedTile.id] : []
+    initialOfferedTile && isInitialTileMine ? [initialOfferedTile.id] : []
   );
   const [offeredMoney, setOfferedMoney] = useState<number>(0);
 
-  const [selectedTargetTileIds, setSelectedTargetTileIds] = useState<number[]>([]);
+  const [selectedTargetTileIds, setSelectedTargetTileIds] = useState<number[]>(
+    initialOfferedTile && !isInitialTileMine ? [initialOfferedTile.id] : []
+  );
   const [requestedMoney, setRequestedMoney] = useState<number>(0);
 
   const targetPlayer = players.find((p) => p.id === selectedTargetPlayerId);

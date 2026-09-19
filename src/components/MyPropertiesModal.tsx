@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BoardTile, Player } from '../types/game';
 import { X, Building2, ArrowLeftRight, Home, Lock, Unlock } from 'lucide-react';
+import { hasColorGroupMonopoly } from '../engine/gameEngine';
 
 interface MyPropertiesModalProps {
   currentPlayer: Player;
@@ -134,18 +135,19 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
                         onClose();
                         onOpenTradeForTile(tile);
                       }}
-                      className="flex-1 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 hover:text-white font-bold py-2 px-2 rounded-xl border border-indigo-700/60 transition text-[11px] flex items-center justify-center gap-1 cursor-pointer"
+                      className="flex-1 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 hover:text-white font-bold py-2 px-2 rounded-xl border border-indigo-700/60 transition text-[11px] flex items-center justify-center gap-1 cursor-pointer active:scale-95"
                     >
                       <ArrowLeftRight className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Takas Et</span>
+                      <span>{isCurrentMe ? 'Takasa Sun' : 'Takas Teklif Et'}</span>
                     </button>
 
                     {/* Manage if Mine */}
                     {isCurrentMe && tile.type === 'property' && tile.houseCost && tile.houses < 5 && (
                       <button
                         onClick={() => onBuildHouse(tile.id)}
-                        className="p-2 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-xl border border-amber-500/30 transition text-xs cursor-pointer"
-                        title="Ev Dik"
+                        disabled={!hasColorGroupMonopoly(board, tile.colorGroup, currentPlayer.id) || currentPlayer.money < tile.houseCost}
+                        className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed text-amber-400 rounded-xl border border-amber-500/30 transition text-xs cursor-pointer active:scale-95"
+                        title={!hasColorGroupMonopoly(board, tile.colorGroup, currentPlayer.id) ? "Ev dikmek için bu rengin tüm şehirlerine sahip olmalısınız" : `Ev/Otel Dik (₺${tile.houseCost})`}
                       >
                         <Home className="w-4 h-4" />
                       </button>
@@ -154,7 +156,7 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
                     {isCurrentMe && tile.type === 'property' && tile.houseCost && tile.houses > 0 && onSellHouse && (
                       <button
                         onClick={() => onSellHouse(tile.id)}
-                        className="p-2 bg-slate-900 hover:bg-slate-800 text-rose-400 rounded-xl border border-rose-500/30 transition text-xs cursor-pointer"
+                        className="p-2 bg-slate-900 hover:bg-slate-800 text-rose-400 rounded-xl border border-rose-500/30 transition text-xs cursor-pointer active:scale-95"
                         title={`1 Ev Sat (+₺${Math.floor(tile.houseCost / 2)})`}
                       >
                         <span className="text-xs">🏚️</span>
@@ -164,7 +166,7 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
                     {isCurrentMe && (
                       <button
                         onClick={() => onToggleMortgage(tile.id)}
-                        className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-700 transition text-xs cursor-pointer"
+                        className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-700 transition text-xs cursor-pointer active:scale-95"
                         title={tile.isMortgaged ? 'İpoteği Kaldır' : 'İpotek Ettir'}
                       >
                         {tile.isMortgaged ? (
@@ -178,7 +180,7 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
                     {isCurrentMe && onSellToBank && tile.price && (
                       <button
                         onClick={() => onSellToBank(tile.id)}
-                        className="px-2 py-1.5 bg-rose-950/70 hover:bg-rose-900 text-rose-300 rounded-xl border border-rose-800/60 transition text-[10px] font-bold cursor-pointer"
+                        className="px-2 py-1.5 bg-rose-950/70 hover:bg-rose-900 text-rose-300 rounded-xl border border-rose-800/60 transition text-[10px] font-bold cursor-pointer active:scale-95"
                         title={`Bankaya 2/3 Fiyatına Sat (+₺${Math.floor(tile.price * (2/3)) + (tile.houses > 0 && tile.houseCost ? Math.floor(tile.houses * tile.houseCost * 0.5) : 0)})`}
                       >
                         🏛️ 2/3 Sat

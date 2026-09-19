@@ -267,13 +267,23 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
               </button>
             )}
 
-            {/* Quick Trade Offer Option for this Tile */}
+            {/* Quick Trade Offer Option for this Tile (My Property) */}
             {isOwner && onStartTrade && (
               <button
                 onClick={() => onStartTrade(tile)}
-                className="w-full bg-indigo-950/80 hover:bg-indigo-900 text-indigo-200 font-bold py-2 rounded-xl border border-indigo-700/60 transition flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                className="w-full bg-indigo-950/80 hover:bg-indigo-900 text-indigo-200 font-bold py-2 rounded-xl border border-indigo-700/60 transition flex items-center justify-center gap-1.5 text-xs cursor-pointer active:scale-95"
               >
                 <span>🔄 Bu Mülkü Başkasıyla Takas Et</span>
+              </button>
+            )}
+
+            {/* Trade Offer to Owner (Other Player's Property) */}
+            {!isOwner && tile.ownerId && onStartTrade && (
+              <button
+                onClick={() => onStartTrade(tile)}
+                className="w-full bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 font-bold py-2.5 rounded-xl border border-amber-500/40 transition flex items-center justify-center gap-1.5 text-xs cursor-pointer active:scale-95"
+              >
+                <span>🤝 Sahibiyle ({owner?.name || 'Oyuncu'}) Takas Teklifi Başlat</span>
               </button>
             )}
 

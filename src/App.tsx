@@ -247,7 +247,8 @@ export const App: React.FC = () => {
               ...nextPlayers[existingIdx],
               ...newPlayer,
               inGame: true,
-              isAfk: false
+              isAfk: false,
+              isBot: false
             };
             const updated = { ...prev, players: nextPlayers };
             addLog(updated, `✨ ${newPlayer.name} tekrar bağlandı ve oyuna döndü!`, 'success');
@@ -268,7 +269,8 @@ export const App: React.FC = () => {
             ...newPlayer,
             color: assignedColor,
             isHost: false,
-            isAfk: false
+            isAfk: false,
+            isBot: false
           };
 
           const updated = {
@@ -426,7 +428,7 @@ export const App: React.FC = () => {
     if (!gameState.diceRolled) {
       const timer = setTimeout(() => {
         handleRollDiceAction();
-      }, 500);
+      }, 1000);
       return () => clearTimeout(timer);
     }
 
@@ -447,7 +449,7 @@ export const App: React.FC = () => {
           } else {
             handlePassPropertyAction();
           }
-        }, 600);
+        }, 1200);
         return () => clearTimeout(timer);
       }
 
@@ -455,7 +457,7 @@ export const App: React.FC = () => {
       if (gameState.pendingAction === 'CHANCE_CARD') {
         const timer = setTimeout(() => {
           handleConfirmChanceCard();
-        }, 600);
+        }, 1200);
         return () => clearTimeout(timer);
       }
 
@@ -498,7 +500,7 @@ export const App: React.FC = () => {
             }
             return next;
           });
-        }, 600);
+        }, 1200);
         return () => clearTimeout(timer);
       }
     }
@@ -784,9 +786,9 @@ export const App: React.FC = () => {
       }
     }
 
-    // Doubles streak 3rd time check
+    // Doubles streak 3rd time check -> Straight to Jail (Kodes)
     if (isDouble && !currentPlayer.isJailed) {
-      const nextDoubles = gameState.doublesCount + 1;
+      const nextDoubles = (gameState.doublesCount || 0) + 1;
       if (nextDoubles >= 3) {
         updateAndBroadcastGameState(prev => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
@@ -797,7 +799,7 @@ export const App: React.FC = () => {
           updated.doublesCount = 0;
           updated.dice = dice;
           updated.diceRolled = true;
-          addLog(updated, `🚨 3 kez üst üste çift atan ${p.name} kodese tıkıldı!`, 'danger');
+          addLog(updated, `🚨 3 kez üst üste çift atan (${dice[0]}-${dice[1]}) ${p.name} doğrudan Kodese gönderildi!`, 'danger');
           updated.pendingAction = 'NONE';
           return updated;
         });
@@ -812,11 +814,13 @@ export const App: React.FC = () => {
       updated.dice = dice;
       updated.diceRolled = true;
       if (isDouble) {
-        updated.doublesCount += 1;
+        const nextStreak = (prev.doublesCount || 0) + 1;
+        updated.doublesCount = nextStreak;
+        addLog(updated, `🎲 ${currentPlayer.name} çift attı: 🎲 ${dice[0]} - ${dice[1]}! İlerledikten sonra bir kez daha zar atacak! (${nextStreak}/3)`, 'success');
       } else {
         updated.doublesCount = 0;
+        addLog(updated, `${currentPlayer.name} zar attı: 🎲 ${dice[0]} - ${dice[1]} (Toplam: ${diceTotal})`, 'action');
       }
-      addLog(updated, `${currentPlayer.name} zar attı: 🎲 ${dice[0]} - ${dice[1]} (Toplam: ${diceTotal})`, 'action');
       return updated;
     });
 
@@ -833,9 +837,9 @@ export const App: React.FC = () => {
         setTimeout(() => {
           updateAndBroadcastGameState(prev => finalizePlayerLanding(prev, currentPlayer.id));
           setIsMoving(false);
-        }, 60);
+        }, 220);
       }
-    }, 130);
+    }, 200);
   };
 
   // End Turn Action
@@ -910,7 +914,7 @@ export const App: React.FC = () => {
     const senderPlayer = gameState.players.find((p) => p.id === offer.fromPlayerId);
     if (!targetPlayer || !senderPlayer) return;
 
-    if (targetPlayer.isBot) {
+    if (Boolean(targetPlayer.isBot) === true) {
       // For Bot: immediate AI evaluation & transaction
       updateAndBroadcastGameState((prev) => executeTrade(prev, offer));
     } else {
