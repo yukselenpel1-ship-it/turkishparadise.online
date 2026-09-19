@@ -199,26 +199,16 @@ export function recordGameWin(uid: string, moneyEarned: number) {
   localStorage.setItem(STATS_KEY_PREFIX + uid, JSON.stringify(updated));
 }
 
+import { syncManager } from './multiplayerSync';
+
 // --- REAL-TIME ROOM & MULTIPLAYER METHODS ---
 
-// Broadcast channel for multi-tab / local testing fallback
-let localChannel: BroadcastChannel | null = null;
-try {
-  if (typeof BroadcastChannel !== 'undefined') {
-    localChannel = new BroadcastChannel('tp_multiplayer_channel');
-  }
-} catch (e) {
-  console.warn('[BroadcastChannel] Not supported', e);
-}
-
 /**
- * Create or sync room in Firebase Realtime Database
+ * Create or sync room in global cloud multiplayer relay & Firebase Realtime Database
  */
 export async function syncRoomState(roomId: string, gameState: GameState): Promise<void> {
-  // 1. Broadcast locally for multi-tab instant response
-  if (localChannel) {
-    localChannel.postMessage({ type: 'STATE_UPDATE', roomId, state: gameState });
-  }
+  // 1. Sync through MultiplayerSyncManager (MQTT WebSocket + local BroadcastChannel)
+  syncManager.broadcastState(roomId, gameState);
 
   // 2. Sync to Firebase Realtime DB if connected
   if (isFirebaseConfigured && database) {
@@ -235,24 +225,26 @@ export async function syncRoomState(roomId: string, gameState: GameState): Promi
 }
 
 /**
- * Subscribe to real-time room updates
+ * Subscribe to real-time room updates across devices worldwide
  */
 export function subscribeToRoom(
   roomId: string,
-  onUpdate: (state: GameState) => void
+  onUpdate: (state: GameState) => void,
+  onJoinRequest?: (player: Player) => void,
+  onRequestSync?: () => void
 ): () => void {
-  // 1. Local Broadcast Listener
-  const handleMessage = (event: MessageEvent) => {
-    if (event.data?.type === 'STATE_UPDATE' && event.data?.roomId === roomId) {
-      onUpdate(event.data.state);
+  // 1. Global Sync Manager Subscription
+  const unsubscribeSyncManager = syncManager.joinRoom(roomId, (msg) => {
+    if (msg.type === 'STATE_SYNC' && msg.state) {
+      onUpdate(msg.state);
+    } else if (msg.type === 'JOIN_REQUEST' && msg.player && onJoinRequest) {
+      onJoinRequest(msg.player);
+    } else if (msg.type === 'REQUEST_SYNC' && onRequestSync) {
+      onRequestSync();
     }
-  };
+  });
 
-  if (localChannel) {
-    localChannel.addEventListener('message', handleMessage);
-  }
-
-  // 2. Firebase Realtime DB Listener
+  // 2. Firebase Realtime DB Listener (if configured)
   let roomRef: any = null;
   if (isFirebaseConfigured && database) {
     try {
@@ -270,11 +262,10 @@ export function subscribeToRoom(
 
   // Cleanup unsubscribe function
   return () => {
-    if (localChannel) {
-      localChannel.removeEventListener('message', handleMessage);
-    }
+    unsubscribeSyncManager();
     if (roomRef) {
       off(roomRef);
     }
   };
 }
+

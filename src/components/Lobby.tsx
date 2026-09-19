@@ -72,6 +72,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [activeModal, setActiveModal] = useState<'rules' | 'features' | 'community' | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
+  const [isInviteLink, setIsInviteLink] = useState(false);
 
   // Check URL query parameters for invite link: ?room=TR-XXXX or ?oda=TR-XXXX
   useEffect(() => {
@@ -81,10 +82,18 @@ export const Lobby: React.FC<LobbyProps> = ({
       if (urlRoom && urlRoom.trim()) {
         const cleanCode = urlRoom.trim().toUpperCase();
         setRoomCode(cleanCode);
+        setIsInviteLink(true);
         setMode('friend');
       }
     } catch (e) {}
   }, []);
+
+  // Sync roomCode if host settings change
+  useEffect(() => {
+    if (settings.roomCode && !isInviteLink) {
+      setRoomCode(settings.roomCode);
+    }
+  }, [settings.roomCode, isInviteLink]);
 
   // Sync userAccount name with input when logged in
   useEffect(() => {
@@ -726,6 +735,18 @@ export const Lobby: React.FC<LobbyProps> = ({
                     Arkadaş Odasına Katıl
                   </span>
                 </div>
+
+                {isInviteLink && (
+                  <div className="bg-sky-500/15 border border-sky-500/40 rounded-2xl p-3 text-left flex items-center gap-2.5 shadow-lg shadow-sky-500/10">
+                    <span className="text-xl">🎉</span>
+                    <div className="text-xs">
+                      <p className="font-black text-sky-300">Arkadaş Daveti Algılandı!</p>
+                      <p className="text-slate-300 text-[11px] mt-0.5">
+                        <strong className="text-white font-mono">{roomCode}</strong> odasına davet edildiniz. Adınızı girip hemen katılın.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Room Code */}
                 <div className="space-y-1.5 text-left">

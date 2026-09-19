@@ -59,6 +59,15 @@ export function initiateGoogleOAuthRedirect(): void {
   const state = generateSecureRandomState();
   sessionStorage.setItem(OAUTH_STATE_KEY, state);
 
+  // Preserve room parameter across Google redirect
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room') || urlParams.get('oda') || urlParams.get('code');
+    if (roomParam) {
+      sessionStorage.setItem('tp_oauth_room', roomParam.trim().toUpperCase());
+    }
+  } catch (e) {}
+
   // 2. Generate nonce for OpenID Connect
   const nonce = generateSecureRandomState();
 
@@ -192,8 +201,13 @@ export async function handleGoogleOAuthCallback(): Promise<UserAccount | null> {
     // Save user session in localStorage
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(userAccount));
 
+    // Restore room parameter if present
+    const savedRoom = sessionStorage.getItem('tp_oauth_room');
+    sessionStorage.removeItem('tp_oauth_room');
+    const searchString = savedRoom ? `?room=${savedRoom}` : window.location.search;
+
     // Clean hash from URL for a pristine browser experience
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    window.history.replaceState(null, '', window.location.pathname + searchString);
 
     return userAccount;
   } catch (err) {

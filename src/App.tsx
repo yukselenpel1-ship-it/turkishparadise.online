@@ -32,6 +32,7 @@ import {
   subscribeToRoom,
   recordGameWin
 } from './services/firebase';
+import { syncManager } from './services/multiplayerSync';
 import {
   initiateGoogleOAuthRedirect,
   handleGoogleOAuthCallback
@@ -93,17 +94,61 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!gameState.roomId) return;
 
-    const unsubscribe = subscribeToRoom(gameState.roomId, (remoteState) => {
-      if (remoteState && remoteState.roomId === gameState.roomId) {
-        isRemoteUpdateRef.current = true;
-        setGameState(remoteState);
+    const unsubscribe = subscribeToRoom(
+      gameState.roomId,
+      (remoteState) => {
+        if (remoteState && remoteState.roomId === gameState.roomId) {
+          isRemoteUpdateRef.current = true;
+          setGameState(remoteState);
+        }
+      },
+      (newPlayer) => {
+        // Host adds incoming player and broadcasts updated state
+        setGameState((prev) => {
+          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
+          if (!isMeHost) return prev;
+
+          const exists = prev.players.some((p) => p.id === newPlayer.id || p.name === newPlayer.name);
+          if (exists || prev.players.length >= 6) return prev;
+
+          let assignedColor = newPlayer.color;
+          const takenColors = prev.players.map((p) => p.color);
+          if (takenColors.includes(assignedColor)) {
+            const freeColor = PLAYER_COLORS.find((c) => !takenColors.includes(c));
+            if (freeColor) assignedColor = freeColor;
+          }
+
+          const playerToAdd: Player = {
+            ...newPlayer,
+            color: assignedColor,
+            isHost: false
+          };
+
+          const updated = {
+            ...prev,
+            players: [...prev.players, playerToAdd]
+          };
+          addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${prev.roomId})`, 'success');
+          syncRoomState(prev.roomId, updated);
+          return updated;
+        });
+      },
+      () => {
+        // Reply with current state when a new peer requests sync
+        setGameState((prev) => {
+          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
+          if (isMeHost && prev.roomId) {
+            syncRoomState(prev.roomId, prev);
+          }
+          return prev;
+        });
       }
-    });
+    );
 
     return () => {
       unsubscribe();
     };
-  }, [gameState.roomId]);
+  }, [gameState.roomId, myPlayerId]);
 
   // Sync state changes to room (only if not an incoming remote update)
   const updateAndBroadcastGameState = (updater: (prev: GameState) => GameState) => {
@@ -262,6 +307,10 @@ export const App: React.FC = () => {
     };
 
     setMyPlayerId(newId);
+
+    // Send join request to room host
+    syncManager.sendJoinRequest(finalRoom, newPlayer);
+
     updateAndBroadcastGameState((prev) => {
       // Avoid duplicate join if already exists
       const existingIdx = prev.players.findIndex(p => p.id === newId);
