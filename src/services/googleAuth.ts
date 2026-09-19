@@ -25,10 +25,10 @@ export function isGoogleOAuthConfigured(): boolean {
  */
 export function getAuthorizedRedirectUri(): string {
   if (import.meta.env.VITE_GOOGLE_REDIRECT_URI) {
-    return import.meta.env.VITE_GOOGLE_REDIRECT_URI;
+    return import.meta.env.VITE_GOOGLE_REDIRECT_URI.trim();
   }
   // Default to the current origin (e.g., https://turkishparadise.online or https://turkishparadise-online.vercel.app)
-  return window.location.origin;
+  return window.location.origin.replace(/\/+$/, '');
 }
 
 /**

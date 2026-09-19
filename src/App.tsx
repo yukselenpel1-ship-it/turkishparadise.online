@@ -26,7 +26,6 @@ import {
   addTransaction
 } from './engine/gameEngine';
 import {
-  loginWithGoogle,
   loginAsGuest,
   logoutUser,
   getSavedUser,
@@ -607,17 +606,8 @@ export const App: React.FC = () => {
     setTurnSecondsRemaining(60);
   };
 
-  // Auth Handlers
+  // Auth Handlers: Direct official Google OAuth 2.0 redirect
   const handleGoogleLogin = async () => {
-    try {
-      const account = await loginWithGoogle();
-      if (account) {
-        setUserAccount(account);
-        return;
-      }
-    } catch (err) {
-      console.warn('[Auth] Google login popup fallback:', err);
-    }
     initiateGoogleOAuthRedirect();
   };
 
