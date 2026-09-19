@@ -376,6 +376,37 @@ export const App: React.FC = () => {
     }
   }, [turnSecondsRemaining, gameState.phase, gameState.currentTurnIndex, isMoving, myPlayerId]);
 
+  // 6.5 Bankruptcy Auto-Recovery: If current turn points to an eliminated/bankrupt player or match has ended, advance immediately
+  useEffect(() => {
+    if (gameState.phase !== 'PLAYING' || isMoving) return;
+
+    const isMeHost = gameState.players[0]?.id === myPlayerId;
+    if (!isMeHost) return;
+
+    const activePlayers = gameState.players.filter(p => p.inGame);
+    if (activePlayers.length <= 1) {
+      updateAndBroadcastGameState((prev) => {
+        const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+        const remaining = updated.players.filter(p => p.inGame);
+        updated.phase = 'ENDED';
+        updated.winner = remaining[0] || null;
+        if (remaining[0]) {
+          addLog(updated, `🏆 OYUN BİTTİ! KAZANAN: ${remaining[0].name}!`, 'success');
+        }
+        return updated;
+      });
+      return;
+    }
+
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    if (!currentPlayer || !currentPlayer.inGame) {
+      const timer = setTimeout(() => {
+        updateAndBroadcastGameState((prev) => nextTurn(prev));
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.currentTurnIndex, gameState.phase, gameState.players, isMoving, myPlayerId]);
+
   // 3. Handle Bot & AFK Auto-Takeover Turns with Smooth Pacing & Visible Animation
   useEffect(() => {
     if (gameState.phase !== 'PLAYING' || isMoving) return;

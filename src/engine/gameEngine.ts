@@ -658,6 +658,23 @@ export function finalizePlayerLanding(state: GameState, playerId: string): GameS
   
   const afterLanding = handleTileLanding(newState, player, currentTile);
 
+  // Check if player went bankrupt and was eliminated during landing (e.g. rent)
+  const landingPlayer = afterLanding.players.find(p => p.id === playerId);
+  if (landingPlayer && !landingPlayer.inGame) {
+    const activePlayers = afterLanding.players.filter(p => p.inGame);
+    if (activePlayers.length <= 1) {
+      afterLanding.phase = 'ENDED';
+      afterLanding.winner = activePlayers[0] || null;
+      if (activePlayers[0]) {
+        addLog(afterLanding, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+      }
+      return afterLanding;
+    }
+
+    // Automatically advance turn to the next active player!
+    return nextTurn(afterLanding);
+  }
+
   // If double roll and no pending modal action (e.g. rent paid or visit jail), allow rolling again!
   if (afterLanding.doublesCount > 0 && !player.isJailed && afterLanding.pendingAction === 'NONE') {
     afterLanding.diceRolled = false;
@@ -823,6 +840,20 @@ export function applyChanceCard(state: GameState): GameState {
 
   newState.activeCard = undefined;
   newState.pendingAction = 'NONE';
+
+  // Check if player went bankrupt from chance card penalty
+  if (!player.inGame) {
+    const activePlayers = newState.players.filter(p => p.inGame);
+    if (activePlayers.length <= 1) {
+      newState.phase = 'ENDED';
+      newState.winner = activePlayers[0] || null;
+      if (activePlayers[0]) {
+        addLog(newState, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+      }
+      return newState;
+    }
+    return nextTurn(newState);
+  }
 
   // If double roll active, allow rolling again
   if ((newState.doublesCount || 0) > 0 && !player.isJailed) {
@@ -1044,7 +1075,7 @@ export function checkBankruptcy(state: GameState, player: Player) {
   if (player.money < 0) {
     // If player has properties, try auto-selling to bank to survive
     const ownedProperties = state.board.filter(t => t.ownerId === player.id);
-    if (ownedProperties.length > 0 && player.isBot) {
+    if (ownedProperties.length > 0) {
       for (const prop of ownedProperties) {
         if (player.money >= 0) break;
         sellPropertyToBank(state, prop.id, player.id);
@@ -1063,10 +1094,12 @@ export function checkBankruptcy(state: GameState, player: Player) {
       });
 
       const activePlayers = state.players.filter(p => p.inGame);
-      if (activePlayers.length === 1) {
+      if (activePlayers.length <= 1) {
         state.phase = 'ENDED';
-        state.winner = activePlayers[0];
-        addLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+        state.winner = activePlayers[0] || null;
+        if (activePlayers[0]) {
+          addLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+        }
       }
     }
   }
