@@ -1105,6 +1105,7 @@ export const App: React.FC = () => {
           onGoogleLogin={handleGoogleLogin}
           onGuestLogin={handleGuestLogin}
           onLogout={handleLogout}
+          onUpdateUserAccount={setUserAccount}
           onUpdateSettings={handleUpdateSettings}
           onJoin={handleJoin}
           onAddBot={handleAddBot}
@@ -1447,6 +1448,18 @@ export const App: React.FC = () => {
           currentPlayer={me}
           onRestart={handleRestart}
           onOpenProfile={() => setIsProfileModalOpen(true)}
+        />
+      )}
+
+      {/* Global Profile & Friends Modal */}
+      {isProfileModalOpen && userAccount && (
+        <ProfileModal
+          userAccount={userAccount}
+          onClose={() => setIsProfileModalOpen(false)}
+          onLogout={handleLogout}
+          onUpdateUserAccount={setUserAccount}
+          onGoogleLogin={handleGoogleLogin}
+          roomId={gameState.roomId || gameState.settings?.roomCode || 'TR-1001'}
         />
       )}
 

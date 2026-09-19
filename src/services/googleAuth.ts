@@ -1,5 +1,6 @@
 import { UserAccount } from '../types/game';
 import { getUserStats } from './firebase';
+import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry } from './friendService';
 
 const OAUTH_STATE_KEY = 'tp_oauth_state';
 const LOCAL_USER_KEY = 'tp_user_profile';
@@ -187,6 +188,8 @@ export async function handleGoogleOAuthCallback(): Promise<UserAccount | null> {
 
     const uid = googleId || `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const stats = getUserStats(uid);
+    const friendCode = getOrGenerateFriendCode(uid, email);
+    const friends = getFriends(uid);
 
     const userAccount: UserAccount = {
       uid,
@@ -195,8 +198,13 @@ export async function handleGoogleOAuthCallback(): Promise<UserAccount | null> {
       photoURL: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
       isAnonymous: false,
       provider: 'google',
+      friendCode,
+      friends,
       stats: stats
     };
+
+    // Register user to public directory
+    saveUserToPublicRegistry(userAccount);
 
     // Save user session in localStorage
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(userAccount));

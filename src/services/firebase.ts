@@ -21,6 +21,7 @@ import {
   DatabaseReference
 } from 'firebase/database';
 import { GameState, Player, UserAccount, UserStats, MatchRecord, ChatMessage } from '../types/game';
+import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry } from './friendService';
 
 // Firebase configuration from environment variables or default placeholder
 const firebaseConfig = {
@@ -70,15 +71,21 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
+      const uid = user.uid;
+      const friendCode = getOrGenerateFriendCode(uid, user.email);
+      const friends = getFriends(uid);
       const account: UserAccount = {
-        uid: user.uid,
+        uid: uid,
         displayName: user.displayName || 'Google Oyuncusu',
         email: user.email,
         photoURL: user.photoURL,
         isAnonymous: false,
         provider: 'google',
+        friendCode,
+        friends,
         stats: getUserStats(user.uid)
       };
+      saveUserToPublicRegistry(account);
       saveLocalUser(account);
       return account;
     } catch (error: any) {
@@ -96,6 +103,8 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
   // Derive unique ID from email
   const cleanId = `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
   const existingStats = getUserStats(cleanId);
+  const friendCode = getOrGenerateFriendCode(cleanId, email);
+  const friends = getFriends(cleanId);
 
   const googleAccount: UserAccount = {
     uid: cleanId,
@@ -104,8 +113,11 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
     photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanId}`,
     isAnonymous: false,
     provider: 'google',
+    friendCode,
+    friends,
     stats: existingStats
   };
+  saveUserToPublicRegistry(googleAccount);
   saveLocalUser(googleAccount);
   return googleAccount;
 }
@@ -167,7 +179,16 @@ export async function logoutUser(): Promise<void> {
 export function getSavedUser(): UserAccount | null {
   try {
     const raw = localStorage.getItem(LOCAL_USER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const user: UserAccount = JSON.parse(raw);
+    if (user && user.provider === 'google') {
+      if (!user.friendCode) {
+        user.friendCode = getOrGenerateFriendCode(user.uid, user.email);
+      }
+      user.friends = getFriends(user.uid);
+      saveUserToPublicRegistry(user);
+    }
+    return user;
   } catch {
     return null;
   }

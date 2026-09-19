@@ -156,6 +156,16 @@ export interface UserStats {
   history?: MatchRecord[];
 }
 
+export interface FriendUser {
+  uid: string;
+  friendCode: string;
+  displayName: string;
+  photoURL?: string | null;
+  email?: string | null;
+  addedAt: string;
+  stats?: UserStats;
+}
+
 export interface UserAccount {
   uid: string;
   displayName: string;
@@ -163,6 +173,8 @@ export interface UserAccount {
   photoURL?: string | null;
   isAnonymous: boolean;
   provider: 'google' | 'guest';
+  friendCode?: string;
+  friends?: FriendUser[];
   stats?: UserStats;
 }
 

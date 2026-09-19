@@ -41,6 +41,7 @@ interface LobbyProps {
   onGoogleLogin: () => Promise<void>;
   onGuestLogin: (customName?: string) => Promise<void>;
   onLogout: () => void;
+  onUpdateUserAccount?: (account: UserAccount) => void;
   onUpdateSettings: (newSettings: GameSettings) => void;
   onJoin: (name: string, avatar: string, color: string, isOnline?: boolean, targetRoomCode?: string) => void;
   onAddBot: (difficulty?: BotDifficulty) => void;
@@ -57,6 +58,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   onGoogleLogin,
   onGuestLogin,
   onLogout,
+  onUpdateUserAccount,
   onUpdateSettings,
   onJoin,
   onAddBot,
@@ -75,6 +77,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [activeModal, setActiveModal] = useState<'rules' | 'features' | 'community' | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileInitialTab, setProfileInitialTab] = useState<'stats' | 'friends'>('stats');
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
   const [isInviteLink, setIsInviteLink] = useState(false);
 
@@ -226,36 +229,68 @@ export const Lobby: React.FC<LobbyProps> = ({
         </nav>
 
         {/* Right User Profile / Settings */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {userAccount ? (
-            <button
-              onClick={() => setIsProfileModalOpen(true)}
-              className="flex items-center gap-1.5 sm:gap-2.5 bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/30 hover:border-amber-400 rounded-xl sm:rounded-2xl p-1 sm:py-1.5 sm:px-3.5 shadow-lg transition cursor-pointer group shrink-0"
-              title="Profil ve İstatistikleri Görüntüle"
-            >
-              {userAccount.photoURL ? (
-                <img
-                  src={userAccount.photoURL}
-                  alt={userAccount.displayName}
-                  className="w-6 h-6 sm:w-7 sm:h-7 rounded-full border border-amber-400 object-cover shrink-0"
-                />
-              ) : (
-                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-amber-500/20 text-amber-400 font-black text-[11px] sm:text-xs flex items-center justify-center border border-amber-500/40 shrink-0">
-                  {userAccount.displayName.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div className="text-left hidden sm:block">
-                <p className="text-xs font-black text-white group-hover:text-amber-300 transition leading-none">
-                  {userAccount.displayName}
-                </p>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <Trophy className="w-3 h-3 text-amber-400" />
-                  <span className="text-[10px] text-amber-400 font-bold">
-                    {userAccount.stats?.gamesWon || 0} Zafer
+            <>
+              {/* Friends & Special ID Quick Button */}
+              <button
+                onClick={() => {
+                  setProfileInitialTab('friends');
+                  setIsProfileModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/30 hover:border-amber-400 rounded-xl sm:rounded-2xl py-1 px-2.5 sm:py-1.5 sm:px-3 text-amber-300 hover:text-white transition cursor-pointer shrink-0 shadow text-xs font-black"
+                title="Arkadaşlarım ve Özel Arkadaş ID'm"
+              >
+                <Users className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Arkadaşlar</span>
+                {userAccount.friends && userAccount.friends.length > 0 && (
+                  <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none">
+                    {userAccount.friends.length}
                   </span>
+                )}
+              </button>
+
+              {/* Profile Card Button */}
+              <button
+                onClick={() => {
+                  setProfileInitialTab('stats');
+                  setIsProfileModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 sm:gap-2.5 bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/30 hover:border-amber-400 rounded-xl sm:rounded-2xl p-1 sm:py-1.5 sm:px-3.5 shadow-lg transition cursor-pointer group shrink-0"
+                title="Profil ve İstatistikleri Görüntüle"
+              >
+                {userAccount.photoURL ? (
+                  <img
+                    src={userAccount.photoURL}
+                    alt={userAccount.displayName}
+                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full border border-amber-400 object-cover shrink-0"
+                  />
+                ) : (
+                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-amber-500/20 text-amber-400 font-black text-[11px] sm:text-xs flex items-center justify-center border border-amber-500/40 shrink-0">
+                    {userAccount.displayName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="text-left hidden sm:block">
+                  <p className="text-xs font-black text-white group-hover:text-amber-300 transition leading-none truncate max-w-[120px]">
+                    {userAccount.displayName}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {userAccount.friendCode ? (
+                      <span className="text-[9.5px] font-mono font-bold text-amber-300">
+                        {userAccount.friendCode}
+                      </span>
+                    ) : (
+                      <>
+                        <Trophy className="w-3 h-3 text-amber-400" />
+                        <span className="text-[10px] text-amber-400 font-bold">
+                          {userAccount.stats?.gamesWon || 0} Zafer
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+            </>
           ) : (
             <button
               onClick={handleGoogleClick}
@@ -1180,6 +1215,10 @@ export const Lobby: React.FC<LobbyProps> = ({
           userAccount={userAccount}
           onClose={() => setIsProfileModalOpen(false)}
           onLogout={onLogout}
+          onUpdateUserAccount={onUpdateUserAccount}
+          onGoogleLogin={onGoogleLogin}
+          roomId={roomCode}
+          initialTab={profileInitialTab}
         />
       )}
 
