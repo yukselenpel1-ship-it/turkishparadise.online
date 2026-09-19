@@ -43,6 +43,7 @@ import { WinnerModal } from './components/WinnerModal';
 import { MyPropertiesModal } from './components/MyPropertiesModal';
 import { TradeModal } from './components/TradeModal';
 import { TransactionsModal } from './components/TransactionsModal';
+import { ProfileModal } from './components/ProfileModal';
 import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -53,6 +54,7 @@ export const App: React.FC = () => {
   const [isPropertiesModalOpen, setIsPropertiesModalOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -114,9 +116,9 @@ export const App: React.FC = () => {
   }, [gameState.currentTurnIndex, gameState.phase, gameState.diceRolled, gameState.pendingAction, isMoving, myPlayerId]);
 
   // Auth Handlers
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (customEmail?: string, customName?: string) => {
     try {
-      const account = await loginWithGoogle();
+      const account = await loginWithGoogle(customEmail, customName);
       setUserAccount(account);
     } catch (err) {
       console.error('Google login failed:', err);
@@ -472,14 +474,21 @@ export const App: React.FC = () => {
 
             <div className="flex items-center gap-3">
               {userAccount && (
-                <div className="hidden md:flex items-center gap-2 bg-slate-800/80 border border-slate-700/60 rounded-xl px-2.5 py-1 text-xs">
+                <button
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="hidden md:flex items-center gap-2 bg-slate-800/90 hover:bg-slate-700/90 border border-amber-500/40 rounded-xl px-3 py-1 text-xs transition cursor-pointer group"
+                  title="Profil & İstatistikleri Gör"
+                >
                   {userAccount.photoURL ? (
-                    <img src={userAccount.photoURL} alt="" className="w-4 h-4 rounded-full" />
+                    <img src={userAccount.photoURL} alt="" className="w-4 h-4 rounded-full object-cover" />
                   ) : (
                     <span className="text-amber-400 font-bold">👤</span>
                   )}
-                  <span className="text-slate-200 font-bold">{userAccount.displayName}</span>
-                </div>
+                  <span className="text-white font-bold group-hover:text-amber-300 transition">{userAccount.displayName}</span>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-black border border-amber-500/30">
+                    🏆 {userAccount.stats?.gamesWon || 0}
+                  </span>
+                </button>
               )}
 
               <button
@@ -555,6 +564,15 @@ export const App: React.FC = () => {
 
           </main>
         </>
+      )}
+
+      {/* Profile & Stats Modal */}
+      {isProfileModalOpen && userAccount && (
+        <ProfileModal
+          userAccount={userAccount}
+          onClose={() => setIsProfileModalOpen(false)}
+          onLogout={handleLogout}
+        />
       )}
 
       {/* Property Details Modal */}

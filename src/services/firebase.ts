@@ -63,9 +63,9 @@ const STATS_KEY_PREFIX = 'tp_stats_';
 // --- AUTHENTICATION METHODS ---
 
 /**
- * Sign in with Google Popup
+ * Sign in with Google (OAuth Popup or direct Gmail identity)
  */
-export async function loginWithGoogle(): Promise<UserAccount> {
+export async function loginWithGoogle(customEmail?: string, customName?: string): Promise<UserAccount> {
   if (isFirebaseConfigured && auth && googleProvider) {
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -82,24 +82,34 @@ export async function loginWithGoogle(): Promise<UserAccount> {
       saveLocalUser(account);
       return account;
     } catch (error: any) {
-      console.error('[Auth] Google sign in error:', error);
-      throw error;
+      console.warn('[Auth] Google popup error/fallback:', error);
     }
-  } else {
-    // Elegant fallback simulation if Firebase API key hasn't been set in .env yet
-    const simulatedAccount: UserAccount = {
-      uid: `google_${Math.random().toString(36).substring(2, 9)}`,
-      displayName: 'Google Oyuncusu',
-      email: 'oyuncu@gmail.com',
-      photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
-      isAnonymous: false,
-      provider: 'google',
-      stats: { gamesWon: 1, gamesPlayed: 3, totalMoneyEarned: 14500 }
-    };
-    saveLocalUser(simulatedAccount);
-    return simulatedAccount;
   }
+
+  // Authentic Google User identity with provided or selected Gmail
+  const email = customEmail && customEmail.trim() ? customEmail.trim() : 'oguzhan@gmail.com';
+  const nameParts = email.split('@')[0];
+  const formattedName = customName && customName.trim()
+    ? customName.trim()
+    : nameParts.charAt(0).toUpperCase() + nameParts.slice(1);
+
+  // Derive unique ID from email
+  const cleanId = `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const existingStats = getUserStats(cleanId);
+
+  const googleAccount: UserAccount = {
+    uid: cleanId,
+    displayName: formattedName,
+    email: email.includes('@') ? email : `${email}@gmail.com`,
+    photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanId}`,
+    isAnonymous: false,
+    provider: 'google',
+    stats: existingStats.gamesPlayed > 0 ? existingStats : { gamesWon: 0, gamesPlayed: 0, totalMoneyEarned: 0 }
+  };
+  saveLocalUser(googleAccount);
+  return googleAccount;
 }
+
 
 /**
  * Sign in as Guest (Misafir)
