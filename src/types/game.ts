@@ -73,6 +73,7 @@ export interface Player {
   lapsCompleted: number;
   firstLapPurchases: number;
   isHost?: boolean;
+  isAfk?: boolean;
 }
 
 export interface GameLog {
@@ -175,6 +176,8 @@ export interface GameState {
   botStatusMessage?: string;
   isOnlineGame?: boolean;
   networkStatus?: 'connected' | 'connecting' | 'disconnected';
+  turnSecondsRemaining?: number;
+  turnStartedAt?: number;
 }
 
 

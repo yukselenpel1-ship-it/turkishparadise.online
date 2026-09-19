@@ -9,6 +9,9 @@ interface DiceProps {
   canEndTurn: boolean;
   currentTurnName: string;
   isMyTurn: boolean;
+  turnSecondsRemaining?: number;
+  isAfk?: boolean;
+  onTakeBackControl?: () => void;
 }
 
 // Realistic 3D White Cubic Die Face
@@ -105,6 +108,9 @@ export const Dice: React.FC<DiceProps> = ({
   canEndTurn,
   currentTurnName,
   isMyTurn,
+  turnSecondsRemaining,
+  isAfk,
+  onTakeBackControl,
 }) => {
   const [isRolling, setIsRolling] = useState(false);
   const [displayDice, setDisplayDice] = useState<[number, number]>(dice);
@@ -117,7 +123,10 @@ export const Dice: React.FC<DiceProps> = ({
   }, [dice, isRolling]);
 
   const handleRollClick = () => {
-    if (disabled || isRolling) return;
+    if (disabled || !isMyTurn || isRolling) return;
+    if (isAfk && onTakeBackControl) {
+      onTakeBackControl();
+    }
 
     setIsRolling(true);
 
@@ -136,17 +145,49 @@ export const Dice: React.FC<DiceProps> = ({
     }, 50);
   };
 
+  const timerValue = typeof turnSecondsRemaining === 'number' ? turnSecondsRemaining : 60;
+  const isTimeCritical = timerValue <= 15;
+
   return (
-    <div className="flex flex-col items-center justify-center space-y-3">
-      {/* Turn Indicator Banner */}
-      <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/90 border border-amber-400/40 shadow-xl backdrop-blur-md">
+    <div className="flex flex-col items-center justify-center space-y-2.5 sm:space-y-3">
+      {/* Turn Indicator Banner & Countdown Timer */}
+      <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full bg-slate-900/90 border border-amber-400/40 shadow-xl backdrop-blur-md">
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
         <span className="text-xs font-bold text-slate-200">
           Sıra:{' '}
           <strong className="text-amber-400 font-extrabold">{currentTurnName}</strong>{' '}
           {isMyTurn && <span className="text-rose-400 font-black">(Siz)</span>}
         </span>
+        {/* Turn Timer Badge */}
+        <span
+          className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-full border transition flex items-center gap-1 ${
+            isTimeCritical
+              ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse'
+              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+          }`}
+          title="Tur Süresi (60sn sonra bot devralır)"
+        >
+          <span>⏳</span>
+          <span>{timerValue}s</span>
+        </span>
       </div>
+
+      {/* AFK Mode Active Alert & Take Back Control Button */}
+      {isMyTurn && isAfk && (
+        <div className="w-full max-w-xs bg-amber-500/20 border border-amber-400 rounded-xl p-2 text-center animate-bounce shadow-lg backdrop-blur-md">
+          <p className="text-[11px] text-amber-200 font-bold mb-1">
+            🤖 AFK Modundasınız (Sıranızı Bot Yönetiyor)
+          </p>
+          {onTakeBackControl && (
+            <button
+              onClick={onTakeBackControl}
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black py-1 px-3 rounded-lg text-xs shadow-md transition cursor-pointer"
+            >
+              🎮 KONTROLÜ GERİ AL
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 3D Realistic White Dice Pair */}
       <div className="flex items-center justify-center gap-5 p-1">
@@ -155,11 +196,11 @@ export const Dice: React.FC<DiceProps> = ({
       </div>
 
       {/* Luxury Golden "ZAR AT" Button & Turn Controls */}
-      <div className="w-full max-w-xs flex flex-col items-center gap-2.5">
+      <div className="w-full max-w-xs flex flex-col items-center gap-2">
         <button
           onClick={handleRollClick}
           disabled={disabled || !isMyTurn || isRolling}
-          className="w-full bg-gradient-to-b from-[#fde68a] via-[#f59e0b] to-[#b45309] hover:from-[#fef08a] hover:to-[#d97706] disabled:from-slate-800 disabled:via-slate-850 disabled:to-slate-900 disabled:text-slate-600 text-slate-950 font-black py-3 px-8 rounded-2xl shadow-xl transition-all duration-200 transform active:scale-95 disabled:scale-100 border-2 border-amber-300/80 text-sm sm:text-base tracking-wider uppercase flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+          className="w-full bg-gradient-to-b from-[#fde68a] via-[#f59e0b] to-[#b45309] hover:from-[#fef08a] hover:to-[#d97706] disabled:from-slate-800 disabled:via-slate-850 disabled:to-slate-900 disabled:text-slate-600 text-slate-950 font-black py-2.5 sm:py-3 px-8 rounded-2xl shadow-xl transition-all duration-200 transform active:scale-95 disabled:scale-100 border-2 border-amber-300/80 text-sm sm:text-base tracking-wider uppercase flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           style={{
             boxShadow: disabled
               ? 'none'
@@ -172,8 +213,11 @@ export const Dice: React.FC<DiceProps> = ({
 
         {canEndTurn && isMyTurn && (
           <button
-            onClick={onEndTurn}
-            className="w-full bg-slate-900/90 hover:bg-slate-850 text-amber-300 hover:text-white font-bold py-2.5 px-6 rounded-xl border border-amber-500/40 hover:border-amber-400 transition-all text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+            onClick={() => {
+              if (isAfk && onTakeBackControl) onTakeBackControl();
+              onEndTurn();
+            }}
+            className="w-full bg-slate-900/90 hover:bg-slate-850 text-amber-300 hover:text-white font-bold py-2 sm:py-2.5 px-6 rounded-xl border border-amber-500/40 hover:border-amber-400 transition-all text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-lg cursor-pointer"
           >
             <span>TURU BİTİR</span>
             <span className="text-base font-black">➔</span>

@@ -42,6 +42,11 @@ export const PlayerList: React.FC<PlayerListProps> = ({
               } ${!p.inGame ? 'opacity-40 grayscale' : ''}`}
             >
               <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className="w-2.5 h-2.5 rounded-full border border-white/60 shrink-0 shadow-sm"
+                  style={{ backgroundColor: p.color }}
+                  title={`Renk: ${p.color}`}
+                />
                 <span className="text-xl shrink-0">{p.avatar}</span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 font-extrabold text-xs text-white truncate">
@@ -52,6 +57,11 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                       </span>
                     )}
                     {p.isBot && <Bot className="w-3 h-3 text-emerald-400 shrink-0" />}
+                    {p.isAfk && (
+                      <span className="text-[8px] bg-amber-500/30 text-amber-300 font-bold px-1 rounded border border-amber-500/40 shrink-0 animate-pulse">
+                        AFK (BOT)
+                      </span>
+                    )}
                     {p.isJailed && <Lock className="w-3 h-3 text-red-400 shrink-0" />}
                   </div>
                   <div className="text-[9px] text-slate-400 truncate mt-0.5">

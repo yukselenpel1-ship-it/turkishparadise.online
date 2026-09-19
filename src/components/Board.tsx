@@ -22,6 +22,8 @@ interface BoardProps {
   onOpenProperties?: () => void;
   onOpenTrade?: () => void;
   onOpenTransactions?: () => void;
+  turnSecondsRemaining?: number;
+  onTakeBackControl?: () => void;
 }
 
 // 10x11 Grid coordinates for the 38 tiles
@@ -91,10 +93,13 @@ export const Board: React.FC<BoardProps> = ({
   onOpenProperties,
   onOpenTrade,
   onOpenTransactions,
+  turnSecondsRemaining,
+  onTakeBackControl,
 }) => {
   const currentTurnPlayer = players[currentTurnIndex];
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
   const isJailed = currentTurnPlayer?.isJailed;
+  const isAfk = Boolean(currentTurnPlayer?.isAfk);
 
   return (
     <div className="h-full max-h-full aspect-[1.12/1] w-full max-w-5xl bg-[#060b18] border-[8px] sm:border-[10px] border-[#162035] rounded-[28px] p-2 sm:p-2.5 shadow-2xl relative select-none ring-1 ring-amber-500/20 flex flex-col justify-center">
@@ -206,6 +211,9 @@ export const Board: React.FC<BoardProps> = ({
               canEndTurn={diceRolled && pendingAction === 'NONE'}
               currentTurnName={currentTurnPlayer?.name || ''}
               isMyTurn={isMyTurn}
+              turnSecondsRemaining={turnSecondsRemaining}
+              isAfk={isAfk}
+              onTakeBackControl={onTakeBackControl}
             />
           </div>
 

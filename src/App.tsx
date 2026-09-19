@@ -52,22 +52,39 @@ import { IncomingTradeModal } from './components/IncomingTradeModal';
 import { ProfileModal } from './components/ProfileModal';
 import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck } from 'lucide-react';
 
+const SESSION_PLAYER_ID_KEY = 'tp_active_player_id';
+const SESSION_ROOM_ID_KEY = 'tp_active_room_id';
+const SESSION_PLAYER_NAME_KEY = 'tp_active_player_name';
+
 export const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => {
     let initialRoom: string | undefined = undefined;
     try {
-      if (typeof window !== 'undefined' && window.location.search) {
+      if (typeof window !== 'undefined') {
         const urlParams = new URLSearchParams(window.location.search);
         const queryRoom = urlParams.get('room') || urlParams.get('oda') || urlParams.get('code');
         if (queryRoom && queryRoom.trim()) {
           initialRoom = queryRoom.trim().toUpperCase();
+        } else {
+          const savedRoom = sessionStorage.getItem(SESSION_ROOM_ID_KEY) || localStorage.getItem(SESSION_ROOM_ID_KEY);
+          if (savedRoom && savedRoom.trim()) {
+            initialRoom = savedRoom.trim().toUpperCase();
+          }
         }
       }
     } catch (e) {}
     return createInitialState(initialRoom ? { roomCode: initialRoom } : undefined);
   });
   const [userAccount, setUserAccount] = useState<UserAccount | null>(() => getSavedUser());
-  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
+  const [myPlayerId, setMyPlayerId] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        return sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY) || null;
+      }
+    } catch (e) {}
+    return null;
+  });
+  const [turnSecondsRemaining, setTurnSecondsRemaining] = useState<number>(60);
   const [selectedTile, setSelectedTile] = useState<BoardTile | null>(null);
   const [isPropertiesModalOpen, setIsPropertiesModalOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
@@ -102,7 +119,34 @@ export const App: React.FC = () => {
     initAuth();
   }, []);
 
-  // 2. Real-time Room State Synchronization
+  // 2. Keep URL query param and Session Storage always synced with active room
+  useEffect(() => {
+    if (typeof window !== 'undefined' && gameState.roomId) {
+      try {
+        const currentUrl = new URL(window.location.href);
+        if (currentUrl.searchParams.get('room') !== gameState.roomId) {
+          currentUrl.searchParams.set('room', gameState.roomId);
+          window.history.replaceState(null, '', currentUrl.toString());
+        }
+        sessionStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
+        localStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
+      } catch (e) {}
+    }
+  }, [gameState.roomId]);
+
+  // 3. Keep myPlayerId persisted in sessionStorage/localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (myPlayerId) {
+          sessionStorage.setItem(SESSION_PLAYER_ID_KEY, myPlayerId);
+          localStorage.setItem(SESSION_PLAYER_ID_KEY, myPlayerId);
+        }
+      } catch (e) {}
+    }
+  }, [myPlayerId]);
+
+  // 4. Real-time Room State Synchronization & Auto Session Recovery on F5 Reload
   useEffect(() => {
     if (!gameState.roomId) return;
 
@@ -116,6 +160,21 @@ export const App: React.FC = () => {
         if (remoteState && remoteState.roomId === gameState.roomId) {
           isRemoteUpdateRef.current = true;
           setGameState(remoteState);
+
+          // Auto-reconnect player to their seat if recovering after F5
+          const savedId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY);
+          const savedName = sessionStorage.getItem(SESSION_PLAYER_NAME_KEY);
+          const matchedPlayer = remoteState.players.find(
+            (p) =>
+              (savedId && p.id === savedId) ||
+              (userAccount && p.id === userAccount.uid) ||
+              (userAccount && p.name === userAccount.displayName) ||
+              (savedName && p.name === savedName)
+          );
+
+          if (matchedPlayer && (!myPlayerId || myPlayerId !== matchedPlayer.id)) {
+            setMyPlayerId(matchedPlayer.id);
+          }
         }
       },
       (newPlayer) => {
@@ -124,8 +183,27 @@ export const App: React.FC = () => {
           const isHost = prev.players.length === 0 || prev.players[0].id === myPlayerId;
           if (!isHost) return prev;
 
-          const exists = prev.players.some((p) => p.id === newPlayer.id || p.name === newPlayer.name);
-          if (exists || prev.players.length >= 6) return prev;
+          // Check if player is re-joining
+          const existingIdx = prev.players.findIndex(
+            (p) => p.id === newPlayer.id || p.name === newPlayer.name
+          );
+
+          let nextPlayers = [...prev.players];
+          if (existingIdx >= 0) {
+            // Restore returning player and clear AFK
+            nextPlayers[existingIdx] = {
+              ...nextPlayers[existingIdx],
+              ...newPlayer,
+              inGame: true,
+              isAfk: false
+            };
+            const updated = { ...prev, players: nextPlayers };
+            addLog(updated, `✨ ${newPlayer.name} tekrar bağlandı ve oyuna döndü!`, 'success');
+            syncRoomState(prev.roomId, updated);
+            return updated;
+          }
+
+          if (prev.players.length >= 6) return prev;
 
           let assignedColor = newPlayer.color;
           const takenColors = prev.players.map((p) => p.color);
@@ -137,7 +215,8 @@ export const App: React.FC = () => {
           const playerToAdd: Player = {
             ...newPlayer,
             color: assignedColor,
-            isHost: false
+            isHost: false,
+            isAfk: false
           };
 
           const updated = {
@@ -165,7 +244,7 @@ export const App: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, [gameState.roomId, myPlayerId]);
+  }, [gameState.roomId, myPlayerId, userAccount]);
 
   // Sync state changes to room (only if not an incoming remote update)
   const updateAndBroadcastGameState = (updater: (prev: GameState) => GameState) => {
@@ -179,7 +258,57 @@ export const App: React.FC = () => {
     });
   };
 
-  // 3. Handle Bot Turns with Smooth Pacing & Visible Animation
+  // 5. Turn Countdown Timer (60s AFK Tracking)
+  useEffect(() => {
+    if (gameState.phase !== 'PLAYING') {
+      setTurnSecondsRemaining(60);
+      return;
+    }
+
+    // Reset turn timer on new turn
+    setTurnSecondsRemaining(60);
+
+    const timerInterval = setInterval(() => {
+      setTurnSecondsRemaining((prev) => {
+        if (prev <= 1) return 0;
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timerInterval);
+  }, [gameState.currentTurnIndex, gameState.phase]);
+
+  // 6. AFK Auto-Takeover: When 60s timer expires on a human player's turn, mark AFK
+  useEffect(() => {
+    if (gameState.phase !== 'PLAYING' || isMoving || turnSecondsRemaining > 0) return;
+
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    if (!currentPlayer || currentPlayer.isBot || !currentPlayer.inGame) return;
+
+    const isMeHost = gameState.players[0]?.id === myPlayerId;
+    const isMeCurrent = currentPlayer.id === myPlayerId;
+
+    // Trigger AFK marking on host or current player client
+    if (isMeHost || isMeCurrent) {
+      if (!currentPlayer.isAfk) {
+        updateAndBroadcastGameState((prev) => {
+          const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+          const p = updated.players[updated.currentTurnIndex];
+          if (p && !p.isAfk) {
+            p.isAfk = true;
+            addLog(
+              updated,
+              `⏰ ${p.name} 60 saniye boyunca hamle yapmadığı için AFK moduna geçti. Sırayı geçici olarak bot devraldı!`,
+              'warning'
+            );
+          }
+          return updated;
+        });
+      }
+    }
+  }, [turnSecondsRemaining, gameState.phase, gameState.currentTurnIndex, isMoving, myPlayerId]);
+
+  // 3. Handle Bot & AFK Auto-Takeover Turns with Smooth Pacing & Visible Animation
   useEffect(() => {
     if (gameState.phase !== 'PLAYING' || isMoving) return;
 
@@ -189,11 +318,12 @@ export const App: React.FC = () => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     const isMeHost = gameState.players[0]?.id === myPlayerId;
 
-    if (!currentPlayer || !currentPlayer.isBot || !currentPlayer.inGame || !isMeHost) return;
+    // Execute bot logic if player is a Bot or is a Human marked as AFK
+    if (!currentPlayer || (!currentPlayer.isBot && !currentPlayer.isAfk) || !currentPlayer.inGame || !isMeHost) return;
 
     const difficulty = currentPlayer.botDifficulty || gameState.settings?.botDifficulty || 'medium';
 
-    // Step A: Bot has NOT rolled yet -> roll and animate walk
+    // Step A: Not rolled yet -> roll and animate walk
     if (!gameState.diceRolled) {
       const timer = setTimeout(() => {
         handleRollDiceAction();
@@ -201,7 +331,7 @@ export const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
 
-    // Step B: Bot has rolled and is not moving -> evaluate landing action
+    // Step B: Rolled and not moving -> evaluate landing action
     if (gameState.diceRolled && !isMoving) {
       // 1. Pending Property Decision
       if (gameState.pendingAction === 'BUY_PROPERTY') {
@@ -235,32 +365,34 @@ export const App: React.FC = () => {
         const timer = setTimeout(() => {
           updateAndBroadcastGameState((prev) => {
             let next = JSON.parse(JSON.stringify(prev)) as GameState;
-            const bot = next.players[next.currentTurnIndex];
-            if (!bot || !bot.isBot) return next;
+            const currentActor = next.players[next.currentTurnIndex];
+            if (!currentActor || (!currentActor.isBot && !currentActor.isAfk)) return next;
 
-            // Proactive Bot-to-Bot or Bot-to-Human Trade
-            next = attemptBotProactiveTrade(next, bot);
-            if (next.incomingTradeOffer) {
-              return next; // Wait for player response
-            }
+            if (currentActor.isBot) {
+              // Proactive Bot-to-Bot or Bot-to-Human Trade
+              next = attemptBotProactiveTrade(next, currentActor);
+              if (next.incomingTradeOffer) {
+                return next; // Wait for player response
+              }
 
-            // House Building
-            const minCash = difficulty === 'hard' ? 80 : difficulty === 'medium' ? 200 : 400;
-            if (bot.money > minCash) {
-              const ownedMonopolies = next.board.filter(
-                t => t.ownerId === bot.id && t.type === 'property' && hasColorGroupMonopoly(next.board, t.colorGroup, bot.id)
-              );
-              for (const prop of ownedMonopolies) {
-                const maxHouses = difficulty === 'hard' ? 5 : difficulty === 'medium' ? 4 : 2;
-                if (prop.houseCost && bot.money >= prop.houseCost + minCash && prop.houses < maxHouses) {
-                  next = buildHouse(next, prop.id);
-                  break;
+              // House Building
+              const minCash = difficulty === 'hard' ? 80 : difficulty === 'medium' ? 200 : 400;
+              if (currentActor.money > minCash) {
+                const ownedMonopolies = next.board.filter(
+                  t => t.ownerId === currentActor.id && t.type === 'property' && hasColorGroupMonopoly(next.board, t.colorGroup, currentActor.id)
+                );
+                for (const prop of ownedMonopolies) {
+                  const maxHouses = difficulty === 'hard' ? 5 : difficulty === 'medium' ? 4 : 2;
+                  if (prop.houseCost && currentActor.money >= prop.houseCost + minCash && prop.houses < maxHouses) {
+                    next = buildHouse(next, prop.id);
+                    break;
+                  }
                 }
               }
             }
 
             // Turn progression (if doubles, roll again; else next turn)
-            if ((next.doublesCount || 0) > 0 && !bot.isJailed) {
+            if ((next.doublesCount || 0) > 0 && !currentActor.isJailed) {
               next.diceRolled = false;
             } else {
               next = nextTurn(next);
@@ -281,6 +413,20 @@ export const App: React.FC = () => {
     myPlayerId
   ]);
 
+  // Human Player Takes Back Control from AFK Bot
+  const handleTakeBackControl = () => {
+    updateAndBroadcastGameState((prev) => {
+      const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+      const meIdx = updated.players.findIndex((p) => p.id === myPlayerId);
+      if (meIdx >= 0 && updated.players[meIdx].isAfk) {
+        updated.players[meIdx].isAfk = false;
+        addLog(updated, `✨ ${updated.players[meIdx].name} tekrar aktif oldu ve kontrolü devraldı!`, 'success');
+      }
+      return updated;
+    });
+    setTurnSecondsRemaining(60);
+  };
+
   // Auth Handlers
   const handleGoogleLogin = async () => {
     initiateGoogleOAuthRedirect();
@@ -297,6 +443,11 @@ export const App: React.FC = () => {
 
   const handleLogout = async () => {
     await logoutUser();
+    try {
+      sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      localStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
+    } catch (e) {}
     setUserAccount(null);
   };
 
@@ -334,6 +485,14 @@ export const App: React.FC = () => {
 
     setMyPlayerId(newId);
 
+    try {
+      sessionStorage.setItem(SESSION_PLAYER_ID_KEY, newId);
+      localStorage.setItem(SESSION_PLAYER_ID_KEY, newId);
+      sessionStorage.setItem(SESSION_PLAYER_NAME_KEY, newPlayer.name);
+      sessionStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
+      localStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
+    } catch (e) {}
+
     // Send join request to room host
     syncManager.sendJoinRequest(finalRoom, newPlayer);
 
@@ -366,6 +525,11 @@ export const App: React.FC = () => {
       ...prev,
       players: prev.players.filter((p) => p.id !== myPlayerId)
     }));
+    try {
+      sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      localStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
+    } catch (e) {}
     setMyPlayerId(null);
   };
 
@@ -428,7 +592,8 @@ export const App: React.FC = () => {
       firstLapPurchases: 0,
       inGame: true,
       isBot: true,
-      botDifficulty: difficulty
+      botDifficulty: difficulty,
+      isAfk: false
     };
 
     updateAndBroadcastGameState((prev) => {
@@ -464,9 +629,16 @@ export const App: React.FC = () => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     if (!currentPlayer) return;
 
-    // Check if it's my turn
-    if (currentPlayer.id !== myPlayerId && !currentPlayer.isBot) {
+    const isMeHost = gameState.players[0]?.id === myPlayerId;
+    const isMeCurrent = currentPlayer.id === myPlayerId;
+
+    // Allow manual roll by current player OR auto roll for bot / AFK human on host
+    if (!isMeCurrent && !currentPlayer.isBot && !(currentPlayer.isAfk && isMeHost)) {
       return;
+    }
+
+    if (isMeCurrent && currentPlayer.isAfk) {
+      handleTakeBackControl();
     }
 
     const dice = rollDice();
@@ -688,6 +860,11 @@ export const App: React.FC = () => {
   const handleRestart = () => {
     const nextInit = createInitialState(gameState.settings);
     updateAndBroadcastGameState(() => nextInit);
+    try {
+      sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      localStorage.removeItem(SESSION_PLAYER_ID_KEY);
+      sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
+    } catch (e) {}
     setMyPlayerId(null);
     setSelectedTile(null);
     setIsPropertiesModalOpen(false);
@@ -816,6 +993,8 @@ export const App: React.FC = () => {
                   setIsTradeModalOpen(true);
                 }}
                 onOpenTransactions={() => setIsTransactionsModalOpen(true)}
+                turnSecondsRemaining={turnSecondsRemaining}
+                onTakeBackControl={handleTakeBackControl}
               />
             </div>
 
