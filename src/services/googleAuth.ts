@@ -8,7 +8,7 @@ const LOCAL_USER_KEY = 'tp_user_profile';
  * Get Google OAuth Client ID from Vite environment variable
  */
 export function getGoogleClientId(): string {
-  return import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  return import.meta.env.VITE_GOOGLE_CLIENT_ID || '251712645663-jicouarovrlern4ksn7ifvpn41ju6qle.apps.googleusercontent.com';
 }
 
 /**
