@@ -273,16 +273,16 @@ export function handleRollDice(state: GameState): GameState {
   newState.dice = dice;
   newState.diceRolled = true;
 
-  addLog(newState, `${player.name} zar attı: 🎲 ${dice[0]} - ${dice[1]} (Toplam: ${diceTotal})`, 'action');
-
   // Jail / Kodes check
   if (player.isJailed) {
     if (isDouble) {
       player.isJailed = false;
       player.jailTurns = 0;
-      addLog(newState, `🎉 ${player.name} çift zar atarak kodesten ücretsiz çıktı!`, 'success');
+      newState.doublesCount = 0;
+      addLog(newState, `🎉 ${player.name} çift zar atarak (${dice[0]}-${dice[1]}) kodesten ücretsiz çıktı!`, 'success');
     } else {
       player.jailTurns += 1;
+      newState.doublesCount = 0;
       if (player.jailTurns >= 3) {
         player.isJailed = false;
         player.money -= JAIL_BAIL_AMOUNT;
@@ -290,27 +290,32 @@ export function handleRollDice(state: GameState): GameState {
         addTransaction(newState, player, 'expense', 'bail', JAIL_BAIL_AMOUNT, '3 tur kodes sonrası zorunlu kefalet ödendi');
         addLog(newState, `⚠️ ${player.name} 3 tur bekledi ve ${JAIL_BAIL_AMOUNT}₺ ödeyerek kodesten çıktı.`, 'warning');
       } else {
-        addLog(newState, `🔒 ${player.name} kodeste kaldı (${player.jailTurns}/3 tur).`, 'info');
+        addLog(newState, `🔒 ${player.name} (${dice[0]}-${dice[1]}) attı ve kodeste kaldı (${player.jailTurns}/3 tur).`, 'info');
         newState.pendingAction = 'NONE';
         return newState;
       }
     }
-  }
-
-  // Doubles streak
-  if (isDouble && !player.isJailed) {
-    newState.doublesCount += 1;
-    if (newState.doublesCount >= 3) {
-      player.position = JAIL_TILE_INDEX;
-      player.isJailed = true;
-      player.jailTurns = 0;
-      newState.doublesCount = 0;
-      addLog(newState, `🚨 3 kez üst üste çift atan ${player.name} kodese tıkıldı!`, 'danger');
-      newState.pendingAction = 'NONE';
-      return newState;
-    }
   } else {
-    newState.doublesCount = 0;
+    // Doubles streak handling for free players
+    if (isDouble) {
+      const nextDoubles = (newState.doublesCount || 0) + 1;
+      if (nextDoubles >= 3) {
+        player.position = JAIL_TILE_INDEX;
+        player.isJailed = true;
+        player.jailTurns = 0;
+        newState.doublesCount = 0;
+        newState.diceRolled = true;
+        newState.pendingAction = 'NONE';
+        addLog(newState, `🚨 3 kez üst üste çift atan (${dice[0]}-${dice[1]}) ${player.name} doğrudan Kodese gönderildi!`, 'danger');
+        return newState;
+      } else {
+        newState.doublesCount = nextDoubles;
+        addLog(newState, `🎲 ${player.name} çift attı: 🎲 ${dice[0]} - ${dice[1]}! İlerledikten sonra bir kez daha zar atacak! (${nextDoubles}/3)`, 'success');
+      }
+    } else {
+      newState.doublesCount = 0;
+      addLog(newState, `${player.name} zar attı: 🎲 ${dice[0]} - ${dice[1]} (Toplam: ${diceTotal})`, 'action');
+    }
   }
 
   // Move player along 38-tile board
@@ -335,7 +340,15 @@ export function handleRollDice(state: GameState): GameState {
 
   addLog(newState, `📍 ${player.name} "${currentTile.name}" karesine geldi.`, 'info');
 
-  return handleTileLanding(newState, player, currentTile);
+  const afterLanding = handleTileLanding(newState, player, currentTile);
+
+  // If double roll and no decision needed, re-enable dice roll
+  if (afterLanding.doublesCount > 0 && !player.isJailed && afterLanding.pendingAction === 'NONE') {
+    afterLanding.diceRolled = false;
+    addLog(afterLanding, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
+  }
+
+  return afterLanding;
 }
 
 // Step-by-step movement helper
@@ -373,8 +386,18 @@ export function finalizePlayerLanding(state: GameState, playerId: string): GameS
 
   const currentTile = newState.board[player.position];
   addLog(newState, `📍 ${player.name} "${currentTile.name}" karesine geldi.`, 'info');
-  return handleTileLanding(newState, player, currentTile);
+  
+  const afterLanding = handleTileLanding(newState, player, currentTile);
+
+  // If double roll and no pending modal action (e.g. rent paid or visit jail), allow rolling again!
+  if (afterLanding.doublesCount > 0 && !player.isJailed && afterLanding.pendingAction === 'NONE') {
+    afterLanding.diceRolled = false;
+    addLog(afterLanding, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
+  }
+
+  return afterLanding;
 }
+
 
 export function handleTileLanding(
   state: GameState, 
@@ -499,6 +522,13 @@ export function applyChanceCard(state: GameState): GameState {
 
   newState.activeCard = undefined;
   newState.pendingAction = 'NONE';
+
+  // If double roll active, allow rolling again
+  if ((newState.doublesCount || 0) > 0 && !player.isJailed) {
+    newState.diceRolled = false;
+    addLog(newState, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
+  }
+
   return newState;
 }
 
@@ -514,6 +544,9 @@ export function buyProperty(state: GameState): GameState {
   if (limit > 0 && (player.lapsCompleted || 0) === 0 && (player.firstLapPurchases || 0) >= limit) {
     addLog(newState, `⚠️ ${player.name} ilk tur mülk alım sınırına (${limit} adet) ulaştığı için Başlangıç noktasını geçene kadar başka mülk alamaz!`, 'warning');
     newState.pendingAction = 'NONE';
+    if ((newState.doublesCount || 0) > 0 && !player.isJailed) {
+      newState.diceRolled = false;
+    }
     return newState;
   }
 
@@ -544,6 +577,13 @@ export function buyProperty(state: GameState): GameState {
   }
 
   newState.pendingAction = 'NONE';
+
+  // If double roll active, allow rolling again
+  if ((newState.doublesCount || 0) > 0 && !player.isJailed) {
+    newState.diceRolled = false;
+    addLog(newState, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
+  }
+
   return newState;
 }
 
@@ -558,6 +598,13 @@ export function passProperty(state: GameState): GameState {
 
   newState.pendingAction = 'NONE';
   newState.actionMessage = undefined;
+
+  // If double roll active, allow rolling again
+  if ((newState.doublesCount || 0) > 0 && !player.isJailed) {
+    newState.diceRolled = false;
+    addLog(newState, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
+  }
+
   return newState;
 }
 
@@ -734,13 +781,10 @@ export function runBotTurn(state: GameState): GameState {
 
     if (tile && tile.price) {
       if (difficulty === 'easy') {
-        // 50% chance to buy if money permits
         shouldBuy = currentBot.money >= tile.price + 100 && Math.random() > 0.4;
       } else if (difficulty === 'medium') {
-        // Buy if remaining cash > 100
         shouldBuy = currentBot.money >= tile.price + 80;
       } else {
-        // Hard bot: Buys aggressively (even with 20₺ left) or if completes monopoly / blocks player
         shouldBuy = currentBot.money >= tile.price;
       }
     }
@@ -779,8 +823,13 @@ export function runBotTurn(state: GameState): GameState {
     }
   }
 
-  // 5. End turn
-  newState = nextTurn(newState);
+  // 5. End turn or roll again if double
+  if ((newState.doublesCount || 0) > 0 && !currentBot.isJailed) {
+    newState.diceRolled = false; // Bot will roll again on next loop
+  } else if (newState.pendingAction === 'NONE') {
+    newState = nextTurn(newState);
+  }
 
   return newState;
 }
+
