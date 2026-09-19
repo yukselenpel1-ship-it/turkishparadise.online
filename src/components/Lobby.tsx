@@ -182,15 +182,15 @@ export const Lobby: React.FC<LobbyProps> = ({
       </div>
 
       {/* 1. Top Navbar Header */}
-      <header className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between relative z-20">
+      <header className="w-full max-w-7xl mx-auto px-3 sm:px-8 py-2.5 sm:py-5 flex items-center justify-between relative z-20">
         
         {/* Brand Logo: TURKISH PARADISE */}
-        <div className="flex items-center gap-2.5 cursor-pointer group">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-lg shadow-lg shadow-amber-500/30 group-hover:rotate-12 transition-transform duration-300">
+        <div className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group shrink-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-sm sm:text-lg shadow-lg shadow-amber-500/30 group-hover:rotate-12 transition-transform duration-300 shrink-0">
             🎲
           </div>
           <div className="flex flex-col text-left">
-            <span className="font-['Cinzel',serif] text-base sm:text-lg font-black tracking-wider text-white flex items-center gap-1.5">
+            <span className="font-['Cinzel',serif] text-xs sm:text-lg font-black tracking-wider text-white flex items-center gap-1">
               <span>TURKISH</span>
               <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
             </span>
@@ -226,21 +226,21 @@ export const Lobby: React.FC<LobbyProps> = ({
         </nav>
 
         {/* Right User Profile / Settings */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {userAccount ? (
             <button
               onClick={() => setIsProfileModalOpen(true)}
-              className="flex items-center gap-2.5 bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/30 hover:border-amber-400 rounded-2xl py-1.5 px-3.5 shadow-lg transition cursor-pointer group"
+              className="flex items-center gap-1.5 sm:gap-2.5 bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/30 hover:border-amber-400 rounded-xl sm:rounded-2xl p-1 sm:py-1.5 sm:px-3.5 shadow-lg transition cursor-pointer group shrink-0"
               title="Profil ve İstatistikleri Görüntüle"
             >
               {userAccount.photoURL ? (
                 <img
                   src={userAccount.photoURL}
                   alt={userAccount.displayName}
-                  className="w-7 h-7 rounded-full border border-amber-400 object-cover"
+                  className="w-6 h-6 sm:w-7 sm:h-7 rounded-full border border-amber-400 object-cover shrink-0"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-black text-xs flex items-center justify-center border border-amber-500/40">
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-amber-500/20 text-amber-400 font-black text-[11px] sm:text-xs flex items-center justify-center border border-amber-500/40 shrink-0">
                   {userAccount.displayName.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -260,7 +260,7 @@ export const Lobby: React.FC<LobbyProps> = ({
             <button
               onClick={handleGoogleClick}
               disabled={isLoadingAuth}
-              className="hidden sm:flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl py-1.5 px-3 text-xs font-black text-slate-800 transition cursor-pointer shadow"
+              className="hidden sm:flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl py-1.5 px-3 text-xs font-black text-slate-800 transition cursor-pointer shadow shrink-0"
             >
               {isLoadingAuth ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -290,17 +290,17 @@ export const Lobby: React.FC<LobbyProps> = ({
 
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer shrink-0"
             title="Ses"
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+            {soundEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />}
           </button>
 
-          <button className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer" title="Tema">
+          <button className="hidden sm:flex p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer shrink-0" title="Tema">
             <Sun className="w-4 h-4 text-amber-400" />
           </button>
 
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-bold text-slate-200 cursor-pointer">
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-bold text-slate-200 cursor-pointer shrink-0">
             <span>🇹🇷</span>
             <span>TR</span>
             <span className="text-[10px] text-slate-400">⌵</span>
@@ -309,103 +309,136 @@ export const Lobby: React.FC<LobbyProps> = ({
 
       </header>
 
-      {/* 2. Main Hero Split Content */}
-      <main className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-3 sm:py-6 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center relative z-20">
+      {/* 2. Main Content Area */}
+      <main className={`w-full max-w-7xl mx-auto px-3 sm:px-8 py-2 sm:py-6 flex-1 relative z-20 ${
+        hasJoined
+          ? 'flex flex-col items-center justify-center my-auto'
+          : 'grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center'
+      }`}>
         
-        {/* Left Hero Section: Headline & Features */}
-        <div className="lg:col-span-6 space-y-4 sm:space-y-6 text-center lg:text-left">
-          
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold mb-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Çevrimiçi Çok Oyunculu & Arkadaş Odaları</span>
+        {/* Left Hero Section: Headline & Features (Only on Landing Page) */}
+        {!hasJoined && (
+          <div className="lg:col-span-6 space-y-4 sm:space-y-6 text-center lg:text-left">
+            
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold mb-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Çevrimiçi Çok Oyunculu & Arkadaş Odaları</span>
+              </div>
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-tight">
+                Türkiye <br className="hidden sm:inline" />
+                Senin <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent">Oyun Alanın</span>
+              </h1>
+              <p className="text-slate-300 text-xs sm:text-base font-medium max-w-md mx-auto lg:mx-0 pt-1 sm:pt-2 leading-relaxed">
+                Şehirleri al, yatırımlarını büyüt, rakiplerini geride bırak. Strateji, ticaret ve eğlence bir arada!
+              </p>
             </div>
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-tight">
-              Türkiye <br className="hidden sm:inline" />
-              Senin <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent">Oyun Alanın</span>
-            </h1>
-            <p className="text-slate-300 text-xs sm:text-base font-medium max-w-md mx-auto lg:mx-0 pt-1 sm:pt-2 leading-relaxed">
-              Şehirleri al, yatırımlarını büyüt, rakiplerini geride bırak. Strateji, ticaret ve eğlence bir arada!
-            </p>
+
+            {/* Feature List with Gold Icons (Desktop view) */}
+            <div className="hidden lg:grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+              <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <span className="text-sm font-bold text-slate-200">Strateji Kur</span>
+              </div>
+
+              <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <Handshake className="w-4 h-4" />
+                </div>
+                <span className="text-sm font-bold text-slate-200">Şehirleri Fethet</span>
+              </div>
+
+              <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <Coins className="w-4 h-4" />
+                </div>
+                <span className="text-sm font-bold text-slate-200">Yatırımını Büyüt</span>
+              </div>
+
+              <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <Users className="w-4 h-4" />
+                </div>
+                <span className="text-sm font-bold text-slate-200">Arkadaşlarınla Oyna</span>
+              </div>
+            </div>
+
+            {/* Cursive Quote Bottom Left (Desktop view) */}
+            <div className="hidden lg:block pt-2">
+              <p className="font-['Caveat',cursive] text-2xl sm:text-3xl text-amber-200/90 tracking-wide drop-shadow">
+                "Bu topraklarda her şehir bir hikaye..."
+              </p>
+            </div>
+
           </div>
+        )}
 
-          {/* Feature List with Gold Icons (Desktop view) */}
-          <div className="hidden lg:grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
-            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                <TrendingUp className="w-4 h-4" />
-              </div>
-              <span className="text-sm font-bold text-slate-200">Strateji Kur</span>
-            </div>
-
-            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                <Handshake className="w-4 h-4" />
-              </div>
-              <span className="text-sm font-bold text-slate-200">Şehirleri Fethet</span>
-            </div>
-
-            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                <Coins className="w-4 h-4" />
-              </div>
-              <span className="text-sm font-bold text-slate-200">Yatırımını Büyüt</span>
-            </div>
-
-            <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                <Users className="w-4 h-4" />
-              </div>
-              <span className="text-sm font-bold text-slate-200">Arkadaşlarınla Oyna</span>
-            </div>
-          </div>
-
-          {/* Cursive Quote Bottom Left (Desktop view) */}
-          <div className="hidden lg:block pt-2">
-            <p className="font-['Caveat',cursive] text-2xl sm:text-3xl text-amber-200/90 tracking-wide drop-shadow">
-              "Bu topraklarda her şehir bir hikaye..."
-            </p>
-          </div>
-
-        </div>
-
-        {/* Right Hero Section: Glassmorphism Login / Lobby Card */}
-        <div className="lg:col-span-6 flex flex-col items-center lg:items-end relative w-full">
+        {/* Right Hero Section / Centered Room Lobby Card */}
+        <div className={hasJoined ? 'w-full max-w-lg mx-auto relative' : 'lg:col-span-6 flex flex-col items-center lg:items-end relative w-full'}>
           
           {/* Cursive Quote Top Right */}
-          <div className="hidden lg:block absolute -top-8 right-6 pointer-events-none">
-            <p className="font-['Caveat',cursive] text-2xl text-amber-200/90 tracking-wide drop-shadow text-right">
-              Daha fazla şehir, <br />
-              daha fazla fırsat.
-            </p>
-          </div>
+          {!hasJoined && (
+            <div className="hidden lg:block absolute -top-8 right-6 pointer-events-none">
+              <p className="font-['Caveat',cursive] text-2xl text-amber-200/90 tracking-wide drop-shadow text-right">
+                Daha fazla şehir, <br />
+                daha fazla fırsat.
+              </p>
+            </div>
+          )}
 
-          <div className="w-full max-w-md bg-[#0a1020]/92 border border-slate-800/90 rounded-[28px] sm:rounded-[32px] p-4.5 sm:p-7 shadow-2xl backdrop-blur-2xl relative overflow-hidden ring-1 ring-amber-500/20">
+          <div className="w-full bg-[#0a1020]/95 border border-slate-800/90 rounded-[24px] sm:rounded-[32px] p-4 sm:p-7 shadow-2xl backdrop-blur-2xl relative overflow-hidden ring-1 ring-amber-500/20">
             
             {/* Top Glow Accent */}
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
 
-            {/* Card Header: TURKISH PARADISE Luxury Golden Logo */}
-            <div className="text-center mb-5 flex flex-col items-center">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-lg shadow-lg shadow-amber-500/30 mb-1">
-                🎲
+            {/* Card Header */}
+            {hasJoined ? (
+              /* Compact, elegant Room Lobby Header */
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-3 mb-3.5 w-full">
+                <div className="flex items-center gap-2 sm:gap-2.5 text-left">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-sm shadow-md shadow-amber-500/30 shrink-0">
+                    🎲
+                  </div>
+                  <div>
+                    <h2 className="font-['Cinzel',serif] font-black text-sm sm:text-base text-white leading-none">
+                      TURKISH <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
+                    </h2>
+                    <p className="text-[10px] text-amber-400 font-bold mt-0.5">Oyun Bekleme Odası</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-[#070b14] border border-amber-500/40 px-2.5 py-1 rounded-xl shadow-inner">
+                  <span className="text-[9px] uppercase font-black text-slate-400">Oda:</span>
+                  <span className="text-xs font-black font-mono text-amber-400">
+                    {settings.roomCode || roomCode}
+                  </span>
+                </div>
               </div>
-              
-              <span className="font-['Cinzel',serif] font-bold text-xs sm:text-sm tracking-[0.25em] text-slate-300 uppercase">
-                TURKISH
-              </span>
-              <h2 className="font-['Cinzel',serif] font-black text-3xl sm:text-4xl bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-transparent drop-shadow-md leading-none tracking-wider my-0.5">
-                PARADISE
-              </h2>
-              
-              <div className="flex items-center gap-2 mt-1 w-full justify-center">
-                <div className="h-[1px] w-8 bg-gradient-to-r from-transparent to-amber-400/60" />
-                <p className="font-['Caveat',cursive] text-base text-amber-300/90 font-medium italic">
-                  Büyük Düşün, Tüm Türkiye Senin Olsun!
-                </p>
-                <div className="h-[1px] w-8 bg-gradient-to-l from-transparent to-amber-400/60" />
+            ) : (
+              /* Landing Page Card Header */
+              <div className="text-center mb-4 sm:mb-5 flex flex-col items-center">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-base sm:text-lg shadow-lg shadow-amber-500/30 mb-1">
+                  🎲
+                </div>
+                
+                <span className="font-['Cinzel',serif] font-bold text-[11px] sm:text-xs tracking-[0.25em] text-slate-300 uppercase">
+                  TURKISH
+                </span>
+                <h2 className="font-['Cinzel',serif] font-black text-2xl sm:text-4xl bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-transparent drop-shadow-md leading-none tracking-wider my-0.5">
+                  PARADISE
+                </h2>
+                
+                <div className="flex items-center gap-2 mt-1 w-full justify-center">
+                  <div className="h-[1px] w-8 bg-gradient-to-r from-transparent to-amber-400/60" />
+                  <p className="font-['Caveat',cursive] text-sm sm:text-base text-amber-300/90 font-medium italic">
+                    Büyük Düşün, Tüm Türkiye Senin Olsun!
+                  </p>
+                  <div className="h-[1px] w-8 bg-gradient-to-l from-transparent to-amber-400/60" />
+                </div>
               </div>
-            </div>
+            )}
 
             {hasJoined ? (
               /* Joined Players Room Lobby */
@@ -458,13 +491,13 @@ export const Lobby: React.FC<LobbyProps> = ({
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
                       {/* Starting Money */}
                       <div>
-                        <label className="text-slate-400 font-semibold block mb-1">
-                          Başlangıç Parası:
+                        <label className="text-slate-400 font-bold text-[10px] block mb-1">
+                          Başlangıç Parası
                         </label>
                         <select
                           value={settings.startingMoney}
                           onChange={(e) => onUpdateSettings({ ...settings, startingMoney: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-white font-bold outline-none cursor-pointer"
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
                         >
                           <option value={1000}>1.000 ₺ (Hızlı)</option>
                           <option value={1500}>1.500 ₺ (Standart)</option>
@@ -476,13 +509,13 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                       {/* Pass GO Salary */}
                       <div>
-                        <label className="text-slate-400 font-semibold block mb-1">
-                          Tur Maaşı:
+                        <label className="text-slate-400 font-bold text-[10px] block mb-1">
+                          Tur Maaşı
                         </label>
                         <select
                           value={settings.passGoSalary}
                           onChange={(e) => onUpdateSettings({ ...settings, passGoSalary: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-white font-bold outline-none cursor-pointer"
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
                         >
                           <option value={100}>100 ₺</option>
                           <option value={200}>200 ₺ (Standart)</option>
@@ -493,13 +526,13 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                       {/* First Lap Buy Limit */}
                       <div>
-                        <label className="text-slate-400 font-semibold block mb-1">
-                          İlk Tur Alım Sınırı:
+                        <label className="text-slate-400 font-bold text-[10px] block mb-1">
+                          İlk Tur Alım
                         </label>
                         <select
                           value={settings.firstLapBuyLimit}
                           onChange={(e) => onUpdateSettings({ ...settings, firstLapBuyLimit: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-amber-300 font-bold outline-none cursor-pointer"
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-amber-300 font-bold outline-none cursor-pointer"
                         >
                           <option value={0}>Sınırsız (Klasik)</option>
                           <option value={1}>1 Adet Yer</option>
@@ -511,13 +544,13 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                       {/* Bot Difficulty */}
                       <div>
-                        <label className="text-slate-400 font-semibold block mb-1">
-                          Bot Zorluk Seviyesi:
+                        <label className="text-slate-400 font-bold text-[10px] block mb-1">
+                          Bot Zorluğu
                         </label>
                         <select
                           value={settings.botDifficulty}
                           onChange={(e) => onUpdateSettings({ ...settings, botDifficulty: e.target.value as BotDifficulty })}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-white font-bold outline-none cursor-pointer"
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
                         >
                           <option value="easy">🟢 Kolay Bot</option>
                           <option value="medium">🟡 Orta Bot</option>
@@ -537,58 +570,58 @@ export const Lobby: React.FC<LobbyProps> = ({
                     </div>
 
                     {/* Bot Add Buttons with difficulty */}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => onAddBot('easy')}
                         disabled={players.length >= 6}
-                        className="bg-slate-900 hover:bg-slate-800 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-700 text-emerald-400 transition disabled:opacity-50 cursor-pointer"
+                        className="bg-emerald-500/10 hover:bg-emerald-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-emerald-500/30 text-emerald-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
                         title="Kolay Bot Ekle"
                       >
-                        +🟢 Kolay
+                        + Kolay
                       </button>
                       <button
                         onClick={() => onAddBot('medium')}
                         disabled={players.length >= 6}
-                        className="bg-slate-900 hover:bg-slate-800 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-700 text-amber-400 transition disabled:opacity-50 cursor-pointer"
+                        className="bg-amber-500/10 hover:bg-amber-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-amber-500/30 text-amber-300 transition disabled:opacity-40 cursor-pointer active:scale-95"
                         title="Orta Bot Ekle"
                       >
-                        +🟡 Orta
+                        + Orta
                       </button>
                       <button
                         onClick={() => onAddBot('hard')}
                         disabled={players.length >= 6}
-                        className="bg-slate-900 hover:bg-slate-800 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-700 text-rose-400 transition disabled:opacity-50 cursor-pointer"
+                        className="bg-rose-500/10 hover:bg-rose-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-rose-500/30 text-rose-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
                         title="Zor Bot Ekle"
                       >
-                        +🔴 Zor
+                        + Zor
                       </button>
                     </div>
                   </div>
 
                   {/* Player Items */}
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
                     {players.map((p, index) => (
                       <div
                         key={p.id}
-                        className="flex items-center justify-between bg-[#070b14] border border-slate-800 rounded-xl p-2 gap-2"
+                        className="flex items-center justify-between bg-[#070b14] border border-slate-800/80 hover:border-slate-700 rounded-xl p-2 sm:p-2.5 gap-2 transition"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           {/* Player Assigned Color Dot */}
                           <div
-                            className="w-3 h-3 rounded-full border border-white/60 shrink-0 shadow-sm"
+                            className="w-3.5 h-3.5 rounded-full border border-white/80 shrink-0 shadow-sm ring-1 ring-slate-700"
                             style={{ backgroundColor: p.color }}
                             title={`Piyon Rengi: ${p.color}`}
                           />
-                          <span className="text-lg shrink-0">{p.avatar}</span>
-                          <span className="font-bold text-xs text-white flex items-center gap-1 truncate">
+                          <span className="text-base sm:text-lg shrink-0">{p.avatar}</span>
+                          <span className="font-bold text-xs text-white flex items-center gap-1.5 truncate">
                             <span className="truncate">{p.name}</span>
                             {p.id === myPlayerId && (
-                              <span className="text-[8px] bg-rose-500 text-white font-black px-1 rounded shrink-0">
+                              <span className="text-[8px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded shrink-0">
                                 SİZ
                               </span>
                             )}
                             {p.isBot && (
-                              <span className="text-[8px] bg-emerald-500/20 text-emerald-400 font-bold px-1 rounded border border-emerald-500/30 shrink-0">
+                              <span className="text-[8px] bg-slate-800 text-slate-300 font-bold px-1.5 py-0.5 rounded border border-slate-700 shrink-0">
                                 {p.botDifficulty === 'hard' ? '🔴 ZOR' : p.botDifficulty === 'easy' ? '🟢 KOLAY' : '🟡 ORTA'}
                               </span>
                             )}
@@ -597,7 +630,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                         <div className="flex items-center gap-1.5 shrink-0">
                           {index === 0 && (
-                            <span className="flex items-center gap-1 text-[9px] text-amber-400 font-bold">
+                            <span className="flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
                               <Shield className="w-3 h-3" /> Kurucu
                             </span>
                           )}
@@ -607,11 +640,11 @@ export const Lobby: React.FC<LobbyProps> = ({
                             <button
                               type="button"
                               onClick={() => onRemovePlayer?.(p.id)}
-                              className="flex items-center gap-1 bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-lg px-2 py-1 text-[10px] font-bold transition cursor-pointer"
+                              className="flex items-center gap-1 bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-lg px-2 py-1 text-[10px] font-bold transition cursor-pointer active:scale-95"
                               title={p.isBot ? "Botu Odadan Sil" : "Oyuncuyu Odadan Çıkar"}
                             >
                               <Trash2 className="w-3 h-3" />
-                              <span>{p.isBot ? 'Botu Sil' : 'Çıkar'}</span>
+                              <span>{p.isBot ? 'Sil' : 'Çıkar'}</span>
                             </button>
                           )}
                         </div>
@@ -625,7 +658,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <button
                     onClick={onStartGame}
                     disabled={players.length < 2}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-slate-950 font-black py-3.5 rounded-xl shadow-xl transition transform active:scale-95 text-sm cursor-pointer disabled:cursor-not-allowed"
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-slate-950 font-black py-3 sm:py-3.5 rounded-xl shadow-lg transition transform active:scale-95 text-sm cursor-pointer disabled:cursor-not-allowed"
                   >
                     <Play className="w-4 h-4 fill-current" />
                     {players.length < 2 ? 'En Az 2 Oyuncu Gerekir' : 'Oyunu Başlat! 🚀'}
@@ -1092,42 +1125,44 @@ export const Lobby: React.FC<LobbyProps> = ({
 
           </div>
 
-          {/* Mobile Features & Quote (rendered cleanly beneath the card on mobile devices) */}
-          <div className="lg:hidden w-full max-w-md mt-6 space-y-4">
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                  <TrendingUp className="w-3.5 h-3.5" />
+          {/* Mobile Features & Quote (only when on landing page, NOT when in a room!) */}
+          {!hasJoined && (
+            <div className="lg:hidden w-full max-w-md mt-6 space-y-4">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                  <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-bold text-slate-200">Strateji Kur</span>
                 </div>
-                <span className="text-xs font-bold text-slate-200">Strateji Kur</span>
+
+                <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                  <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                    <Handshake className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-bold text-slate-200">Şehirleri Fethet</span>
+                </div>
+
+                <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                  <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                    <Coins className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-bold text-slate-200">Yatırımını Büyüt</span>
+                </div>
+
+                <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
+                  <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                    <Users className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-bold text-slate-200">Arkadaşlarınla Oyna</span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                  <Handshake className="w-3.5 h-3.5" />
-                </div>
-                <span className="text-xs font-bold text-slate-200">Şehirleri Fethet</span>
-              </div>
-
-              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                  <Coins className="w-3.5 h-3.5" />
-                </div>
-                <span className="text-xs font-bold text-slate-200">Yatırımını Büyüt</span>
-              </div>
-
-              <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
-                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                  <Users className="w-3.5 h-3.5" />
-                </div>
-                <span className="text-xs font-bold text-slate-200">Arkadaşlarınla Oyna</span>
-              </div>
+              <p className="font-['Caveat',cursive] text-xl text-amber-200/90 text-center tracking-wide">
+                "Bu topraklarda her şehir bir hikaye..."
+              </p>
             </div>
-
-            <p className="font-['Caveat',cursive] text-xl text-amber-200/90 text-center tracking-wide">
-              "Bu topraklarda her şehir bir hikaye..."
-            </p>
-          </div>
+          )}
 
         </div>
 
