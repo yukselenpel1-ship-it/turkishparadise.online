@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyUserToken } from '../../src/server/auth/authMiddleware';
-import { deleteFriendshipInDB } from '../../src/server/db/prisma';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -46,10 +45,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const { deleteFriendshipInDB } = await import('../../src/server/db/prisma');
     const outcome = await deleteFriendshipInDB(verifiedUser.id, friendId);
     return res.status(outcome.status || 200).json(outcome);
   } catch (err: any) {
-    console.error('[Vercel Function] Delete friend error:', err);
-    return res.status(500).json({ error: 'SERVER_ERROR', message: err?.message });
+    console.error('[Vercel Function] Delete friend DB error:', err);
+    return res.status(500).json({ error: 'DATABASE_ERROR', message: err?.message });
   }
 }

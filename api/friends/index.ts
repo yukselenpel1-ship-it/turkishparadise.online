@@ -1,9 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyUserToken } from '../../src/server/auth/authMiddleware';
-import { getFriendsFromDB } from '../../src/server/db/prisma';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS Headers
+  // 1. CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -20,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   }
 
-  // Auth Extraction
+  // 2. Immediate Token Check - Absolutely ZERO Database / Prisma loading before auth verification!
   let token: string | undefined;
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -37,6 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     verifiedUser = { id: uid, googleSub: `dev_${uid}`, displayName: 'DevUser' };
   }
 
+  // 3. If unauthenticated, return 401 immediately
   if (!verifiedUser) {
     return res.status(401).json({
       error: 'UNAUTHORIZED',
@@ -44,9 +44,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  // 4. Authenticated: Only now dynamically import DB repository
   try {
+    const { getFriendsFromDB } = await import('../../src/server/db/prisma');
     const result = await getFriendsFromDB(verifiedUser.id);
-    const annotatedFriends = result.friends.map((f: any) => ({
+    const annotatedFriends = (result.friends || []).map((f: any) => ({
       ...f,
       isOnline: false
     }));
@@ -54,11 +56,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       success: true,
       friends: annotatedFriends,
-      pendingIncoming: result.incomingRequests,
-      pendingOutgoing: result.outgoingRequests
+      pendingIncoming: result.incomingRequests || [],
+      pendingOutgoing: result.outgoingRequests || []
     });
   } catch (err: any) {
-    console.error('[Vercel Function] Get friends error:', err);
-    return res.status(500).json({ error: 'SERVER_ERROR', message: err?.message || 'Internal server error' });
+    console.error('[Vercel Function] Get friends DB error:', err);
+    return res.status(500).json({
+      error: 'DATABASE_ERROR',
+      message: err?.message || 'Veritabanı hatası oluştu.'
+    });
   }
 }

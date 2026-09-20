@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyUserToken } from '../../src/server/auth/authMiddleware';
-import { acceptFriendRequestInDB } from '../../src/server/db/prisma';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -46,10 +45,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const { acceptFriendRequestInDB } = await import('../../src/server/db/prisma');
     const outcome = await acceptFriendRequestInDB(verifiedUser.id, requestId);
     return res.status(outcome.status || 200).json(outcome);
   } catch (err: any) {
-    console.error('[Vercel Function] Accept friend request error:', err);
-    return res.status(500).json({ error: 'SERVER_ERROR', message: err?.message });
+    console.error('[Vercel Function] Accept friend request DB error:', err);
+    return res.status(500).json({ error: 'DATABASE_ERROR', message: err?.message });
   }
 }

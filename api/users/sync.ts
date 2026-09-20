@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { generateUserToken } from '../../src/server/auth/authMiddleware';
 import { verifyGoogleToken } from '../../src/server/auth/googleVerifier';
-import { syncUserInDB } from '../../src/server/db/prisma';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -53,6 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const { syncUserInDB } = await import('../../src/server/db/prisma');
     const user = await syncUserInDB({
       googleSub: verifiedSub,
       displayName: verifiedName,
@@ -73,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       token
     });
   } catch (err: any) {
-    console.error('[Vercel Function] Sync user error:', err);
-    return res.status(500).json({ error: 'SERVER_ERROR', message: err?.message || 'Internal server error' });
+    console.error('[Vercel Function] Sync user DB error:', err);
+    return res.status(500).json({ error: 'DATABASE_ERROR', message: err?.message || 'Internal server error' });
   }
 }
