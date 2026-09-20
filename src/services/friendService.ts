@@ -47,7 +47,7 @@ export function saveAuthToken(token: string): void {
  * Idempotently sync user with backend database.
  * Returns exact same DB User and single permanent friendCode across all devices.
  */
-export async function syncUserWithBackend(user: UserAccount): Promise<UserAccount> {
+export async function syncUserWithBackend(user: UserAccount, idToken?: string): Promise<UserAccount> {
   const googleSub = user.uid;
   const baseUrl = getApiBaseUrl();
   try {
@@ -55,6 +55,7 @@ export async function syncUserWithBackend(user: UserAccount): Promise<UserAccoun
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        idToken,
         googleSub,
         displayName: user.displayName,
         avatarUrl: user.photoURL,

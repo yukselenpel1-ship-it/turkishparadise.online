@@ -1,16 +1,23 @@
-import { PrismaClient, FriendshipStatus } from '@prisma/client';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-let prismaInstance: PrismaClient | null = null;
+export const FriendshipStatus = {
+  PENDING: 'PENDING',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED'
+} as const;
+
+export type FriendshipStatus = typeof FriendshipStatus[keyof typeof FriendshipStatus];
+
+let prismaInstance: any = null;
 let prismaInitError: string | null = null;
 
 /**
  * Lazy Prisma Client Getter with resilient error isolation.
- * Module import NEVER crashes the Node process.
+ * Dynamically imports @prisma/client so that module loading never crashes cold start.
  */
-export function getPrisma(): PrismaClient {
+export async function getPrisma(): Promise<any> {
   if (prismaInstance) {
     return prismaInstance;
   }
@@ -22,6 +29,7 @@ export function getPrisma(): PrismaClient {
       console.warn('[Prisma Warning] ' + prismaInitError);
     }
 
+    const { PrismaClient } = await import('@prisma/client');
     prismaInstance = new PrismaClient({
       log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error']
     });
@@ -81,7 +89,7 @@ export async function generateUniqueFriendCode(seedInput: string): Promise<strin
   let attempts = 0;
   while (attempts < 50) {
     try {
-      const prisma = getPrisma();
+      const prisma = await getPrisma();
       const existing = await prisma.user.findUnique({ where: { friendCode: fullCode } });
       if (!existing) return fullCode;
     } catch (e) {
@@ -96,7 +104,7 @@ export async function generateUniqueFriendCode(seedInput: string): Promise<strin
 }
 
 /**
- * Idempotent User Sync (Google Auth -> DB User)
+ * Idempotent User Sync (Server-Verified Google Auth -> DB User)
  * Always returns exact same DB User and permanent friendCode for same googleSub.
  */
 export async function syncUserInDB(params: {
@@ -110,7 +118,7 @@ export async function syncUserInDB(params: {
     throw new Error('googleSub is required');
   }
 
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
 
   // 1. Check if user exists by unique googleSub
   const existing = await prisma.user.findUnique({
@@ -163,7 +171,7 @@ export async function syncUserInDB(params: {
  * Fetch friends directly from Database
  */
 export async function getFriendsFromDB(userId: string) {
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
     return { friends: [], incomingRequests: [], outgoingRequests: [] };
@@ -221,7 +229,7 @@ export async function getFriendsFromDB(userId: string) {
  */
 export async function sendFriendRequestInDB(fromUserId: string, targetFriendCode: string) {
   const cleanCode = targetFriendCode.trim().toUpperCase();
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   const targetUser = await prisma.user.findUnique({ where: { friendCode: cleanCode } });
 
   if (!targetUser) {
@@ -284,7 +292,7 @@ export async function sendFriendRequestInDB(fromUserId: string, targetFriendCode
  * Accept Friend Request
  */
 export async function acceptFriendRequestInDB(userId: string, requestId: string) {
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   const friendship = await prisma.friendship.findUnique({
     where: { id: requestId },
     include: { userA: true, userB: true }
@@ -315,7 +323,7 @@ export async function acceptFriendRequestInDB(userId: string, requestId: string)
  * Delete Friendship
  */
 export async function deleteFriendshipInDB(userId: string, friendUserIdOrId: string) {
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   let friendship = await prisma.friendship.findUnique({ where: { id: friendUserIdOrId } });
 
   if (!friendship) {

@@ -15,6 +15,7 @@ import {
   requireAuth,
   AuthenticatedRequest
 } from './auth/authMiddleware';
+import { verifyGoogleToken } from './auth/googleVerifier';
 
 dotenv.config();
 
@@ -46,10 +47,12 @@ app.use(express.json());
 
 // Zod Schemas for Input Validation
 const SyncUserSchema = z.object({
-  googleSub: z.string().min(1),
-  displayName: z.string().min(1),
+  idToken: z.string().optional(),
+  // Fallback for dev / mock testing environments only
+  googleSub: z.string().optional(),
+  displayName: z.string().optional(),
   avatarUrl: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable()
+  email: z.string().optional().nullable()
 });
 
 const FriendRequestSchema = z.object({
@@ -76,8 +79,8 @@ apiRouter.get('/health', (_req, res) => {
 
 /**
  * POST /users/sync (or /api/users/sync)
- * Idempotent User Sync endpoint.
- * Returns verified DB User record, single permanent friendCode & signed Auth Token.
+ * Server-Side Verified Google Identity Sync.
+ * Backend verifies the Google id_token with Google servers before trusting identity.
  */
 apiRouter.post('/users/sync', async (req, res) => {
   try {
@@ -86,8 +89,49 @@ apiRouter.post('/users/sync', async (req, res) => {
       return res.status(400).json({ error: 'INVALID_INPUT', details: parseResult.error.format() });
     }
 
-    const { googleSub, displayName, avatarUrl, email } = parseResult.data;
-    const user = await syncUserInDB({ googleSub, displayName, avatarUrl, email });
+    const { idToken, googleSub, displayName, avatarUrl, email } = parseResult.data;
+
+    let verifiedSub: string;
+    let verifiedName: string;
+    let verifiedEmail: string | null = null;
+    let verifiedAvatar: string | null = null;
+
+    if (idToken) {
+      // 1. Mandatory Server-Side Google Token Verification
+      try {
+        const verified = await verifyGoogleToken(idToken);
+        verifiedSub = verified.sub;
+        verifiedName = displayName || verified.displayName;
+        verifiedEmail = verified.email || email || null;
+        verifiedAvatar = verified.avatarUrl || avatarUrl || null;
+      } catch (authErr: any) {
+        return res.status(401).json({
+          error: 'INVALID_GOOGLE_TOKEN',
+          message: authErr.message || 'Google token doğrulanamadı.'
+        });
+      }
+    } else if (process.env.NODE_ENV !== 'production' && googleSub) {
+      // Allow raw googleSub only in local development / unit tests
+      verifiedSub = googleSub;
+      verifiedName = displayName || 'Geliştirici';
+      verifiedEmail = email || null;
+      verifiedAvatar = avatarUrl || null;
+    } else {
+      return res.status(400).json({
+        error: 'ID_TOKEN_REQUIRED',
+        message: 'Güvenli giriş için Google id_token zorunludur.'
+      });
+    }
+
+    // 2. Upsert verified identity into Database
+    const user = await syncUserInDB({
+      googleSub: verifiedSub,
+      displayName: verifiedName,
+      avatarUrl: verifiedAvatar,
+      email: verifiedEmail
+    });
+
+    // 3. Issue signed JWT session token
     const token = generateUserToken({
       id: user.id,
       googleSub: user.googleSub,
@@ -118,7 +162,7 @@ apiRouter.get('/friends', requireAuth, async (req: AuthenticatedRequest, res) =>
 
     const annotatedFriends = result.friends.map(f => ({
       ...f,
-      isOnline: false // Presence updated via socket / client polling
+      isOnline: false
     }));
 
     return res.json({
@@ -206,7 +250,7 @@ apiRouter.delete('/friends/:friendId', requireAuth, async (req: AuthenticatedReq
   }
 });
 
-// Mount router on both /api and / to handle all Vercel function routing variations
+// Mount router on both /api and /
 app.use('/api', apiRouter);
 app.use('/', apiRouter);
 

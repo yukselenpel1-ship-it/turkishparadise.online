@@ -1,6 +1,6 @@
 import { UserAccount } from '../types/game';
 import { getUserStats } from './firebase';
-import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry } from './friendService';
+import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry, syncUserWithBackend } from './friendService';
 
 const OAUTH_STATE_KEY = 'tp_oauth_state';
 const LOCAL_USER_KEY = 'tp_user_profile';
@@ -203,11 +203,14 @@ export async function handleGoogleOAuthCallback(): Promise<UserAccount | null> {
       stats: stats
     };
 
+    // Sync with backend using server-verified ID Token
+    const syncedAccount = await syncUserWithBackend(userAccount, idToken || undefined);
+
     // Register user to public directory
-    saveUserToPublicRegistry(userAccount);
+    saveUserToPublicRegistry(syncedAccount);
 
     // Save user session in localStorage
-    localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(userAccount));
+    localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(syncedAccount));
 
     // Restore room parameter if present
     const savedRoom = sessionStorage.getItem('tp_oauth_room');
@@ -217,7 +220,7 @@ export async function handleGoogleOAuthCallback(): Promise<UserAccount | null> {
     // Clean hash from URL for a pristine browser experience
     window.history.replaceState(null, '', window.location.pathname + searchString);
 
-    return userAccount;
+    return syncedAccount;
   } catch (err) {
     console.error('[Google OAuth] Callback processing error:', err);
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
