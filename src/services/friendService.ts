@@ -1,5 +1,5 @@
 import { UserAccount, FriendUser, FriendRequest, UserStats } from '../types/game';
-import { database, isFirebaseConfigured } from './firebase';
+import { database, isFirebaseConfigured, getUserStats, saveUserStats } from './firebase';
 import { ref, set, get } from 'firebase/database';
 import { syncManager } from './multiplayerSync';
 
@@ -763,6 +763,93 @@ export function subscribeToFriendsAndRequests(
         saveFriends(uid, nextFriends);
         safeNotify(nextFriends, getIncomingRequests(uid));
       }
+    } else if (data.type === 'REQUEST_ACCOUNT_SYNC') {
+      const targetSub = (data.userId || '').trim().toUpperCase();
+      const targetCode = (data.friendCode || '').trim().toUpperCase();
+
+      const isSameAccount =
+        (targetSub && targetSub === uid.toUpperCase()) ||
+        (targetCode && cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`));
+
+      if (isSameAccount) {
+        // Send our local friends & stats to our other device
+        const myFriends = getFriends(uid);
+        const myStats = getUserStats(uid);
+        if (myFriends.length > 0 || myStats.gamesPlayed > 0) {
+          syncManager.sendFriendMessage({
+            type: 'ACCOUNT_SYNC_RESPONSE',
+            targetUserId: data.userId,
+            targetFriendCode: data.friendCode,
+            friends: myFriends,
+            stats: myStats
+          });
+        }
+      } else {
+        // Check if we have this user as a friend; if so, send them our friend metadata
+        const currentFriends = getFriends(uid);
+        const hasFriend = currentFriends.some(
+          (f) =>
+            (data.userId && f.uid?.toUpperCase() === targetSub) ||
+            (targetCode && f.friendCode?.toUpperCase() === targetCode)
+        );
+
+        if (hasFriend && typeof window !== 'undefined') {
+          try {
+            const rawUser = localStorage.getItem('tp_user_profile');
+            if (rawUser) {
+              const u = JSON.parse(rawUser);
+              syncManager.sendFriendMessage({
+                type: 'MUTUAL_FRIEND_SYNC',
+                targetUserId: data.userId,
+                targetFriendCode: data.friendCode,
+                friendUser: {
+                  uid,
+                  displayName: u.displayName || 'Oyuncu',
+                  friendCode: cleanMyCode || u.friendCode || 'TP-FRIEND',
+                  photoURL: u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
+                  isOnline: true,
+                  addedAt: new Date().toISOString()
+                }
+              });
+            }
+          } catch (e) {}
+        }
+      }
+    } else if (data.type === 'ACCOUNT_SYNC_RESPONSE') {
+      const isForMe =
+        (data.targetUserId && data.targetUserId === uid) ||
+        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
+
+      if (isForMe) {
+        if (Array.isArray(data.friends) && data.friends.length > 0) {
+          const currentFriends = getFriends(uid);
+          const merged = [...currentFriends];
+          for (const incoming of data.friends) {
+            if (!merged.some((f) => f.uid === incoming.uid || (incoming.friendCode && f.friendCode === incoming.friendCode))) {
+              merged.push(incoming);
+            }
+          }
+          saveFriends(uid, merged);
+          safeNotify(merged, getIncomingRequests(uid));
+        }
+        if (data.stats && typeof data.stats.gamesWon === 'number') {
+          saveUserStats(uid, data.stats);
+        }
+      }
+    } else if (data.type === 'MUTUAL_FRIEND_SYNC') {
+      const isForMe =
+        (data.targetUserId && data.targetUserId === uid) ||
+        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
+
+      if (isForMe && data.friendUser && data.friendUser.uid !== uid) {
+        const currentFriends = getFriends(uid);
+        const incoming = data.friendUser;
+        if (!currentFriends.some((f) => f.uid === incoming.uid || (incoming.friendCode && f.friendCode === incoming.friendCode))) {
+          currentFriends.push(incoming);
+          saveFriends(uid, currentFriends);
+          safeNotify(currentFriends, getIncomingRequests(uid));
+        }
+      }
     } else if (data.type === 'PRESENCE_UPDATE') {
       if (data.userId && data.userId !== uid) {
         const currentFriends = getFriends(uid);
@@ -782,11 +869,50 @@ export function subscribeToFriendsAndRequests(
           saveFriends(uid, nextFriends);
           safeNotify(nextFriends, getIncomingRequests(uid));
         }
+
+        // If friend just came online, reply with mutual friend sync so both sides stay aligned
+        if (data.isOnline && cleanMyCode) {
+          const isMyFriend = currentFriends.some(
+            (f) => f.uid === data.userId || (data.friendCode && f.friendCode === data.friendCode)
+          );
+          if (isMyFriend && typeof window !== 'undefined') {
+            try {
+              const rawUser = localStorage.getItem('tp_user_profile');
+              if (rawUser) {
+                const u = JSON.parse(rawUser);
+                syncManager.sendFriendMessage({
+                  type: 'MUTUAL_FRIEND_SYNC',
+                  targetUserId: data.userId,
+                  targetFriendCode: data.friendCode,
+                  friendUser: {
+                    uid,
+                    displayName: u.displayName || 'Oyuncu',
+                    friendCode: cleanMyCode,
+                    photoURL: u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
+                    isOnline: true,
+                    addedAt: new Date().toISOString()
+                  }
+                });
+              }
+            } catch (e) {}
+          }
+        }
       }
     }
   });
 
-  // 3. Periodic Background Polling
+  // 3. Broadcast initial mesh account & friends discovery request
+  setTimeout(() => {
+    if (active && uid) {
+      syncManager.sendFriendMessage({
+        type: 'REQUEST_ACCOUNT_SYNC',
+        userId: uid,
+        friendCode: cleanMyCode
+      });
+    }
+  }, 500);
+
+  // 4. Periodic Background Polling
   const interval = setInterval(refreshAll, 3000);
 
   return () => {
