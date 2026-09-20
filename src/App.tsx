@@ -23,7 +23,8 @@ import {
   PLAYER_COLORS,
   PLAYER_AVATARS,
   addLog,
-  addTransaction
+  addTransaction,
+  isPlayerHost
 } from './engine/gameEngine';
 import {
   loginAsGuest,
@@ -309,9 +310,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!gameState.roomId) return;
 
-    const isMeHost = Boolean(
-      gameState.players.length === 0 || (gameState.players.length > 0 && gameState.players[0].id === myPlayerId)
-    );
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
 
     const unsubscribe = subscribeToRoom(
       gameState.roomId,
@@ -325,13 +324,12 @@ export const App: React.FC = () => {
 
           // Auto-reconnect player to their seat if recovering after F5
           const savedId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY);
-          const savedName = sessionStorage.getItem(SESSION_PLAYER_NAME_KEY);
+          const currentUserId = userAccount?.uid || getPersistentGuestId();
           const matchedPlayer = remoteState.players.find(
             (p) =>
               (savedId && p.id === savedId) ||
-              (userAccount && p.id === userAccount.uid) ||
-              (userAccount && p.name === userAccount.displayName) ||
-              (savedName && p.name === savedName)
+              (currentUserId && p.userId === currentUserId) ||
+              (userAccount && p.id === userAccount.uid)
           );
 
           if (matchedPlayer && (!myPlayerId || myPlayerId !== matchedPlayer.id)) {
@@ -342,20 +340,22 @@ export const App: React.FC = () => {
       (newPlayer) => {
         // Host adds incoming player and broadcasts updated state
         setGameState((prev) => {
-          const isHost = prev.players.length === 0 || prev.players[0].id === myPlayerId;
+          const isHost = isPlayerHost(prev, myPlayerId);
           if (!isHost) return prev;
 
-          // Check if player is re-joining
+          // Check if player is re-joining by unique playerId or persistent userId
           const existingIdx = prev.players.findIndex(
-            (p) => p.id === newPlayer.id || p.name === newPlayer.name
+            (p) => p.id === newPlayer.id || (newPlayer.userId && p.userId && p.userId === newPlayer.userId)
           );
 
           let nextPlayers = [...prev.players];
           if (existingIdx >= 0) {
-            // Restore returning player and clear AFK
+            // Restore returning player and clear AFK, preserving original host status
+            const wasHost = nextPlayers[existingIdx].isHost;
             nextPlayers[existingIdx] = {
               ...nextPlayers[existingIdx],
               ...newPlayer,
+              isHost: wasHost,
               inGame: true,
               isAfk: false,
               isBot: false
@@ -368,6 +368,7 @@ export const App: React.FC = () => {
 
           if (prev.players.length >= 6) return prev;
 
+          // Auto-resolve color conflict if incoming color is taken
           let assignedColor = newPlayer.color;
           const takenColors = prev.players.map((p) => p.color);
           if (takenColors.includes(assignedColor)) {
@@ -375,10 +376,19 @@ export const App: React.FC = () => {
             if (freeColor) assignedColor = freeColor;
           }
 
+          // Auto-resolve avatar conflict if incoming avatar is taken
+          let assignedAvatar = newPlayer.avatar;
+          const takenAvatars = prev.players.map((p) => p.avatar);
+          if (takenAvatars.includes(assignedAvatar)) {
+            const freeAvatar = PLAYER_AVATARS.find((a) => !takenAvatars.includes(a));
+            if (freeAvatar) assignedAvatar = freeAvatar;
+          }
+
           const playerToAdd: Player = {
             ...newPlayer,
             color: assignedColor,
-            isHost: false,
+            avatar: assignedAvatar,
+            isHost: false, // New joiner is NEVER host when joining existing room
             isAfk: false,
             isBot: false
           };
@@ -404,8 +414,8 @@ export const App: React.FC = () => {
       (leavingPlayerId) => {
         // Handle player leaving/disconnecting
         setGameState((prev) => {
-          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
-          const wasHostLeaving = prev.players[0]?.id === leavingPlayerId;
+          const currentHostId = prev.hostPlayerId || (prev.players.find((p) => p.isHost)?.id) || prev.players[0]?.id;
+          const wasHostLeaving = currentHostId === leavingPlayerId;
 
           if (wasHostLeaving) {
             // Host left! Perform Host Migration to next connected human player
@@ -426,7 +436,11 @@ export const App: React.FC = () => {
               }));
 
             const leavingName = prev.players.find(p => p.id === leavingPlayerId)?.name || 'Kurucu';
-            const updated = { ...prev, players: updatedPlayers };
+            const updated: GameState = {
+              ...prev,
+              hostPlayerId: nextHost.id,
+              players: updatedPlayers
+            };
             addLog(updated, `👑 Oda Kurucusu (${leavingName}) ayrıldı. Yeni Kurucu: ${nextHost.name}!`, 'warning');
 
             if (nextHost.id === myPlayerId) {
@@ -436,6 +450,7 @@ export const App: React.FC = () => {
             return updated;
           }
 
+          const isMeHost = isPlayerHost(prev, myPlayerId);
           if (!isMeHost) return prev;
 
           const leavingPlayer = prev.players.find((p) => p.id === leavingPlayerId);
@@ -468,7 +483,11 @@ export const App: React.FC = () => {
             isHost: p.id === newHostPlayerId
           }));
           const newHostName = prev.players.find(p => p.id === newHostPlayerId)?.name || 'Oyuncu';
-          const updated = { ...prev, players: updatedPlayers };
+          const updated: GameState = {
+            ...prev,
+            hostPlayerId: newHostPlayerId,
+            players: updatedPlayers
+          };
           addLog(updated, `👑 Oda kuruculuğu ${newHostName} oyuncusuna devredildi.`, 'info');
           return updated;
         });
@@ -476,7 +495,7 @@ export const App: React.FC = () => {
       (senderPlayerId, actionType, payload) => {
         // Handle incoming game action from non-host client
         setGameState((prev) => {
-          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
+          const isMeHost = isPlayerHost(prev, myPlayerId);
           if (!isMeHost) return prev;
 
           if (actionType === 'ROLL_DICE') {
@@ -565,7 +584,7 @@ export const App: React.FC = () => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     if (!currentPlayer || currentPlayer.isBot || !currentPlayer.inGame) return;
 
-    const isMeHost = gameState.players[0]?.id === myPlayerId;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
     const isMeCurrent = currentPlayer.id === myPlayerId;
 
     // Trigger AFK marking on host or current player client
@@ -592,7 +611,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (gameState.phase !== 'PLAYING' || isMoving) return;
 
-    const isMeHost = gameState.players[0]?.id === myPlayerId;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) return;
 
     const activePlayers = gameState.players.filter(p => p.inGame);
@@ -630,11 +649,11 @@ export const App: React.FC = () => {
       recordedMatchKeyRef.current = matchKey;
 
       const myPlayer = gameState.players.find(
-        (p) => p.id === myPlayerId || p.id === userAccount.uid || p.name === userAccount.displayName
+        (p) => p.id === myPlayerId || (p.userId && p.userId === userAccount.uid) || p.id === userAccount.uid
       );
       if (!myPlayer) return;
 
-      const isMeWinner = gameState.winner.id === myPlayer.id || gameState.winner.name === myPlayer.name;
+      const isMeWinner = gameState.winner.id === myPlayer.id || (gameState.winner.userId && myPlayer.userId && gameState.winner.userId === myPlayer.userId);
       const result: 'WIN' | 'LOSS' | 'BANKRUPTCY' = isMeWinner
         ? 'WIN'
         : (!myPlayer.inGame ? 'BANKRUPTCY' : 'LOSS');
@@ -663,7 +682,7 @@ export const App: React.FC = () => {
   // 6.7 Immediate In-Game Bankruptcy Loss Tracking
   useEffect(() => {
     if (gameState.phase === 'PLAYING' && userAccount && myPlayerId) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId || p.id === userAccount.uid);
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId || (p.userId && p.userId === userAccount.uid) || p.id === userAccount.uid);
       if (myPlayer && !myPlayer.inGame) {
         const bankKey = `bank_${gameState.roomId}_${userAccount.uid}_${gameState.turnStartedAt || 0}`;
         if (recordedBankruptcyRef.current === bankKey) return;
@@ -695,7 +714,7 @@ export const App: React.FC = () => {
     if (gameState.incomingTradeOffer) return;
 
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
-    const isMeHost = gameState.players[0]?.id === myPlayerId;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
 
     // Execute bot logic if player is a Bot or is a Human marked as AFK
     if (!currentPlayer || (!currentPlayer.isBot && !currentPlayer.isAfk) || !currentPlayer.inGame || !isMeHost) return;
@@ -836,7 +855,11 @@ export const App: React.FC = () => {
   // Join Game as Player
   const handleJoin = (name: string, avatar: string, color?: string, isOnline = true, targetRoomCode?: string) => {
     const finalRoom = targetRoomCode || gameState.roomId || gameState.settings.roomCode || 'TR-1001';
-    const newId = userAccount?.uid || getPersistentGuestId();
+    const currentUserId = userAccount?.uid || getPersistentGuestId();
+    // Unique in-room playerId generated per join session
+    const cleanUid = currentUserId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+    const randomSuffix = Math.random().toString(36).substring(2, 7);
+    const newPlayerId = `p_${cleanUid}_${randomSuffix}`;
     const startMoney = gameState.settings?.startingMoney || 1500;
     
     // Determine unique color not taken by existing players
@@ -846,13 +869,22 @@ export const App: React.FC = () => {
       const freeColor = PLAYER_COLORS.find((c) => !existingColors.includes(c));
       chosenColor = freeColor || PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length];
     }
+
+    // Determine unique avatar not taken by existing players
+    const existingAvatars = gameState.players.map((p) => p.avatar);
+    let chosenAvatar = avatar || '';
+    if (!chosenAvatar || existingAvatars.includes(chosenAvatar)) {
+      const freeAvatar = PLAYER_AVATARS.find((a) => !existingAvatars.includes(a));
+      chosenAvatar = freeAvatar || PLAYER_AVATARS[gameState.players.length % PLAYER_AVATARS.length];
+    }
     
     const isHostPlayer = gameState.players.length === 0;
 
     const newPlayer: Player = {
-      id: newId,
+      id: newPlayerId,
+      userId: currentUserId,
       name: name || userAccount?.displayName || 'Oyuncu',
-      avatar,
+      avatar: chosenAvatar,
       color: chosenColor,
       money: startMoney,
       position: 0,
@@ -865,11 +897,11 @@ export const App: React.FC = () => {
       isHost: isHostPlayer
     };
 
-    setMyPlayerId(newId);
+    setMyPlayerId(newPlayerId);
 
     try {
-      sessionStorage.setItem(SESSION_PLAYER_ID_KEY, newId);
-      localStorage.setItem(SESSION_PLAYER_ID_KEY, newId);
+      sessionStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
+      localStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
       sessionStorage.setItem(SESSION_PLAYER_NAME_KEY, newPlayer.name);
       sessionStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
       localStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
@@ -880,17 +912,24 @@ export const App: React.FC = () => {
 
     updateAndBroadcastGameState((prev) => {
       // Avoid duplicate join if already exists
-      const existingIdx = prev.players.findIndex(p => p.id === newId);
+      const existingIdx = prev.players.findIndex(p => p.id === newPlayerId || (p.userId && p.userId === currentUserId));
       let nextPlayers = [...prev.players];
       if (existingIdx >= 0) {
-        nextPlayers[existingIdx] = newPlayer;
+        nextPlayers[existingIdx] = {
+          ...nextPlayers[existingIdx],
+          ...newPlayer,
+          isHost: nextPlayers[existingIdx].isHost // maintain host status if previously host
+        };
       } else {
         nextPlayers.push(newPlayer);
       }
 
-      const updated = {
+      const updatedHostId = prev.hostPlayerId || (isHostPlayer ? newPlayerId : undefined);
+
+      const updated: GameState = {
         ...prev,
         roomId: finalRoom,
+        hostPlayerId: updatedHostId,
         isOnlineGame: isOnline,
         settings: { ...prev.settings, roomCode: finalRoom },
         players: nextPlayers
@@ -923,7 +962,7 @@ export const App: React.FC = () => {
   // Remove player or bot from room (Host Only)
   const handleRemovePlayer = (playerIdToRemove: string) => {
     updateAndBroadcastGameState((prev) => {
-      const isHost = prev.players.length === 0 || prev.players[0].id === myPlayerId || prev.players[0].isHost;
+      const isHost = isPlayerHost(prev, myPlayerId);
       if (!isHost) return prev;
 
       const pToRemove = prev.players.find((p) => p.id === playerIdToRemove);
@@ -940,7 +979,7 @@ export const App: React.FC = () => {
 
   // Update Game Settings (Host Only)
   const handleUpdateSettings = (newSettings: GameSettings) => {
-    const isMeHost = gameState.players.length === 0 || gameState.players[0].id === myPlayerId || gameState.players[0].isHost;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) return;
 
     updateAndBroadcastGameState((prev) => ({
@@ -952,7 +991,7 @@ export const App: React.FC = () => {
 
   // Add Bot Player with Difficulty & Guaranteed Unique Color (Host Only)
   const handleAddBot = (difficulty: BotDifficulty = 'medium') => {
-    const isMeHost = gameState.players.length === 0 || gameState.players[0].id === myPlayerId || gameState.players[0].isHost;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost || gameState.players.length >= 6) return;
 
     const botNumber = gameState.players.filter((p) => p.isBot).length + 1;
@@ -996,7 +1035,7 @@ export const App: React.FC = () => {
 
   // Start Game (Host Only)
   const handleStartGame = () => {
-    const isMeHost = gameState.players.length === 0 || gameState.players[0].id === myPlayerId || gameState.players[0].isHost;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost || gameState.players.length < 2) return;
 
     updateAndBroadcastGameState((prev) => {
@@ -1034,7 +1073,7 @@ export const App: React.FC = () => {
         localStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
       } catch (e) {}
 
-      const existingPlayer = gameState.players.find(p => p.id === myPlayerId);
+      const existingPlayer = gameState.players.find(p => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
       const myName = existingPlayer?.name || userAccount?.displayName || 'Oyuncu';
       const myAvatar = existingPlayer?.avatar || '🎩';
       const myColor = existingPlayer?.color || '#3b82f6';
@@ -1050,7 +1089,7 @@ export const App: React.FC = () => {
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     if (!currentPlayer) return;
 
-    const isMeHost = gameState.players[0]?.id === myPlayerId;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
     const isMeCurrent = currentPlayer.id === myPlayerId;
 
     // Allow manual roll by current player OR auto roll for bot / AFK human on host
@@ -1321,7 +1360,7 @@ export const App: React.FC = () => {
     setTradeSelectedTile(undefined);
   };
 
-  const me = gameState.players.find((p) => p.id === myPlayerId);
+  const me = gameState.players.find((p) => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
 
   return (
     <div className={`w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none ${
@@ -1333,6 +1372,7 @@ export const App: React.FC = () => {
         <Lobby
           players={gameState.players}
           myPlayerId={myPlayerId}
+          hostPlayerId={gameState.hostPlayerId}
           settings={gameState.settings}
           userAccount={userAccount}
           onGoogleLogin={handleGoogleLogin}

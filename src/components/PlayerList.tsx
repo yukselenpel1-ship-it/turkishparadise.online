@@ -51,7 +51,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 font-extrabold text-xs text-white truncate">
                     <span className="truncate">{p.name}</span>
-                    {(p.isHost || index === 0) && (
+                    {p.isHost && (
                       <span className="text-[10px] shrink-0" title="Oda Kurucusu">👑</span>
                     )}
                     {p.id === myPlayerId && (

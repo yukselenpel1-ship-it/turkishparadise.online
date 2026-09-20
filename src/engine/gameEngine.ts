@@ -44,6 +44,7 @@ export function createInitialState(settings?: Partial<GameSettings>): GameState 
 
   return {
     roomId: mergedSettings.roomCode,
+    hostPlayerId: undefined,
     settings: mergedSettings,
     phase: 'LOBBY',
     players: [],
@@ -77,6 +78,18 @@ export function createInitialState(settings?: Partial<GameSettings>): GameState 
     pendingAction: 'NONE'
   };
 }
+
+/**
+ * Robust host checker that never relies solely on array index
+ */
+export function isPlayerHost(state: GameState, playerId: string | null): boolean {
+  if (!playerId) return false;
+  if (state.hostPlayerId) return state.hostPlayerId === playerId;
+  const player = state.players.find((p) => p.id === playerId);
+  if (player?.isHost) return true;
+  return state.players.length > 0 && state.players[0].id === playerId;
+}
+
 
 
 export function addChatMessage(

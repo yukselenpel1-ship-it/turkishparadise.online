@@ -60,6 +60,7 @@ export interface ChatMessage {
 
 export interface Player {
   id: string;
+  userId?: string;
   connectionId?: string;
   name: string;
   color: string;
@@ -198,6 +199,7 @@ export interface UserAccount {
 
 export interface GameState {
   roomId: string;
+  hostPlayerId?: string;
   settings: GameSettings;
   phase: 'LOBBY' | 'PLAYING' | 'ENDED';
   players: Player[];

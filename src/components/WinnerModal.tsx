@@ -15,7 +15,9 @@ export const WinnerModal: React.FC<WinnerModalProps> = ({
   onRestart,
   onOpenProfile
 }) => {
-  const isMeWinner = currentPlayer ? (currentPlayer.id === winner.id || currentPlayer.name === winner.name) : false;
+  const isMeWinner = currentPlayer
+    ? (currentPlayer.id === winner.id || Boolean(currentPlayer.userId && winner.userId && currentPlayer.userId === winner.userId))
+    : false;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md animate-fade-in font-['Plus_Jakarta_Sans',sans-serif] select-none">

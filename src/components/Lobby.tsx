@@ -39,6 +39,7 @@ import {
 interface LobbyProps {
   players: Player[];
   myPlayerId: string | null;
+  hostPlayerId?: string;
   settings: GameSettings;
   userAccount: UserAccount | null;
   onGoogleLogin: () => Promise<void>;
@@ -57,6 +58,7 @@ interface LobbyProps {
 export const Lobby: React.FC<LobbyProps> = ({
   players,
   myPlayerId,
+  hostPlayerId,
   settings,
   userAccount,
   onGoogleLogin,
@@ -136,12 +138,13 @@ export const Lobby: React.FC<LobbyProps> = ({
     }
   }, [userAccount]);
 
-  const hasJoined = players.some((p) => p.id === myPlayerId);
-  const me = players.find((p) => p.id === myPlayerId);
-  const isHost = me?.isHost || (players.length > 0 && players[0].id === myPlayerId);
+  const hasJoined = players.some((p) => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
+  const me = players.find((p) => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
+  const isHost = Boolean(hostPlayerId ? hostPlayerId === myPlayerId : (me?.isHost || (players.length > 0 && players[0].id === myPlayerId)));
 
-  // Taken colors by other players/bots in the room
+  // Taken colors and avatars by other players/bots in the room
   const takenColors = players.filter((p) => p.id !== myPlayerId).map((p) => p.color);
+  const takenAvatars = players.filter((p) => p.id !== myPlayerId).map((p) => p.avatar);
 
   // Auto-switch selectedColor if taken by another player/bot
   useEffect(() => {
@@ -150,6 +153,14 @@ export const Lobby: React.FC<LobbyProps> = ({
       setSelectedColor(freeColors[0]);
     }
   }, [players, myPlayerId, selectedColor]);
+
+  // Auto-switch selectedAvatar if taken by another player/bot
+  useEffect(() => {
+    const freeAvatars = PLAYER_AVATARS.filter((a) => !takenAvatars.includes(a));
+    if (freeAvatars.length > 0 && takenAvatars.includes(selectedAvatar)) {
+      setSelectedAvatar(freeAvatars[0]);
+    }
+  }, [players, myPlayerId, selectedAvatar]);
 
   const handleGoogleClick = async () => {
     try {
@@ -703,14 +714,14 @@ export const Lobby: React.FC<LobbyProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {index === 0 && (
+                          {p.isHost && (
                             <span className="flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
                               <Shield className="w-3 h-3" /> Kurucu
                             </span>
                           )}
 
                           {/* Host can remove bot or kick player */}
-                          {isHost && index !== 0 && (
+                          {isHost && !p.isHost && (
                             <button
                               type="button"
                               onClick={() => onRemovePlayer?.(p.id)}
@@ -802,24 +813,43 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                 {/* Token / Avatar Picker */}
                 <div className="space-y-1.5 text-left">
-                  <label className="text-xs font-bold text-slate-300">
-                    Piyonunuzu Seçin
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-300">
+                      Piyonunuzu Seçin
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} Müsait
+                    </span>
+                  </div>
                   <div className="grid grid-cols-6 gap-2">
-                    {PLAYER_AVATARS.map((avatar) => (
-                      <button
-                        key={avatar}
-                        type="button"
-                        onClick={() => setSelectedAvatar(avatar)}
-                        className={`text-xl p-2.5 rounded-xl border text-center transition transform active:scale-95 cursor-pointer ${
-                          selectedAvatar === avatar
-                            ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-lg'
-                            : 'bg-[#070b14] border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        {avatar}
-                      </button>
-                    ))}
+                    {PLAYER_AVATARS.map((avatar) => {
+                      const isTaken = takenAvatars.includes(avatar);
+                      const isSelected = selectedAvatar === avatar;
+
+                      return (
+                        <button
+                          key={avatar}
+                          type="button"
+                          disabled={isTaken}
+                          onClick={() => setSelectedAvatar(avatar)}
+                          className={`text-xl p-2.5 rounded-xl border text-center transition transform relative ${
+                            isTaken
+                              ? 'opacity-25 cursor-not-allowed grayscale border-slate-700 bg-slate-900/40'
+                              : isSelected
+                              ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-lg cursor-pointer active:scale-95'
+                              : 'bg-[#070b14] border-slate-800 hover:border-slate-700 cursor-pointer active:scale-90'
+                          }`}
+                          title={isTaken ? 'Bu piyon başka bir oyuncu tarafından alındı' : undefined}
+                        >
+                          <span>{avatar}</span>
+                          {isTaken && (
+                            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] font-black text-white/80 bg-slate-950/90 px-1 rounded border border-slate-700">
+                              DOLU
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -947,24 +977,43 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                 {/* Avatar Picker */}
                 <div className="space-y-1.5 text-left">
-                  <label className="text-xs font-bold text-slate-300">
-                    Piyonunuzu Seçin
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-300">
+                      Piyonunuzu Seçin
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} Müsait
+                    </span>
+                  </div>
                   <div className="grid grid-cols-6 gap-2">
-                    {PLAYER_AVATARS.map((avatar) => (
-                      <button
-                        key={avatar}
-                        type="button"
-                        onClick={() => setSelectedAvatar(avatar)}
-                        className={`text-xl p-2.5 rounded-xl border text-center transition transform active:scale-95 cursor-pointer ${
-                          selectedAvatar === avatar
-                            ? 'bg-sky-500/20 border-sky-400 ring-2 ring-sky-400/50 shadow-lg'
-                            : 'bg-[#070b14] border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        {avatar}
-                      </button>
-                    ))}
+                    {PLAYER_AVATARS.map((avatar) => {
+                      const isTaken = takenAvatars.includes(avatar);
+                      const isSelected = selectedAvatar === avatar;
+
+                      return (
+                        <button
+                          key={avatar}
+                          type="button"
+                          disabled={isTaken}
+                          onClick={() => setSelectedAvatar(avatar)}
+                          className={`text-xl p-2.5 rounded-xl border text-center transition transform relative ${
+                            isTaken
+                              ? 'opacity-25 cursor-not-allowed grayscale border-slate-700 bg-slate-900/40'
+                              : isSelected
+                              ? 'bg-sky-500/20 border-sky-400 ring-2 ring-sky-400/50 shadow-lg cursor-pointer active:scale-95'
+                              : 'bg-[#070b14] border-slate-800 hover:border-slate-700 cursor-pointer active:scale-90'
+                          }`}
+                          title={isTaken ? 'Bu piyon başka bir oyuncu tarafından alındı' : undefined}
+                        >
+                          <span>{avatar}</span>
+                          {isTaken && (
+                            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] font-black text-white/80 bg-slate-950/90 px-1 rounded border border-slate-700">
+                              DOLU
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1093,24 +1142,43 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                   {/* Token / Avatar Picker */}
                   <div className="space-y-1.5 text-left">
-                    <label className="text-xs font-bold text-slate-300">
-                      Piyonunuzu Seçin
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-300">
+                        Piyonunuzu Seçin
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} Müsait
+                      </span>
+                    </div>
                     <div className="grid grid-cols-6 gap-2">
-                      {PLAYER_AVATARS.map((avatar) => (
-                        <button
-                          key={avatar}
-                          type="button"
-                          onClick={() => setSelectedAvatar(avatar)}
-                          className={`text-xl p-2.5 rounded-xl border text-center transition transform active:scale-95 cursor-pointer ${
-                            selectedAvatar === avatar
-                              ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-lg'
-                              : 'bg-[#070b14] border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          {avatar}
-                        </button>
-                      ))}
+                      {PLAYER_AVATARS.map((avatar) => {
+                        const isTaken = takenAvatars.includes(avatar);
+                        const isSelected = selectedAvatar === avatar;
+
+                        return (
+                          <button
+                            key={avatar}
+                            type="button"
+                            disabled={isTaken}
+                            onClick={() => setSelectedAvatar(avatar)}
+                            className={`text-xl p-2.5 rounded-xl border text-center transition transform relative ${
+                              isTaken
+                                ? 'opacity-25 cursor-not-allowed grayscale border-slate-700 bg-slate-900/40'
+                                : isSelected
+                                ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-lg cursor-pointer active:scale-95'
+                                : 'bg-[#070b14] border-slate-800 hover:border-slate-700 cursor-pointer active:scale-90'
+                            }`}
+                            title={isTaken ? 'Bu piyon başka bir oyuncu tarafından alındı' : undefined}
+                          >
+                            <span>{avatar}</span>
+                            {isTaken && (
+                              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] font-black text-white/80 bg-slate-950/90 px-1 rounded border border-slate-700">
+                                DOLU
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
