@@ -29,6 +29,7 @@ class MultiplayerSyncManager {
   private currentRoomId: string | null = null;
   private localChannel: BroadcastChannel | null = null;
   private listeners: Set<MessageCallback> = new Set();
+  private friendListeners: Set<(data: any) => void> = new Set();
   private isMqttConnected = false;
   private isHost = false;
   private currentVersion = 0;
@@ -292,13 +293,26 @@ class MultiplayerSyncManager {
           const topic = `turkishparadise/rooms/${this.currentRoomId.toLowerCase()}`;
           this.mqttClient?.subscribe(topic, { qos: 1 });
         }
+        // Always subscribe to global friend channel
+        this.mqttClient?.subscribe('turkishparadise/global/friends', { qos: 1 });
       });
 
-      this.mqttClient.on('message', (_topic, message) => {
+      this.mqttClient.on('message', (topic, message) => {
         try {
-          const parsed = JSON.parse(message.toString()) as SyncMessage;
-          if (parsed.senderId === LOCAL_CLIENT_ID) return;
-          this.notifyListeners(parsed);
+          const parsed = JSON.parse(message.toString());
+          if (topic === 'turkishparadise/global/friends') {
+            if (parsed.senderClientId === LOCAL_CLIENT_ID) return;
+            this.friendListeners.forEach((cb) => {
+              try {
+                cb(parsed);
+              } catch (e) {}
+            });
+            return;
+          }
+
+          const syncMsg = parsed as SyncMessage;
+          if (syncMsg.senderId === LOCAL_CLIENT_ID) return;
+          this.notifyListeners(syncMsg);
         } catch (e) {}
       });
 
@@ -314,6 +328,46 @@ class MultiplayerSyncManager {
     } catch (e) {
       console.warn('[MQTT] Failed to initialize MQTT client:', e);
     }
+  }
+
+  /**
+   * Broadcast global friend event (Friend Request, Accept, Presence)
+   */
+  public sendFriendMessage(payload: any): void {
+    const data = {
+      ...payload,
+      senderClientId: LOCAL_CLIENT_ID,
+      timestamp: Date.now()
+    };
+    const json = JSON.stringify(data);
+
+    // 1. Local BroadcastChannel
+    if (this.localChannel) {
+      try {
+        this.localChannel.postMessage({ type: 'FRIEND_SYSTEM_EVENT', payload: data });
+      } catch (e) {}
+    }
+
+    // 2. Global MQTT topic
+    this.ensureMqttConnection();
+    if (this.mqttClient && this.isMqttConnected) {
+      try {
+        this.mqttClient.publish('turkishparadise/global/friends', json, { qos: 1 });
+      } catch (err) {
+        console.warn('[Sync] Friend MQTT publish warning:', err);
+      }
+    }
+  }
+
+  /**
+   * Subscribe to global friend system events (requests, responses, presence)
+   */
+  public subscribeToFriendChannel(callback: (data: any) => void): () => void {
+    this.ensureMqttConnection();
+    this.friendListeners.add(callback);
+    return () => {
+      this.friendListeners.delete(callback);
+    };
   }
 
   private notifyListeners(msg: SyncMessage): void {

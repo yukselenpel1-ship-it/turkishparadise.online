@@ -42,7 +42,7 @@ import {
   handleGoogleOAuthCallback
 } from './services/googleAuth';
 import { soundManager } from './services/soundEffects';
-import { updateUserPresence } from './services/friendService';
+import { updateUserPresence, subscribeToFriendRequests } from './services/friendService';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -55,7 +55,7 @@ import { MyPropertiesModal } from './components/MyPropertiesModal';
 import { TradeModal } from './components/TradeModal';
 import { TransactionsModal } from './components/TransactionsModal';
 import { IncomingTradeModal } from './components/IncomingTradeModal';
-import { ProfileModal } from './components/ProfileModal';
+import { ProfileModal, ProfileTab } from './components/ProfileModal';
 import { DiceLogo } from './components/DiceLogo';
 import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins } from 'lucide-react';
 
@@ -123,12 +123,28 @@ export const App: React.FC = () => {
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileInitialTab, setProfileInitialTab] = useState<ProfileTab>('stats');
+  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
   const [mobileSheet, setMobileSheet] = useState<'players' | 'chat' | 'logs' | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const prevChatCountRef = useRef<number>(gameState.chatMessages?.length || 0);
+
+  // Subscribe to real-time incoming friend requests for profile badge
+  useEffect(() => {
+    if (!userAccount?.uid) {
+      setPendingRequestsCount(0);
+      return;
+    }
+    const unsubscribe = subscribeToFriendRequests(userAccount.uid, (requests) => {
+      setPendingRequestsCount(requests.length);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [userAccount?.uid]);
 
   // Sync sound setting changes globally with soundManager
   useEffect(() => {
@@ -1232,9 +1248,16 @@ export const App: React.FC = () => {
 
               {userAccount ? (
                 <button
-                  onClick={() => setIsProfileModalOpen(true)}
-                  className="flex items-center gap-1.5 sm:gap-2 bg-slate-800/90 hover:bg-slate-700/90 border border-amber-500/40 rounded-xl px-2 sm:px-3 py-1 text-xs transition cursor-pointer group shrink-0 active:scale-95"
-                  title="Profil & İstatistikleri Gör"
+                  onClick={() => {
+                    setProfileInitialTab(pendingRequestsCount > 0 ? 'requests' : 'stats');
+                    setIsProfileModalOpen(true);
+                  }}
+                  className={`flex items-center gap-1.5 sm:gap-2 bg-slate-800/90 hover:bg-slate-700/90 border rounded-xl px-2 sm:px-3 py-1 text-xs transition cursor-pointer group shrink-0 active:scale-95 relative ${
+                    pendingRequestsCount > 0
+                      ? 'border-amber-400 text-amber-300 ring-1 ring-amber-400/50'
+                      : 'border-amber-500/40'
+                  }`}
+                  title={pendingRequestsCount > 0 ? `${pendingRequestsCount} yeni arkadaşlık isteği!` : "Profil & İstatistikleri Gör"}
                 >
                   {userAccount.photoURL ? (
                     <img src={userAccount.photoURL} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
@@ -1244,9 +1267,15 @@ export const App: React.FC = () => {
                   <span className="text-white font-bold group-hover:text-amber-300 transition hidden sm:inline truncate max-w-[90px]">
                     {userAccount.displayName}
                   </span>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-black border border-amber-500/30 shrink-0">
-                    🏆 {userAccount.stats?.gamesWon || 0}
-                  </span>
+                  {pendingRequestsCount > 0 ? (
+                    <span className="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-black animate-bounce shadow">
+                      📩 {pendingRequestsCount}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-black border border-amber-500/30 shrink-0">
+                      🏆 {userAccount.stats?.gamesWon || 0}
+                    </span>
+                  )}
                 </button>
               ) : (
                 <button
@@ -1561,6 +1590,7 @@ export const App: React.FC = () => {
           onGoogleLogin={handleGoogleLogin}
           onJoinRoom={handleJoinFriendRoom}
           roomId={gameState.roomId || gameState.settings?.roomCode || 'TR-1001'}
+          initialTab={profileInitialTab}
         />
       )}
 

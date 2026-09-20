@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Player, GameSettings, BotDifficulty, UserAccount } from '../types/game';
 import { PLAYER_AVATARS, PLAYER_COLORS } from '../engine/gameEngine';
 import { soundManager } from '../services/soundEffects';
-import { ProfileModal } from './ProfileModal';
+import { ProfileModal, ProfileTab } from './ProfileModal';
+import { subscribeToFriendRequests } from '../services/friendService';
 import { DiceLogo } from './DiceLogo';
 import {
   User,
@@ -81,9 +82,24 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [activeModal, setActiveModal] = useState<'rules' | 'features' | 'community' | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profileInitialTab, setProfileInitialTab] = useState<'stats' | 'friends'>('stats');
+  const [profileInitialTab, setProfileInitialTab] = useState<ProfileTab>('stats');
+  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
   const [isInviteLink, setIsInviteLink] = useState(false);
+
+  // Subscribe to real-time incoming friend requests for header badge
+  useEffect(() => {
+    if (!userAccount?.uid) {
+      setPendingRequestsCount(0);
+      return;
+    }
+    const unsubscribe = subscribeToFriendRequests(userAccount.uid, (requests) => {
+      setPendingRequestsCount(requests.length);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [userAccount?.uid]);
 
   // Sync sound settings with soundManager
   useEffect(() => {
@@ -236,19 +252,27 @@ export const Lobby: React.FC<LobbyProps> = ({
               {/* Friends & Special ID Quick Button */}
               <button
                 onClick={() => {
-                  setProfileInitialTab('friends');
+                  setProfileInitialTab(pendingRequestsCount > 0 ? 'requests' : 'friends');
                   setIsProfileModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/30 hover:border-amber-400 rounded-xl sm:rounded-2xl py-1 px-2.5 sm:py-1.5 sm:px-3 text-amber-300 hover:text-white transition cursor-pointer shrink-0 shadow text-xs font-black"
-                title="Arkadaşlarım ve Özel Arkadaş ID'm"
+                className={`flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800/90 border rounded-xl sm:rounded-2xl py-1 px-2 sm:py-1.5 sm:px-3 transition cursor-pointer shrink-0 shadow text-xs font-black relative ${
+                  pendingRequestsCount > 0
+                    ? 'border-amber-400 text-amber-300 ring-1 ring-amber-400/50'
+                    : 'border-amber-500/30 hover:border-amber-400 text-amber-300 hover:text-white'
+                }`}
+                title={pendingRequestsCount > 0 ? `${pendingRequestsCount} yeni arkadaşlık isteğiniz var!` : "Arkadaşlarım ve Özel Arkadaş ID'm"}
               >
                 <Users className="w-3.5 h-3.5 text-amber-400" />
                 <span className="hidden sm:inline">Arkadaşlar</span>
-                {userAccount.friends && userAccount.friends.length > 0 && (
+                {pendingRequestsCount > 0 ? (
+                  <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none animate-bounce shadow">
+                    {pendingRequestsCount}
+                  </span>
+                ) : userAccount.friends && userAccount.friends.length > 0 ? (
                   <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none">
                     {userAccount.friends.length}
                   </span>
-                )}
+                ) : null}
               </button>
 
               {/* Profile Card Button */}

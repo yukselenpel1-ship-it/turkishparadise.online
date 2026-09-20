@@ -1,6 +1,7 @@
 import { UserAccount, FriendUser, FriendRequest, UserStats } from '../types/game';
 import { database, isFirebaseConfigured } from './firebase';
 import { ref, set, get, update, onValue, off, remove } from 'firebase/database';
+import { syncManager } from './multiplayerSync';
 
 const PUBLIC_REGISTRY_KEY = 'tp_public_users_registry';
 const FRIENDS_KEY_PREFIX = 'tp_friends_';
@@ -286,16 +287,27 @@ export async function sendFriendRequest(
     }
   }
 
-  // 3. Notify via BroadcastChannel
+  // 3. Notify via Local BroadcastChannel
   if (friendsChannel) {
     try {
       friendsChannel.postMessage({
         type: 'NEW_FRIEND_REQUEST',
         targetUid: targetUser.uid,
+        targetCode: targetUser.friendCode,
         request
       });
     } catch (e) {}
   }
+
+  // 4. Notify via Global MQTT WebSocket Relay (cross-device, PC <-> Mobile)
+  try {
+    syncManager.sendFriendMessage({
+      type: 'NEW_FRIEND_REQUEST',
+      targetUid: targetUser.uid,
+      targetCode: targetUser.friendCode,
+      request
+    });
+  } catch (e) {}
 
   return {
     success: true,
@@ -305,7 +317,7 @@ export async function sendFriendRequest(
 }
 
 /**
- * Subscribe to Real-Time Incoming Friend Requests
+ * Subscribe to Real-Time Incoming Friend Requests & Presence (Cross-device via MQTT + BroadcastChannel + Firebase)
  */
 export function subscribeToFriendRequests(
   uid: string,
@@ -314,7 +326,7 @@ export function subscribeToFriendRequests(
   // Initial load
   onUpdate(getIncomingRequests(uid));
 
-  // Firebase Realtime Listener
+  // 1. Firebase Realtime Database Listener (if configured)
   let reqRef: any = null;
   if (isFirebaseConfigured && database) {
     try {
@@ -334,9 +346,53 @@ export function subscribeToFriendRequests(
     } catch (e) {}
   }
 
-  // BroadcastChannel / storage listener
+  // 2. Global MQTT WebSocket Relay Listener (Works across PC, Mobile, and separate networks)
+  const unsubMqtt = syncManager.subscribeToFriendChannel((data) => {
+    if (!data) return;
+
+    if (data.type === 'NEW_FRIEND_REQUEST') {
+      const isForMe = data.targetUid === uid || (data.request && data.request.toUid === uid);
+      if (isForMe && data.request) {
+        const existing = getIncomingRequests(uid);
+        if (!existing.some((r) => r.id === data.request.id)) {
+          const updated = [data.request, ...existing];
+          saveIncomingRequests(uid, updated);
+          onUpdate(updated);
+          return;
+        }
+      }
+      onUpdate(getIncomingRequests(uid));
+    } else if (data.type === 'FRIEND_REQUEST_ACCEPTED') {
+      // If someone accepted my request, automatically add them to my friends list
+      if (data.targetUid === uid && data.fromUid && data.fromFriendCode) {
+        const currentFriends = getFriends(uid);
+        if (!currentFriends.some((f) => f.uid === data.fromUid || f.friendCode === data.fromFriendCode)) {
+          const newFriend: FriendUser = {
+            uid: data.fromUid,
+            friendCode: data.fromFriendCode,
+            displayName: data.fromDisplayName || 'Arkadaş',
+            photoURL: data.fromPhotoURL,
+            addedAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })
+          };
+          saveFriends(uid, [newFriend, ...currentFriends]);
+        }
+      }
+      onUpdate(getIncomingRequests(uid));
+    } else if (data.type === 'FRIEND_REQUEST_DECLINED') {
+      if (data.targetUid === uid) {
+        onUpdate(getIncomingRequests(uid));
+      }
+    } else if (data.type === 'PRESENCE_UPDATE' && data.presence) {
+      try {
+        localStorage.setItem(`${PRESENCE_KEY_PREFIX}${data.presence.uid}`, JSON.stringify(data.presence));
+        localStorage.setItem(`${PRESENCE_KEY_PREFIX}${data.presence.friendCode.toUpperCase()}`, JSON.stringify(data.presence));
+      } catch (e) {}
+    }
+  });
+
+  // 3. Local BroadcastChannel / storage listener (same device multi-tab)
   const handleMessage = (evt: MessageEvent) => {
-    if (evt.data && (evt.data.type === 'NEW_FRIEND_REQUEST' || evt.data.type === 'FRIEND_REQUEST_RESPONDED')) {
+    if (evt.data && (evt.data.type === 'NEW_FRIEND_REQUEST' || evt.data.type === 'FRIEND_REQUEST_RESPONDED' || evt.data.type === 'FRIEND_REQUEST_ACCEPTED')) {
       if (evt.data.targetUid === uid || evt.data.fromUid === uid) {
         onUpdate(getIncomingRequests(uid));
       }
@@ -358,6 +414,7 @@ export function subscribeToFriendRequests(
 
   return () => {
     if (reqRef) off(reqRef);
+    unsubMqtt();
     if (friendsChannel) friendsChannel.removeEventListener('message', handleMessage);
     if (typeof window !== 'undefined') window.removeEventListener('storage', handleStorage);
   };
@@ -386,7 +443,7 @@ export async function acceptFriendRequest(
   ];
   saveFriends(currentUser.uid, updatedFriendsForMe);
 
-  // 2. Add currentUser to sender's friend list
+  // 2. Add currentUser to sender's friend list (local simulation)
   const senderFriends = getFriends(request.fromUid);
   const newFriendForSender: FriendUser = {
     uid: currentUser.uid,
@@ -413,7 +470,7 @@ export async function acceptFriendRequest(
     } catch (e) {}
   }
 
-  // 5. Broadcast to other tabs/windows
+  // 5. Broadcast via BroadcastChannel
   if (friendsChannel) {
     try {
       friendsChannel.postMessage({
@@ -423,6 +480,19 @@ export async function acceptFriendRequest(
       });
     } catch (e) {}
   }
+
+  // 6. Broadcast via Global MQTT (cross-device)
+  try {
+    syncManager.sendFriendMessage({
+      type: 'FRIEND_REQUEST_ACCEPTED',
+      targetUid: request.fromUid,
+      fromUid: currentUser.uid,
+      fromDisplayName: currentUser.displayName,
+      fromFriendCode: currentUser.friendCode || getOrGenerateFriendCode(currentUser.uid, currentUser.email),
+      fromPhotoURL: currentUser.photoURL,
+      request
+    });
+  } catch (e) {}
 
   return {
     success: true,
@@ -455,6 +525,14 @@ export async function declineFriendRequest(
       });
     } catch (e) {}
   }
+
+  try {
+    syncManager.sendFriendMessage({
+      type: 'FRIEND_REQUEST_DECLINED',
+      targetUid: currentUserUid,
+      requestId
+    });
+  } catch (e) {}
 
   return myRequests;
 }
@@ -509,6 +587,13 @@ export function updateUserPresence(
       });
     } catch (e) {}
   }
+
+  try {
+    syncManager.sendFriendMessage({
+      type: 'PRESENCE_UPDATE',
+      presence: presenceData
+    });
+  } catch (e) {}
 }
 
 /**
