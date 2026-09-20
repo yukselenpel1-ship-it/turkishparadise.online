@@ -379,7 +379,7 @@ class MultiplayerSyncManager {
   public sendFriendMessage(payload: any): void {
     const data = {
       ...payload,
-      senderClientId: LOCAL_CLIENT_ID,
+      senderClientId: payload?.senderClientId || LOCAL_CLIENT_ID,
       timestamp: Date.now()
     };
     const json = JSON.stringify(data);

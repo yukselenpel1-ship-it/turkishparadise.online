@@ -34,7 +34,8 @@ import {
   acceptFriendRequest,
   removeFriend,
   fetchFriendsFromDB,
-  subscribeToFriendRequests
+  subscribeToFriendRequests,
+  subscribeToFriendsAndRequests
 } from '../services/friendService';
 
 export type ProfileTab = 'stats' | 'friends' | 'requests' | 'add';
@@ -69,26 +70,20 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
   const [friendsList, setFriendsList] = useState<FriendUser[]>([]);
 
-  // Subscribe to Real-Time Incoming Friend Requests & Presence (Database Backend API + MQTT Mesh)
+  // Subscribe to Real-Time Incoming Friend Requests & Mutual Friends Updates (MQTT Mesh + DB)
   useEffect(() => {
     if (!userAccount.uid) return;
 
-    const loadDbFriends = async () => {
-      const { friends, pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
-      setFriendsList(friends);
-      setIncomingRequests(pendingRequests);
-    };
-
-    loadDbFriends();
-
-    const unsubscribe = subscribeToFriendRequests(userAccount.uid, userAccount.friendCode, (requests) => {
-      setIncomingRequests(requests);
-    });
-
-    const interval = setInterval(loadDbFriends, 3000);
+    const unsubscribe = subscribeToFriendsAndRequests(
+      userAccount.uid,
+      userAccount.friendCode,
+      ({ friends, requests }) => {
+        setFriendsList(friends);
+        setIncomingRequests(requests);
+      }
+    );
 
     return () => {
-      clearInterval(interval);
       unsubscribe();
     };
   }, [userAccount.uid, userAccount.friendCode]);
@@ -151,12 +146,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   // Accept incoming friend request
   const handleAcceptRequest = async (req: FriendRequest) => {
     try {
-      const res = await acceptFriendRequest(userAccount.uid, req.id, {
-        id: req.fromUid,
-        displayName: req.fromDisplayName,
-        friendCode: req.fromFriendCode,
-        photoURL: req.fromPhotoURL || undefined
-      });
+      const res = await acceptFriendRequest(
+        userAccount.uid,
+        req.id,
+        {
+          id: req.fromUid,
+          displayName: req.fromDisplayName,
+          friendCode: req.fromFriendCode,
+          photoURL: req.fromPhotoURL || undefined
+        },
+        {
+          id: userAccount.uid,
+          displayName: userAccount.displayName,
+          friendCode: userAccount.friendCode || 'TP-FRIEND',
+          photoURL: userAccount.photoURL || undefined
+        }
+      );
       if (res.success) {
         const { friends, pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
         setFriendsList(friends);

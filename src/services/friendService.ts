@@ -41,66 +41,85 @@ export function saveAuthToken(token: string): void {
   } catch (e) {}
 }
 
+const memoryLocalCache = new Map<string, string>();
+
 /**
  * Local persistent friend & request caching so friends NEVER disappear on refresh or mobile
  */
 export function saveFriends(uid: string, friends: FriendUser[]): void {
   try {
-    if (typeof window !== 'undefined' && uid) {
-      localStorage.setItem(`tp_friends_${uid}`, JSON.stringify(friends));
+    const json = JSON.stringify(friends);
+    memoryLocalCache.set(`tp_friends_${uid}`, json);
+    if (typeof window !== 'undefined' && window.localStorage && uid) {
+      localStorage.setItem(`tp_friends_${uid}`, json);
     }
   } catch (e) {}
 }
 
 export function getFriends(uid: string): FriendUser[] {
   try {
-    if (typeof window !== 'undefined' && uid) {
+    if (typeof window !== 'undefined' && window.localStorage && uid) {
       const raw = localStorage.getItem(`tp_friends_${uid}`);
       if (raw) return JSON.parse(raw);
     }
+    const mem = memoryLocalCache.get(`tp_friends_${uid}`);
+    if (mem) return JSON.parse(mem);
   } catch (e) {}
   return [];
 }
 
 export function saveIncomingRequests(uid: string, requests: FriendRequest[]): void {
   try {
-    if (typeof window !== 'undefined' && uid) {
-      localStorage.setItem(`tp_requests_${uid}`, JSON.stringify(requests));
+    const json = JSON.stringify(requests);
+    memoryLocalCache.set(`tp_requests_${uid}`, json);
+    if (typeof window !== 'undefined' && window.localStorage && uid) {
+      localStorage.setItem(`tp_requests_${uid}`, json);
     }
   } catch (e) {}
 }
 
 export function getIncomingRequests(uid: string): FriendRequest[] {
   try {
-    if (typeof window !== 'undefined' && uid) {
+    if (typeof window !== 'undefined' && window.localStorage && uid) {
       const raw = localStorage.getItem(`tp_requests_${uid}`);
       if (raw) return JSON.parse(raw);
     }
+    const mem = memoryLocalCache.get(`tp_requests_${uid}`);
+    if (mem) return JSON.parse(mem);
   } catch (e) {}
   return [];
 }
 
 export function saveUserToPublicRegistry(user: UserAccount): void {
   try {
-    if (typeof window !== 'undefined' && user?.friendCode) {
+    if (user?.friendCode) {
       const registryKey = `tp_reg_${user.friendCode.toUpperCase()}`;
-      localStorage.setItem(registryKey, JSON.stringify({
+      const json = JSON.stringify({
         uid: user.uid,
         displayName: user.displayName,
         friendCode: user.friendCode,
         photoURL: user.photoURL,
         email: user.email
-      }));
+      });
+      memoryLocalCache.set(registryKey, json);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(registryKey, json);
+      }
     }
   } catch (e) {}
 }
 
 export function lookupUserByFriendCode(code: string): { uid: string; displayName: string; friendCode: string; photoURL?: string } | null {
   try {
-    if (typeof window !== 'undefined' && code) {
+    if (code) {
       const clean = code.trim().toUpperCase();
-      const raw = localStorage.getItem(`tp_reg_${clean}`);
-      if (raw) return JSON.parse(raw);
+      const registryKey = `tp_reg_${clean}`;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = localStorage.getItem(registryKey);
+        if (raw) return JSON.parse(raw);
+      }
+      const mem = memoryLocalCache.get(registryKey);
+      if (mem) return JSON.parse(mem);
     }
   } catch (e) {}
   return null;
@@ -327,9 +346,10 @@ export async function sendFriendRequest(
 export async function acceptFriendRequest(
   userId: string,
   requestId: string,
-  fromUser?: { id: string; displayName: string; friendCode?: string; photoURL?: string }
+  fromUser?: { id: string; displayName: string; friendCode?: string; photoURL?: string },
+  currentUser?: { id: string; displayName: string; friendCode?: string; photoURL?: string }
 ): Promise<{ success: boolean; message: string }> {
-  // 1. Update local cache immediately
+  // 1. Update local cache immediately for current user (User B)
   if (fromUser) {
     const friends = getFriends(userId);
     if (!friends.some(f => f.uid === fromUser.id || (fromUser.friendCode && f.friendCode === fromUser.friendCode))) {
@@ -348,12 +368,17 @@ export async function acceptFriendRequest(
     saveIncomingRequests(userId, currentReqs);
   }
 
-  // 2. Broadcast acceptance over Realtime MQTT Mesh
+  // 2. Broadcast acceptance over Realtime MQTT Mesh WITH CURRENT USER METADATA
+  // This allows the sender (User A) to instantly add User B to User A's friends list
   syncManager.sendFriendMessage({
     type: 'FRIEND_REQUEST_ACCEPTED',
     fromUserId: userId,
+    fromDisplayName: currentUser?.displayName || 'Oyuncu',
+    fromFriendCode: currentUser?.friendCode || '',
+    fromPhotoURL: currentUser?.photoURL || '',
     requestId: requestId,
-    targetUserId: fromUser?.id
+    targetUserId: fromUser?.id,
+    targetFriendCode: fromUser?.friendCode
   });
 
   const baseUrl = getApiBaseUrl();
@@ -525,12 +550,168 @@ export function subscribeToFriendRequests(
         }
       }
     } else if (data.type === 'FRIEND_REQUEST_ACCEPTED') {
+      const isTargetForMe =
+        (data.targetUserId && (data.targetUserId === uid || data.targetUserId.includes(uid))) ||
+        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
+
+      if (isTargetForMe && data.fromUserId) {
+        const friendId = data.fromUserId;
+        const friendCode = data.fromFriendCode || 'TP-FRIEND';
+        const friendName = data.fromDisplayName || 'Arkadaş';
+        const friendPhoto = data.fromPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${friendId}`;
+
+        const friends = getFriends(uid);
+        if (!friends.some(f => f.uid === friendId || (friendCode && f.friendCode === friendCode))) {
+          friends.push({
+            uid: friendId,
+            displayName: friendName,
+            friendCode: friendCode,
+            photoURL: friendPhoto,
+            isOnline: true,
+            addedAt: new Date().toISOString()
+          });
+          saveFriends(uid, friends);
+        }
+      }
       refreshRequests();
     }
   });
 
   // 3. Periodic Background Sync (every 3 seconds)
   const interval = setInterval(refreshRequests, 3000);
+
+  return () => {
+    active = false;
+    clearInterval(interval);
+    unsubscribeMqtt();
+  };
+}
+
+/**
+ * Unified Real-Time Subscription for BOTH Friends List & Incoming Requests
+ * Guarantees that sender & receiver UI update instantly when requests are accepted.
+ */
+export function subscribeToFriendsAndRequests(
+  uid: string,
+  friendCode: string | undefined,
+  callback: (data: { friends: FriendUser[]; requests: FriendRequest[] }) => void
+): () => void {
+  let active = true;
+
+  if (!friendCode && typeof window !== 'undefined') {
+    try {
+      const rawUser = localStorage.getItem('tp_user_profile');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u && u.friendCode) friendCode = u.friendCode;
+      }
+    } catch (e) {}
+  }
+
+  const cleanMyCode = (friendCode || '').trim().toUpperCase();
+
+  const safeNotify = (friends: FriendUser[], reqs: FriendRequest[]) => {
+    if (active && typeof callback === 'function') {
+      try {
+        callback({ friends, requests: reqs });
+      } catch (err) {
+        console.warn('[FriendService] Full sync callback notice:', err);
+      }
+    }
+  };
+
+  const refreshAll = async () => {
+    if (!active || !uid) return;
+    try {
+      const { friends, pendingRequests } = await fetchFriendsFromDB(uid);
+      safeNotify(friends, pendingRequests);
+    } catch (err) {
+      safeNotify(getFriends(uid), getIncomingRequests(uid));
+    }
+  };
+
+  // 1. Initial load
+  refreshAll();
+
+  // 2. Real-Time MQTT Listener
+  const unsubscribeMqtt = syncManager.subscribeToFriendChannel((data) => {
+    if (!active || !uid) return;
+
+    if (data.type === 'FRIEND_REQUEST_SENT') {
+      const targetCode = (data.targetFriendCode || '').trim().toUpperCase();
+
+      if (cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`)) {
+        const newReq: FriendRequest = {
+          id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          fromUid: data.fromUserId || 'unknown',
+          fromDisplayName: data.fromName || 'Oyuncu',
+          fromPhotoURL: data.fromPhotoURL || null,
+          fromFriendCode: data.fromFriendCode || '',
+          toUid: uid,
+          toFriendCode: cleanMyCode,
+          status: 'PENDING',
+          createdAt: new Date().toISOString()
+        };
+
+        const current = getIncomingRequests(uid);
+        if (!current.some(r => r.fromUid === newReq.fromUid)) {
+          current.push(newReq);
+          saveIncomingRequests(uid, current);
+          safeNotify(getFriends(uid), current);
+        }
+      }
+    } else if (data.type === 'FRIEND_REQUEST_ACCEPTED') {
+      // If I am the original sender, targetUserId or targetFriendCode matches me!
+      const isTargetForMe =
+        (data.targetUserId && (data.targetUserId === uid || data.targetUserId.includes(uid))) ||
+        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
+
+      if (isTargetForMe && data.fromUserId) {
+        const friendId = data.fromUserId;
+        const fCode = data.fromFriendCode || 'TP-FRIEND';
+        const fName = data.fromDisplayName || 'Arkadaş';
+        const fPhoto = data.fromPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${friendId}`;
+
+        const currentFriends = getFriends(uid);
+        if (!currentFriends.some(f => f.uid === friendId || (fCode && f.friendCode === fCode))) {
+          currentFriends.push({
+            uid: friendId,
+            displayName: fName,
+            friendCode: fCode,
+            photoURL: fPhoto,
+            isOnline: true,
+            addedAt: new Date().toISOString()
+          });
+          saveFriends(uid, currentFriends);
+          safeNotify(currentFriends, getIncomingRequests(uid));
+        }
+      }
+      refreshAll();
+    } else if (data.type === 'PRESENCE_UPDATE') {
+      if (data.userId && data.userId !== uid) {
+        const currentFriends = getFriends(uid);
+        let updated = false;
+        const nextFriends = currentFriends.map((f) => {
+          if (f.uid === data.userId || (data.friendCode && f.friendCode === data.friendCode)) {
+            updated = true;
+            return {
+              ...f,
+              isOnline: Boolean(data.isOnline),
+              activeRoomId: data.currentRoomId || f.activeRoomId
+            };
+          }
+          return f;
+        });
+        if (updated) {
+          saveFriends(uid, nextFriends);
+          safeNotify(nextFriends, getIncomingRequests(uid));
+        }
+      }
+    }
+  });
+
+  // 3. Periodic Background Polling
+  const interval = setInterval(refreshAll, 3000);
 
   return () => {
     active = false;
