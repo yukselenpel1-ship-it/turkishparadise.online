@@ -102,7 +102,7 @@ export const Board: React.FC<BoardProps> = ({
   const isAfk = Boolean(currentTurnPlayer?.isAfk);
 
   return (
-    <div className="h-full max-h-full aspect-[1.12/1] w-full max-w-5xl bg-[#060b18] border-[3px] sm:border-[10px] border-[#162035] rounded-xl sm:rounded-[28px] p-1 sm:p-2.5 shadow-2xl relative select-none ring-1 ring-amber-500/20 flex flex-col justify-center">
+    <div className="h-full max-h-full aspect-[1.12/1] w-full max-w-5xl bg-[#030712] border-[3px] sm:border-[9px] border-[#0c1424] rounded-xl sm:rounded-[30px] p-0.5 sm:p-2 shadow-[0_10px_50px_rgba(0,0,0,0.95)] relative select-none ring-1 sm:ring-2 ring-amber-500/30 flex flex-col justify-center">
       
       {/* 10x11 Perimeter Grid Board */}
       <div className="w-full h-full grid grid-cols-10 grid-rows-11 gap-0.5 sm:gap-1 relative">
@@ -135,37 +135,52 @@ export const Board: React.FC<BoardProps> = ({
             gridColumn: '2 / 10',
             gridRow: '2 / 11',
           }}
-          className="bg-gradient-to-b from-[#091122] via-[#0c152b] to-[#060b16] border border-slate-800 rounded-lg sm:rounded-2xl m-0.5 p-1.5 sm:p-5 flex flex-col justify-between items-center relative overflow-hidden shadow-2xl"
+          className="relative rounded-lg sm:rounded-2xl m-0.5 p-1.5 sm:p-4 flex flex-col justify-between items-center overflow-hidden border border-amber-500/30 shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] bg-[#040813]"
         >
-          {/* Subtle Constellation Grid Background */}
-          <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px] opacity-15 pointer-events-none" />
-
-          {/* Table Header: Golden TURKISH PARADISE Branding */}
-          <div className="text-center relative z-10 w-full pt-0.5 space-y-0.5 flex flex-col items-center">
-            <div className="flex items-center justify-center gap-1 sm:gap-2">
-              <span className="text-xs sm:text-lg">🎲</span>
-              <div className="flex flex-col items-center">
-                <span className="font-['Cinzel',serif] text-[8px] sm:text-xs font-bold tracking-[0.2em] text-slate-300 uppercase leading-none">
-                  TURKISH
-                </span>
-                <span className="font-['Cinzel',serif] text-sm sm:text-2xl font-black bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-transparent drop-shadow tracking-wider leading-none">
-                  PARADISE
-                </span>
-              </div>
-            </div>
-            
-            <p className="text-[7px] sm:text-[9.5px] font-bold text-slate-400 tracking-widest uppercase hidden sm:block">
-              Türkiye Web Tabanlı Masa Oyunu
-            </p>
+          {/* 1. Master Board Artwork Background (Bosphorus Bridge, Galata Tower, Turkey Night Map) */}
+          <div className="absolute inset-0 z-0 pointer-events-none">
+            <img
+              src="/board-art.jpg"
+              alt="Turkish Paradise Board Atmosphere"
+              className="w-full h-full object-cover object-center filter brightness-[0.75] contrast-110"
+            />
+            {/* Dark gradient overlay for optimal game contrast */}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#040813]/90 via-[#040813]/40 to-[#040813]/70" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,#040813_90%)]" />
           </div>
 
+          {/* 2. Majestic Golden Filigree Crown Emblem & Embossed TURKISH PARADISE Title */}
+          <div className="text-center relative z-10 w-full pt-0.5 sm:pt-2 flex flex-col items-center select-none pointer-events-none">
+            {/* Ornate Gold Filigree Crown */}
+            <div className="flex items-center justify-center gap-1.5 text-amber-300 drop-shadow-[0_2px_10px_rgba(245,158,11,0.7)] text-xs sm:text-2xl">
+              <span className="font-serif opacity-80">⚜️</span>
+              <span className="text-sm sm:text-2xl">👑</span>
+              <span className="font-serif opacity-80">⚜️</span>
+            </div>
 
-          {/* Center Stage: Spacious Dice & Action Container */}
-          <div className="w-full max-w-sm flex flex-col items-center justify-center relative z-10 my-auto py-0.5 sm:py-1 space-y-1.5 sm:space-y-2.5">
+            {/* Embossed Gold Typography */}
+            <div className="relative flex flex-col items-center mt-0.5">
+              <h1 className="font-['Cinzel',serif] text-[11px] sm:text-2xl md:text-3xl font-black tracking-[0.2em] bg-gradient-to-b from-[#fff6d6] via-[#f59e0b] to-[#b45309] bg-clip-text text-transparent drop-shadow-[0_3px_8px_rgba(0,0,0,0.95)] leading-tight">
+                TURKISH
+              </h1>
+              <h2 className="font-['Cinzel',serif] text-base sm:text-3xl md:text-4xl font-black tracking-[0.15em] bg-gradient-to-b from-[#fffbeb] via-[#fbbf24] to-[#78350f] bg-clip-text text-transparent drop-shadow-[0_4px_12px_rgba(0,0,0,0.98)] leading-none -mt-0.5 sm:-mt-1">
+                PARADISE
+              </h2>
+
+              {/* Golden Crescent & Star */}
+              <div className="flex items-center justify-center gap-1 mt-0.5 sm:mt-1 text-amber-300 drop-shadow-[0_2px_8px_rgba(245,158,11,0.8)] text-[9px] sm:text-xs">
+                <span>🌙</span>
+                <span>⭐</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Center Stage: Frosted Glass Dice & Action Controls */}
+          <div className="w-full max-w-sm bg-slate-950/80 backdrop-blur-md border border-amber-500/30 rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 shadow-2xl relative z-20 my-auto flex flex-col items-center justify-center space-y-1.5 sm:space-y-2">
             
             {/* Jailed Bail Option */}
             {isJailed && isMyTurn && !diceRolled && (
-              <div className="w-full bg-rose-950/90 border border-rose-600 rounded-xl sm:rounded-2xl p-1.5 sm:p-3 text-center space-y-1 shadow-xl backdrop-blur-md animate-fade-in">
+              <div className="w-full bg-rose-950/90 border border-rose-600 rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 text-center space-y-1 shadow-xl backdrop-blur-md animate-fade-in">
                 <p className="text-[10px] sm:text-xs text-rose-200 font-bold leading-tight">
                   🔒 Kodestesiniz! (Kalan: {currentTurnPlayer.jailTurns}/3)
                 </p>
@@ -181,19 +196,19 @@ export const Board: React.FC<BoardProps> = ({
 
             {/* Buy Property Prompt */}
             {pendingAction === 'BUY_PROPERTY' && (
-              <div className="w-full bg-amber-500/20 border border-amber-400/80 rounded-xl sm:rounded-2xl p-1.5 sm:p-3 text-center space-y-1.5 sm:space-y-2.5 shadow-xl animate-fade-in backdrop-blur-md">
+              <div className="w-full bg-amber-500/20 border border-amber-400/80 rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 text-center space-y-1.5 sm:space-y-2 shadow-xl animate-fade-in backdrop-blur-md">
                 <p className="text-[10.5px] sm:text-sm text-slate-100 font-bold leading-tight">{actionMessage}</p>
                 {isMyTurn && (
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={onBuyProperty}
-                      className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-extrabold py-1.5 sm:py-2.5 rounded-lg sm:rounded-xl transition flex items-center justify-center gap-1 text-xs sm:text-sm shadow-lg cursor-pointer"
+                      className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-extrabold py-1.5 sm:py-2 rounded-lg sm:rounded-xl transition flex items-center justify-center gap-1 text-xs sm:text-sm shadow-lg cursor-pointer"
                     >
                       <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> AL 💰
                     </button>
                     <button
                       onClick={onPassProperty}
-                      className="px-3 sm:px-4 py-1.5 sm:py-2.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white font-bold rounded-lg sm:rounded-xl transition text-xs sm:text-sm border border-slate-700 cursor-pointer shadow-md"
+                      className="px-3 sm:px-4 py-1.5 sm:py-2 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white font-bold rounded-lg sm:rounded-xl transition text-xs sm:text-sm border border-slate-700 cursor-pointer shadow-md"
                     >
                       PAS ⏩
                     </button>
@@ -217,25 +232,25 @@ export const Board: React.FC<BoardProps> = ({
             />
           </div>
 
-          {/* Bottom Shortcut Bar */}
-          <div className="w-full flex items-center justify-center gap-1.5 sm:gap-4 relative z-10 pt-1 sm:pt-1.5 border-t border-slate-800/80">
+          {/* 4. Bottom Shortcut Bar */}
+          <div className="w-full flex items-center justify-center gap-1.5 sm:gap-3 relative z-10 pt-1 sm:pt-1.5 border-t border-slate-800/60">
             <button
               onClick={onOpenTrade}
-              className="flex items-center gap-1 text-slate-300 hover:text-amber-400 hover:bg-slate-800/60 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-slate-800"
+              className="flex items-center gap-1 text-slate-200 hover:text-amber-300 hover:bg-slate-900/80 bg-slate-950/60 backdrop-blur-sm px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-amber-500/20 shadow"
             >
               <ArrowLeftRight className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
               <span>Takas</span>
             </button>
             <button
               onClick={onOpenProperties}
-              className="flex items-center gap-1 text-slate-300 hover:text-emerald-400 hover:bg-slate-800/60 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-slate-800"
+              className="flex items-center gap-1 text-slate-200 hover:text-emerald-300 hover:bg-slate-900/80 bg-slate-950/60 backdrop-blur-sm px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-amber-500/20 shadow"
             >
               <Building2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
               <span>Mülkler</span>
             </button>
             <button
               onClick={onOpenTransactions}
-              className="flex items-center gap-1 text-slate-300 hover:text-sky-400 hover:bg-slate-800/60 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-slate-800"
+              className="flex items-center gap-1 text-slate-200 hover:text-sky-300 hover:bg-slate-900/80 bg-slate-950/60 backdrop-blur-sm px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-amber-500/20 shadow"
             >
               <Receipt className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
               <span>Hesap</span>
