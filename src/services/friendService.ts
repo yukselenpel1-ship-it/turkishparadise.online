@@ -3,9 +3,25 @@ import { database, isFirebaseConfigured } from './firebase';
 import { ref, set, get } from 'firebase/database';
 import { syncManager } from './multiplayerSync';
 
-const API_BASE_URL = typeof window !== 'undefined'
-  ? (window.location.port === '3001' ? '' : 'http://localhost:3001')
-  : 'http://localhost:3001';
+/**
+ * Determine Production / Development API Base URL cleanly.
+ * Never hardcode http://localhost:3001 in production!
+ */
+export function getApiBaseUrl(): string {
+  if (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) {
+    return import.meta.env.VITE_API_URL.trim().replace(/\/+$/, '');
+  }
+
+  if (typeof window !== 'undefined') {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:3001';
+    }
+    // Relative URL on deployed production domain (e.g. https://turkishparadise.online/api/...)
+    return '';
+  }
+
+  return 'http://localhost:3001';
+}
 
 const AUTH_TOKEN_KEY = 'tp_auth_token';
 
@@ -33,8 +49,9 @@ export function saveAuthToken(token: string): void {
  */
 export async function syncUserWithBackend(user: UserAccount): Promise<UserAccount> {
   const googleSub = user.uid;
+  const baseUrl = getApiBaseUrl();
   try {
-    const res = await fetch(`${API_BASE_URL}/api/users/sync`, {
+    const res = await fetch(`${baseUrl}/api/users/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -104,13 +121,14 @@ export async function fetchFriendsFromDB(userId: string): Promise<{
 }> {
   if (!userId) return { friends: [], pendingRequests: [] };
 
+  const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   headers['x-user-id'] = userId;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/friends?userId=${encodeURIComponent(userId)}`, { headers });
+    const res = await fetch(`${baseUrl}/api/friends?userId=${encodeURIComponent(userId)}`, { headers });
     if (res.ok) {
       const data = await res.json();
       if (data.success) {
@@ -148,7 +166,7 @@ export async function fetchFriendsFromDB(userId: string): Promise<{
 
 /**
  * Send a Friend Request (Backend Database REST API)
- * Note: If target code is invalid/unknown, returns 404 USER_NOT_FOUND. No fake dummy users created!
+ * Returns 404 USER_NOT_FOUND if friend code invalid.
  */
 export async function sendFriendRequest(
   currentUser: UserAccount,
@@ -163,13 +181,14 @@ export async function sendFriendRequest(
     cleanCode = `TP-${cleanCode}`;
   }
 
+  const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   headers['x-user-id'] = currentUser.uid;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/friends/request`, {
+    const res = await fetch(`${baseUrl}/api/friends/request`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ targetFriendCode: cleanCode })
@@ -199,13 +218,14 @@ export async function acceptFriendRequest(
   userId: string,
   requestId: string
 ): Promise<{ success: boolean; message: string }> {
+  const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   headers['x-user-id'] = userId;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/friends/accept`, {
+    const res = await fetch(`${baseUrl}/api/friends/accept`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ requestId })
@@ -229,13 +249,14 @@ export async function removeFriend(
   userId: string,
   friendUserId: string
 ): Promise<{ success: boolean; message: string }> {
+  const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   headers['x-user-id'] = userId;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/friends/${encodeURIComponent(friendUserId)}?userId=${encodeURIComponent(userId)}`, {
+    const res = await fetch(`${baseUrl}/api/friends/${encodeURIComponent(friendUserId)}?userId=${encodeURIComponent(userId)}`, {
       method: 'DELETE',
       headers
     });
