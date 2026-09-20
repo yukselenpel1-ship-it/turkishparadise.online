@@ -196,8 +196,10 @@ export const Board: React.FC<BoardProps> = ({
             {/* Buy Property Prompt */}
             {pendingAction === 'BUY_PROPERTY' && (
               <div className="w-full bg-amber-500/20 border border-amber-400/80 rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 text-center space-y-1.5 sm:space-y-2 shadow-xl animate-fade-in backdrop-blur-md">
-                <p className="text-[10.5px] sm:text-sm text-slate-100 font-bold leading-tight">{actionMessage}</p>
-                {isMyTurn && (
+                <p className="text-[10.5px] sm:text-sm text-slate-100 font-bold leading-tight">
+                  {isMyTurn ? actionMessage : `🎲 ${currentTurnPlayer?.name} bu mülkü satın almayı değerlendiriyor...`}
+                </p>
+                {isMyTurn ? (
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={onBuyProperty}
@@ -212,6 +214,10 @@ export const Board: React.FC<BoardProps> = ({
                       PAS ⏩
                     </button>
                   </div>
+                ) : (
+                  <p className="text-[9.5px] sm:text-xs text-amber-300/80 font-semibold italic">
+                    {actionMessage}
+                  </p>
                 )}
               </div>
             )}

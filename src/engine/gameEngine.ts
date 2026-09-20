@@ -886,9 +886,11 @@ export function applyChanceCard(state: GameState): GameState {
   return newState;
 }
 
-export function buyProperty(state: GameState): GameState {
+export function buyProperty(state: GameState, playerId?: string): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
-  const player = newState.players[newState.currentTurnIndex];
+  const targetId = playerId || newState.players[newState.currentTurnIndex]?.id;
+  const player = newState.players.find(p => p.id === targetId) || newState.players[newState.currentTurnIndex];
+  if (!player) return newState;
   const currentTile = newState.board[player.position];
 
   if (!currentTile || currentTile.ownerId || !currentTile.price) return newState;
@@ -941,9 +943,11 @@ export function buyProperty(state: GameState): GameState {
   return newState;
 }
 
-export function passProperty(state: GameState): GameState {
+export function passProperty(state: GameState, playerId?: string): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
-  const player = newState.players[newState.currentTurnIndex];
+  const targetId = playerId || newState.players[newState.currentTurnIndex]?.id;
+  const player = newState.players.find(p => p.id === targetId) || newState.players[newState.currentTurnIndex];
+  if (!player) return newState;
   const currentTile = newState.board[player.position];
 
   if (currentTile) {

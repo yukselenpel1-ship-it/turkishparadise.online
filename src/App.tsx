@@ -503,9 +503,13 @@ export const App: React.FC = () => {
               setTimeout(() => handleRollDiceAction(), 50);
             }
           } else if (actionType === 'BUY_PROPERTY') {
-            if (prev.pendingAction === 'BUY_PROPERTY') handleBuyPropertyAction();
+            if (prev.pendingAction === 'BUY_PROPERTY') {
+              handleBuyPropertyAction(senderPlayerId);
+            }
           } else if (actionType === 'PASS_PROPERTY') {
-            if (prev.pendingAction === 'BUY_PROPERTY') handlePassPropertyAction();
+            if (prev.pendingAction === 'BUY_PROPERTY') {
+              handlePassPropertyAction(senderPlayerId);
+            }
           } else if (actionType === 'END_TURN') {
             if (prev.diceRolled && !isMoving) handleEndTurnAction();
           } else if (actionType === 'PAY_JAIL') {
@@ -1191,7 +1195,11 @@ export const App: React.FC = () => {
       if (stepCount >= diceTotal) {
         clearInterval(interval);
         setTimeout(() => {
-          updateAndBroadcastGameState(prev => finalizePlayerLanding(prev, currentPlayer.id));
+          updateAndBroadcastGameState(prev => {
+            const landingState = finalizePlayerLanding(prev, currentPlayer.id);
+            landingState.turnStartedAt = Date.now(); // Fresh 60s timer for property decision
+            return landingState;
+          });
           setIsMoving(false);
         }, 220);
       }
@@ -1204,14 +1212,14 @@ export const App: React.FC = () => {
   };
 
   // Buy Property Action
-  const handleBuyPropertyAction = () => {
+  const handleBuyPropertyAction = (actingPlayerId?: string) => {
     soundManager.playBuyProperty();
-    updateAndBroadcastGameState((prev) => buyProperty(prev));
+    updateAndBroadcastGameState((prev) => buyProperty(prev, actingPlayerId || myPlayerId || undefined));
   };
 
   // Pass Property Action (Skip buying)
-  const handlePassPropertyAction = () => {
-    updateAndBroadcastGameState((prev) => passProperty(prev));
+  const handlePassPropertyAction = (actingPlayerId?: string) => {
+    updateAndBroadcastGameState((prev) => passProperty(prev, actingPlayerId || myPlayerId || undefined));
   };
 
   // Sell Property to Bank for 2/3 price
@@ -1686,7 +1694,7 @@ export const App: React.FC = () => {
           onSellHouse={() => handleSellHouseAction(selectedTile.id)}
           onToggleMortgage={() => handleToggleMortgageAction(selectedTile.id)}
           onSellToBank={handleSellToBankAction}
-          canBuy={gameState.pendingAction === 'BUY_PROPERTY' && me.position === selectedTile.id}
+          canBuy={gameState.pendingAction === 'BUY_PROPERTY' && me.id === gameState.players[gameState.currentTurnIndex]?.id && me.position === selectedTile.id}
         />
       )}
 
