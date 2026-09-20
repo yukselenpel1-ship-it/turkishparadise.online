@@ -29,7 +29,7 @@ export async function verifyGoogleToken(idToken: string): Promise<VerifiedGoogle
   }
 
   // 1. Check for automated testing / dev mock tokens
-  if (process.env.NODE_ENV !== 'production' && cleanToken.startsWith('mock_test_token_')) {
+  if ((process.env.NODE_ENV !== 'production' || process.env.ALLOW_MOCK_TEST_AUTH === 'true') && cleanToken.startsWith('mock_test_token_')) {
     const parts = cleanToken.replace('mock_test_token_', '').split(':');
     const mockSub = parts[0] || 'mock_sub_123';
     const mockName = parts[1] || 'Mock Tester';
