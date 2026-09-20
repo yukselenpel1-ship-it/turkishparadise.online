@@ -145,10 +145,10 @@ export async function fetchFriendsFromDB(userId: string): Promise<{
 
         const pendingRequests: FriendRequest[] = (data.pendingIncoming || []).map((req: any) => ({
           id: req.id,
-          fromUid: req.fromUser.id,
-          fromDisplayName: req.fromUser.displayName,
-          fromPhotoURL: req.fromUser.avatarUrl || null,
-          fromFriendCode: req.fromUser.friendCode,
+          fromUid: req.fromUser?.id || req.fromUser?.googleSub || 'unknown',
+          fromDisplayName: req.fromUser?.displayName || 'Oyuncu',
+          fromPhotoURL: req.fromUser?.avatarUrl || null,
+          fromFriendCode: req.fromUser?.friendCode || '',
           toUid: userId,
           toFriendCode: '',
           status: 'PENDING',
@@ -187,6 +187,7 @@ export async function sendFriendRequest(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   headers['x-user-id'] = currentUser.uid;
+  headers['x-user-name'] = currentUser.displayName;
 
   try {
     const res = await fetch(`${baseUrl}/api/friends/request`, {
@@ -195,8 +196,12 @@ export async function sendFriendRequest(
       body: JSON.stringify({ targetFriendCode: cleanCode })
     });
 
-    const data = await res.json();
-    if (res.ok && data.success) {
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch (e) {}
+
+    if (res.ok && data?.success) {
       syncManager.sendFriendMessage({
         type: 'FRIEND_REQUEST_SENT',
         fromUserId: currentUser.uid,
@@ -205,10 +210,12 @@ export async function sendFriendRequest(
       });
       return { success: true, message: data.message || 'Arkadaşlık isteği gönderildi.' };
     } else {
-      return { success: false, message: data.error || data.message || 'Arkadaşlık isteği gönderilemedi.' };
+      const errMsg = data?.message || data?.error || (res.status === 404 ? 'Bu arkadaş koduna sahip oyuncu bulunamadı.' : 'Arkadaşlık isteği gönderilemedi.');
+      return { success: false, message: errMsg };
     }
   } catch (err: any) {
-    return { success: false, message: 'Sunucuya bağlanılamadı.' };
+    console.error('[FriendService] Send request network error:', err);
+    return { success: false, message: 'Sunucuya bağlanılamadı. Lütfen internet bağlantınızı kontrol edin.' };
   }
 }
 
@@ -232,11 +239,15 @@ export async function acceptFriendRequest(
       body: JSON.stringify({ requestId })
     });
 
-    const data = await res.json();
-    if (res.ok && data.success) {
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch (e) {}
+
+    if (res.ok && data?.success) {
       return { success: true, message: data.message || 'Arkadaşlık kabul edildi.' };
     } else {
-      return { success: false, message: data.error || data.message || 'İstek kabul edilemedi.' };
+      return { success: false, message: data?.message || data?.error || 'İstek kabul edilemedi.' };
     }
   } catch (err: any) {
     return { success: false, message: 'Sunucuya bağlanılamadı.' };
@@ -262,11 +273,15 @@ export async function removeFriend(
       headers
     });
 
-    const data = await res.json();
-    if (res.ok && data.success) {
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch (e) {}
+
+    if (res.ok && data?.success) {
       return { success: true, message: data.message || 'Arkadaş silindi.' };
     } else {
-      return { success: false, message: data.error || data.message || 'Arkadaş silinemedi.' };
+      return { success: false, message: data?.message || data?.error || 'Arkadaş silinemedi.' };
     }
   } catch (err: any) {
     return { success: false, message: 'Sunucuya bağlanılamadı.' };
