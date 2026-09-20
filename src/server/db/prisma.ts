@@ -138,7 +138,7 @@ export async function generateUniqueFriendCode(seedInput: string): Promise<strin
 }
 
 /**
- * Resolves a User record by either `id` (cuid) or `googleSub`
+ * Resolves a User record by either `id` (cuid), `googleSub`, or `friendCode`
  */
 export async function resolveUser(userIdOrSub: string, defaultName = 'Oyuncu'): Promise<any> {
   if (!userIdOrSub) return null;
@@ -150,6 +150,17 @@ export async function resolveUser(userIdOrSub: string, defaultName = 'Oyuncu'): 
     if (!user) {
       user = await prisma.user.findUnique({ where: { googleSub: clean } });
     }
+    if (!user && clean.startsWith('google_')) {
+      const stripped = clean.replace(/^google_/, '');
+      user = await prisma.user.findUnique({ where: { googleSub: stripped } });
+    }
+    if (!user && clean.startsWith('user_')) {
+      const stripped = clean.replace(/^user_/, '');
+      user = await prisma.user.findUnique({ where: { googleSub: stripped } });
+    }
+    if (!user && clean.startsWith('TP-')) {
+      user = await prisma.user.findUnique({ where: { friendCode: clean.toUpperCase() } });
+    }
     if (!user) {
       user = await syncUserInDB({ googleSub: clean, displayName: defaultName });
     }
@@ -157,7 +168,16 @@ export async function resolveUser(userIdOrSub: string, defaultName = 'Oyuncu'): 
   }
 
   // Fallback memory resolver
-  let user = memoryUsers.get(clean) || Array.from(memoryUsers.values()).find(u => u.googleSub === clean || u.id === clean);
+  let user =
+    memoryUsers.get(clean) ||
+    Array.from(memoryUsers.values()).find(
+      (u) =>
+        u.googleSub === clean ||
+        u.id === clean ||
+        (clean.startsWith('google_') && u.googleSub === clean.replace(/^google_/, '')) ||
+        (clean.startsWith('user_') && u.googleSub === clean.replace(/^user_/, '')) ||
+        (clean.startsWith('TP-') && u.friendCode.toUpperCase() === clean.toUpperCase())
+    );
   if (!user) {
     user = await syncUserInDB({ googleSub: clean, displayName: defaultName });
   }
@@ -485,7 +505,11 @@ export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFrien
 /**
  * Accept Friend Request
  */
-export async function acceptFriendRequestInDB(userIdOrSub: string, requestId: string) {
+export async function acceptFriendRequestInDB(
+  userIdOrSub: string,
+  requestIdOrFromUser: string,
+  fromFriendCode?: string
+) {
   const user = await resolveUser(userIdOrSub);
   if (!user) {
     return { success: false, status: 400, message: 'Kullanıcı bulunamadı.' };
@@ -494,10 +518,48 @@ export async function acceptFriendRequestInDB(userIdOrSub: string, requestId: st
 
   const prisma = await getPrisma();
   if (prisma) {
-    const friendship = await prisma.friendship.findUnique({
-      where: { id: requestId },
+    // 1. Try finding by direct Friendship ID
+    let friendship = await prisma.friendship.findUnique({
+      where: { id: requestIdOrFromUser },
       include: { userA: true, userB: true }
     });
+
+    // 2. Try finding pending friendship where target is current user and sender is requestIdOrFromUser
+    if (!friendship) {
+      try {
+        const fromUser = await resolveUser(requestIdOrFromUser);
+        if (fromUser) {
+          friendship = await prisma.friendship.findFirst({
+            where: {
+              OR: [
+                { userAId: fromUser.id, userBId: userId },
+                { userAId: userId, userBId: fromUser.id }
+              ]
+            },
+            include: { userA: true, userB: true }
+          });
+        }
+      } catch (e) {}
+    }
+
+    // 3. Try finding pending friendship by sender friendCode
+    if (!friendship && fromFriendCode) {
+      try {
+        const cleanFCode = fromFriendCode.trim().toUpperCase();
+        const fromUser = await prisma.user.findUnique({ where: { friendCode: cleanFCode } });
+        if (fromUser) {
+          friendship = await prisma.friendship.findFirst({
+            where: {
+              OR: [
+                { userAId: fromUser.id, userBId: userId },
+                { userAId: userId, userBId: fromUser.id }
+              ]
+            },
+            include: { userA: true, userB: true }
+          });
+        }
+      } catch (e) {}
+    }
 
     if (!friendship) {
       return { success: false, status: 404, message: 'Arkadaşlık isteği bulunamadı.' };
@@ -512,7 +574,7 @@ export async function acceptFriendRequestInDB(userIdOrSub: string, requestId: st
     }
 
     const updated = await prisma.friendship.update({
-      where: { id: requestId },
+      where: { id: friendship.id },
       data: { status: FriendshipStatus.ACCEPTED }
     });
 
@@ -521,7 +583,19 @@ export async function acceptFriendRequestInDB(userIdOrSub: string, requestId: st
   }
 
   // Fallback memory repository
-  const friendship = memoryFriendships.get(requestId);
+  let friendship = memoryFriendships.get(requestIdOrFromUser);
+  if (!friendship) {
+    for (const f of memoryFriendships.values()) {
+      if (
+        (f.userAId === userId && f.userBId === requestIdOrFromUser) ||
+        (f.userBId === userId && f.userAId === requestIdOrFromUser)
+      ) {
+        friendship = f;
+        break;
+      }
+    }
+  }
+
   if (!friendship) {
     return { success: false, status: 404, message: 'Arkadaşlık isteği bulunamadı.' };
   }

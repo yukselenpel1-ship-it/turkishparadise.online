@@ -26,14 +26,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  const { requestId } = req.body || {};
-  if (!requestId || typeof requestId !== 'string') {
-    return res.status(400).json({ error: 'INVALID_INPUT', message: 'requestId zorunludur.' });
+  const { requestId, fromUserId, fromFriendCode } = req.body || {};
+  const targetIdentifier = requestId || fromUserId;
+  if (!targetIdentifier || typeof targetIdentifier !== 'string') {
+    return res.status(400).json({ error: 'INVALID_INPUT', message: 'requestId veya fromUserId zorunludur.' });
   }
 
   try {
     const { acceptFriendRequestInDB } = await import('../../src/server/db/prisma');
-    const outcome = await acceptFriendRequestInDB(user.id, requestId);
+    const outcome = await acceptFriendRequestInDB(user.id, targetIdentifier, fromFriendCode);
     return res.status(outcome.status || 200).json(outcome);
   } catch (err: any) {
     console.error('[Vercel Function] Accept friend request DB error:', err);

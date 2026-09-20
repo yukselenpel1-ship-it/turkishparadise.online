@@ -60,7 +60,9 @@ const FriendRequestSchema = z.object({
 });
 
 const AcceptRequestSchema = z.object({
-  requestId: z.string().min(1)
+  requestId: z.string().optional(),
+  fromUserId: z.string().optional(),
+  fromFriendCode: z.string().optional()
 });
 
 // Router definition for API endpoints
@@ -215,9 +217,14 @@ apiRouter.post('/friends/accept', requireAuth, async (req: AuthenticatedRequest,
     }
 
     const userId = req.user!.id;
-    const { requestId } = parseResult.data;
+    const { requestId, fromUserId, fromFriendCode } = parseResult.data;
+    const targetIdentifier = requestId || fromUserId;
 
-    const outcome = await acceptFriendRequestInDB(userId, requestId);
+    if (!targetIdentifier) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'requestId veya fromUserId zorunludur.' });
+    }
+
+    const outcome = await acceptFriendRequestInDB(userId, targetIdentifier, fromFriendCode);
     if (!outcome.success) {
       return res.status(outcome.status || 400).json({ error: outcome.message });
     }

@@ -126,7 +126,7 @@ export function lookupUserByFriendCode(code: string): { uid: string; displayName
 }
 
 /**
- * Idempotently sync user with backend database.
+ * Idempotently sync user with backend database and load persistent friends.
  */
 export async function syncUserWithBackend(user: UserAccount, idToken?: string): Promise<UserAccount> {
   const googleSub = user.uid;
@@ -154,14 +154,20 @@ export async function syncUserWithBackend(user: UserAccount, idToken?: string): 
           saveAuthToken(data.token);
         }
         const dbUser = data.user;
+
+        // Immediately fetch persistent friends from PostgreSQL database for this account
+        const { friends } = await fetchFriendsFromDB(dbUser.id);
+
         const updated: UserAccount = {
           ...user,
           uid: dbUser.id,
           friendCode: dbUser.friendCode,
           displayName: dbUser.displayName || user.displayName,
-          photoURL: dbUser.avatarUrl || user.photoURL
+          photoURL: dbUser.avatarUrl || user.photoURL,
+          friends: friends || []
         };
         saveUserToPublicRegistry(updated);
+        saveFriends(dbUser.id, updated.friends || []);
         return updated;
       }
     }
@@ -243,25 +249,11 @@ export async function fetchFriendsFromDB(userId: string): Promise<{
           createdAt: req.createdAt || new Date().toISOString()
         }));
 
-        // Merge and update cached local store
-        const mergedFriends = [...friends];
-        for (const cf of cachedFriends) {
-          if (!mergedFriends.some(f => f.uid === cf.uid || f.friendCode === cf.friendCode)) {
-            mergedFriends.push(cf);
-          }
-        }
+        // Persist database truth to local cache
+        saveFriends(userId, friends);
+        saveIncomingRequests(userId, pendingRequests);
 
-        const mergedRequests = [...pendingRequests];
-        for (const cr of cachedRequests) {
-          if (!mergedRequests.some(r => r.id === cr.id || (r.fromUid === cr.fromUid && r.status === 'PENDING'))) {
-            mergedRequests.push(cr);
-          }
-        }
-
-        saveFriends(userId, mergedFriends);
-        saveIncomingRequests(userId, mergedRequests);
-
-        return { friends: mergedFriends, pendingRequests: mergedRequests };
+        return { friends, pendingRequests };
       }
     }
   } catch (err) {
@@ -296,16 +288,6 @@ export async function sendFriendRequest(
     return { success: false, message: 'Bu oyuncu zaten arkadaş listenizde ekli.' };
   }
 
-  // 1. Broadcast over Realtime MQTT Mesh immediately
-  syncManager.sendFriendMessage({
-    type: 'FRIEND_REQUEST_SENT',
-    fromUserId: currentUser.uid,
-    fromName: currentUser.displayName,
-    fromFriendCode: currentUser.friendCode || 'TP-PLAYER',
-    fromPhotoURL: currentUser.photoURL || '',
-    targetFriendCode: cleanCode
-  });
-
   const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -313,7 +295,8 @@ export async function sendFriendRequest(
   headers['x-user-id'] = currentUser.uid;
   headers['x-user-name'] = currentUser.displayName;
 
-  // 2. Persist in Backend Database
+  // 1. Persist in Backend Database first to obtain persistent CUID
+  let dbFriendshipId: string | undefined;
   try {
     const res = await fetch(`${baseUrl}/api/friends/request`, {
       method: 'POST',
@@ -327,15 +310,34 @@ export async function sendFriendRequest(
     } catch (e) {}
 
     if (res.ok && data?.success) {
+      dbFriendshipId = data?.friendship?.id;
+      // Broadcast over Realtime MQTT Mesh with persistent DB friendship ID
+      syncManager.sendFriendMessage({
+        type: 'FRIEND_REQUEST_SENT',
+        requestId: dbFriendshipId,
+        fromUserId: currentUser.uid,
+        fromName: currentUser.displayName,
+        fromFriendCode: currentUser.friendCode || 'TP-PLAYER',
+        fromPhotoURL: currentUser.photoURL || '',
+        targetFriendCode: cleanCode
+      });
       return { success: true, message: data.message || 'Arkadaşlık isteği başarıyla gönderildi.' };
     } else {
       if (res.status === 404) {
         return { success: false, message: 'Bu arkadaş koduna sahip oyuncu bulunamadı.' };
       }
-      return { success: true, message: data?.message || 'Arkadaşlık isteği gönderildi.' };
+      return { success: false, message: data?.message || 'Arkadaşlık isteği gönderilemedi.' };
     }
   } catch (err: any) {
     console.warn('[FriendService] API request notice (delivered via realtime mesh):', err);
+    syncManager.sendFriendMessage({
+      type: 'FRIEND_REQUEST_SENT',
+      fromUserId: currentUser.uid,
+      fromName: currentUser.displayName,
+      fromFriendCode: currentUser.friendCode || 'TP-PLAYER',
+      fromPhotoURL: currentUser.photoURL || '',
+      targetFriendCode: cleanCode
+    });
     return { success: true, message: 'Arkadaşlık isteği başarıyla gönderildi.' };
   }
 }
@@ -364,12 +366,11 @@ export async function acceptFriendRequest(
       saveFriends(userId, friends);
     }
 
-    const currentReqs = getIncomingRequests(userId).filter(r => r.id !== requestId);
+    const currentReqs = getIncomingRequests(userId).filter(r => r.id !== requestId && r.fromUid !== fromUser.id);
     saveIncomingRequests(userId, currentReqs);
   }
 
   // 2. Broadcast acceptance over Realtime MQTT Mesh WITH CURRENT USER METADATA
-  // This allows the sender (User A) to instantly add User B to User A's friends list
   syncManager.sendFriendMessage({
     type: 'FRIEND_REQUEST_ACCEPTED',
     fromUserId: userId,
@@ -387,12 +388,16 @@ export async function acceptFriendRequest(
   if (token) headers['Authorization'] = `Bearer ${token}`;
   headers['x-user-id'] = userId;
 
-  // 3. Persist in Backend Database
+  // 3. Persist in Backend Database with robust fallback identifier resolution
   try {
     const res = await fetch(`${baseUrl}/api/friends/accept`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ requestId })
+      body: JSON.stringify({
+        requestId,
+        fromUserId: fromUser?.id,
+        fromFriendCode: fromUser?.friendCode
+      })
     });
 
     let data: any = null;
@@ -401,6 +406,7 @@ export async function acceptFriendRequest(
     } catch (e) {}
 
     if (res.ok && data?.success) {
+      await fetchFriendsFromDB(userId);
       return { success: true, message: data.message || 'Arkadaşlık kabul edildi.' };
     }
   } catch (err: any) {
@@ -531,7 +537,7 @@ export function subscribeToFriendRequests(
 
       if (cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`)) {
         const newReq: FriendRequest = {
-          id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          id: data.requestId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           fromUid: data.fromUserId || 'unknown',
           fromDisplayName: data.fromName || 'Oyuncu',
           fromPhotoURL: data.fromPhotoURL || null,
@@ -642,7 +648,7 @@ export function subscribeToFriendsAndRequests(
 
       if (cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`)) {
         const newReq: FriendRequest = {
-          id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          id: data.requestId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           fromUid: data.fromUserId || 'unknown',
           fromDisplayName: data.fromName || 'Oyuncu',
           fromPhotoURL: data.fromPhotoURL || null,
