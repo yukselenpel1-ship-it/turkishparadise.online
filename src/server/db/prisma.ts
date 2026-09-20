@@ -658,48 +658,84 @@ export async function acceptFriendRequestInDB(
 /**
  * Delete Friendship
  */
-export async function deleteFriendshipInDB(userIdOrSub: string, friendUserIdOrId: string) {
+export async function deleteFriendshipInDB(userIdOrSub: string, friendUserIdOrCodeOrId: string) {
   const user = await resolveUser(userIdOrSub);
   if (!user) {
     return { success: false, status: 400, message: 'Kullanıcı bulunamadı.' };
   }
   const userId = user.id;
+  const userSub = user.googleSub;
+  const userFriendCode = user.friendCode;
 
   const prisma = await getPrisma();
   if (prisma) {
-    let friendship = await prisma.friendship.findUnique({ where: { id: friendUserIdOrId } });
+    const myUsers = await prisma.user.findMany({
+      where: {
+        OR: [
+          { id: userId },
+          { googleSub: userSub },
+          { friendCode: userFriendCode }
+        ]
+      },
+      select: { id: true }
+    });
+    const myIds = myUsers.map((u: any) => u.id);
+    if (!myIds.includes(userId)) myIds.push(userId);
 
-    if (!friendship) {
-      try {
-        const friendUser = await resolveUser(friendUserIdOrId);
-        if (friendUser) {
-          friendship = await prisma.friendship.findFirst({
-            where: {
-              OR: [
-                { userAId: userId, userBId: friendUser.id },
-                { userAId: friendUser.id, userBId: userId }
-              ]
-            }
-          });
+    const friendUser = await resolveUser(friendUserIdOrCodeOrId).catch(() => null);
+    let friendIds: string[] = [friendUserIdOrCodeOrId];
+    if (friendUser) {
+      const fUsers = await prisma.user.findMany({
+        where: {
+          OR: [
+            { id: friendUser.id },
+            { googleSub: friendUser.googleSub },
+            { friendCode: friendUser.friendCode }
+          ]
+        },
+        select: { id: true }
+      });
+      friendIds = fUsers.map((u: any) => u.id);
+      if (!friendIds.includes(friendUser.id)) friendIds.push(friendUser.id);
+    }
+
+    // Delete any friendship matching the direct ID or between the two users
+    try {
+      await prisma.friendship.deleteMany({
+        where: {
+          OR: [
+            { id: friendUserIdOrCodeOrId },
+            { userAId: { in: myIds }, userBId: { in: friendIds } },
+            { userAId: { in: friendIds }, userBId: { in: myIds } }
+          ]
         }
-      } catch (e) {}
+      });
+    } catch (err: any) {
+      console.warn('[Prisma DB] Delete friendship notice:', err?.message);
     }
 
-    if (!friendship) {
-      return { success: false, status: 404, message: 'Silinecek arkadaşlık kaydı bulunamadı.' };
-    }
-
-    if (friendship.userAId !== userId && friendship.userBId !== userId) {
-      return { success: false, status: 403, message: 'Bu arkadaşlık kaydını silme yetkiniz yok.' };
-    }
-
-    await prisma.friendship.delete({ where: { id: friendship.id } });
     return { success: true, status: 200, message: 'Arkadaşlık kaydı başarıyla silindi.' };
   }
 
   // Fallback memory repository
+  const friendUser = await resolveUser(friendUserIdOrCodeOrId).catch(() => null);
+  const friendId = friendUser ? friendUser.id : friendUserIdOrCodeOrId;
+  const friendSub = friendUser ? friendUser.googleSub : friendUserIdOrCodeOrId;
+
   for (const [id, f] of memoryFriendships.entries()) {
-    if (id === friendUserIdOrId || f.userAId === friendUserIdOrId || f.userBId === friendUserIdOrId) {
+    const isTarget =
+      id === friendUserIdOrCodeOrId ||
+      id === friendId ||
+      f.userAId === friendUserIdOrCodeOrId ||
+      f.userBId === friendUserIdOrCodeOrId ||
+      f.userAId === friendId ||
+      f.userBId === friendId ||
+      f.userAId === friendSub ||
+      f.userBId === friendSub ||
+      (f.userAId === userId && (f.userBId === friendId || f.userBId === friendSub)) ||
+      (f.userBId === userId && (f.userAId === friendId || f.userAId === friendSub));
+
+    if (isTarget) {
       memoryFriendships.delete(id);
     }
   }

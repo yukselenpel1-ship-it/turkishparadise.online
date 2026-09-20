@@ -218,16 +218,42 @@ export function saveLocalUser(user: UserAccount) {
 
 export function getUserStats(uid: string): UserStats {
   try {
-    const raw = localStorage.getItem(STATS_KEY_PREFIX + uid);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        gamesWon: parsed.gamesWon || 0,
-        gamesLost: parsed.gamesLost || 0,
-        gamesPlayed: parsed.gamesPlayed || 0,
-        totalMoneyEarned: parsed.totalMoneyEarned || 0,
-        history: Array.isArray(parsed.history) ? parsed.history : []
-      };
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (uid) {
+        const raw = localStorage.getItem(STATS_KEY_PREFIX + uid);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.gamesWon === 'number') {
+            return {
+              gamesWon: parsed.gamesWon || 0,
+              gamesLost: parsed.gamesLost || 0,
+              gamesPlayed: parsed.gamesPlayed || (parsed.gamesWon + (parsed.gamesLost || 0)),
+              totalMoneyEarned: parsed.totalMoneyEarned || 0,
+              history: Array.isArray(parsed.history) ? parsed.history : []
+            };
+          }
+        }
+      }
+      const rawGlobal = localStorage.getItem(STATS_KEY_PREFIX + 'global');
+      if (rawGlobal) {
+        const parsed = JSON.parse(rawGlobal);
+        if (parsed && typeof parsed.gamesWon === 'number') {
+          return {
+            gamesWon: parsed.gamesWon || 0,
+            gamesLost: parsed.gamesLost || 0,
+            gamesPlayed: parsed.gamesPlayed || (parsed.gamesWon + (parsed.gamesLost || 0)),
+            totalMoneyEarned: parsed.totalMoneyEarned || 0,
+            history: Array.isArray(parsed.history) ? parsed.history : []
+          };
+        }
+      }
+      const rawUser = localStorage.getItem('tp_user_profile');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u && u.stats && typeof u.stats.gamesWon === 'number') {
+          return u.stats;
+        }
+      }
     }
   } catch {}
   return { gamesWon: 0, gamesLost: 0, gamesPlayed: 0, totalMoneyEarned: 0, history: [] };
@@ -235,13 +261,15 @@ export function getUserStats(uid: string): UserStats {
 
 export function saveUserStats(uid: string, stats: UserStats): void {
   try {
-    localStorage.setItem(STATS_KEY_PREFIX + uid, JSON.stringify(stats));
-    
-    // Also update saved user account stats if current user matches
-    const savedUser = getSavedUser();
-    if (savedUser && savedUser.uid === uid) {
-      savedUser.stats = stats;
-      saveLocalUser(savedUser);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (uid) localStorage.setItem(STATS_KEY_PREFIX + uid, JSON.stringify(stats));
+      localStorage.setItem(STATS_KEY_PREFIX + 'global', JSON.stringify(stats));
+
+      const savedUser = getSavedUser();
+      if (savedUser) {
+        savedUser.stats = stats;
+        saveLocalUser(savedUser);
+      }
     }
   } catch (e) {
     console.warn('[Stats] Could not save stats:', e);
@@ -262,7 +290,7 @@ export function recordGameMatch(
   const isWin = result === 'WIN';
   const newWon = isWin ? current.gamesWon + 1 : current.gamesWon;
   const newLost = !isWin ? current.gamesLost + 1 : current.gamesLost;
-  const newPlayed = current.gamesPlayed + 1;
+  const newPlayed = newWon + newLost;
   const newMoney = current.totalMoneyEarned + Math.max(0, moneyEarned);
 
   const newRecord: MatchRecord = {
@@ -271,10 +299,10 @@ export function recordGameMatch(
     result,
     moneyEarned: Math.max(0, moneyEarned),
     date: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
-    opponentsCount
+    opponentsCount: opponentsCount > 0 ? opponentsCount : 2
   };
 
-  const updatedHistory = [newRecord, ...(current.history || [])].slice(0, 20); // Keep last 20 matches
+  const updatedHistory = [newRecord, ...(current.history || [])].slice(0, 30);
 
   const updatedStats: UserStats = {
     gamesWon: newWon,

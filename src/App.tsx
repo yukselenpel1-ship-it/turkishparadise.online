@@ -644,11 +644,10 @@ export const App: React.FC = () => {
 
   // 6.6 Automatic Game Outcome Stats Tracking (Wins, Losses, Bankruptcy, Matches Played)
   const recordedMatchKeyRef = useRef<string>('');
-  const recordedBankruptcyRef = useRef<string>('');
 
   useEffect(() => {
     if (gameState.phase === 'ENDED' && gameState.winner && userAccount) {
-      const matchKey = `${gameState.roomId}_${gameState.winner.id}_${gameState.players.length}_${gameState.turnStartedAt || 0}`;
+      const matchKey = `match_${gameState.roomId}_${gameState.winner.id}`;
       if (recordedMatchKeyRef.current === matchKey) return;
       recordedMatchKeyRef.current = matchKey;
 
@@ -681,34 +680,7 @@ export const App: React.FC = () => {
         return next;
       });
     }
-  }, [gameState.phase, gameState.winner, gameState.roomId, gameState.players, gameState.turnStartedAt, myPlayerId, userAccount]);
-
-  // 6.7 Immediate In-Game Bankruptcy Loss Tracking
-  useEffect(() => {
-    if (gameState.phase === 'PLAYING' && userAccount && myPlayerId) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId || (p.userId && p.userId === userAccount.uid) || p.id === userAccount.uid);
-      if (myPlayer && !myPlayer.inGame) {
-        const bankKey = `bank_${gameState.roomId}_${userAccount.uid}_${gameState.turnStartedAt || 0}`;
-        if (recordedBankruptcyRef.current === bankKey) return;
-        recordedBankruptcyRef.current = bankKey;
-
-        const updatedStats = recordGameMatch(
-          userAccount.uid,
-          'BANKRUPTCY',
-          0,
-          gameState.roomId || 'TR-1001',
-          gameState.players.length
-        );
-
-        setUserAccount((prev) => {
-          if (!prev) return null;
-          const next = { ...prev, stats: updatedStats };
-          saveLocalUser(next);
-          return next;
-        });
-      }
-    }
-  }, [gameState.phase, gameState.players, gameState.roomId, gameState.turnStartedAt, myPlayerId, userAccount]);
+  }, [gameState.phase, gameState.winner, gameState.roomId, gameState.players, myPlayerId, userAccount]);
 
   // 3. Handle Bot & AFK Auto-Takeover Turns with Smooth Pacing & Visible Animation
   useEffect(() => {

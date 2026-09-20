@@ -447,15 +447,36 @@ export async function acceptFriendRequest(
  */
 export async function removeFriend(
   userId: string,
-  friendUserIdOrRequestId: string
+  friendUserIdOrCodeOrId: string
 ): Promise<{ success: boolean; message: string }> {
-  // Remove from local cache
-  const friends = getFriends(userId).filter(f => f.uid !== friendUserIdOrRequestId && f.friendCode !== friendUserIdOrRequestId);
+  const cleanTarget = (friendUserIdOrCodeOrId || '').trim().toUpperCase();
+
+  // 1. Remove from local caches immediately
+  const friends = getFriends(userId).filter(
+    (f) =>
+      f.uid !== friendUserIdOrCodeOrId &&
+      f.friendCode?.toUpperCase() !== cleanTarget &&
+      f.friendCode?.toUpperCase().replace(/^TP-/, '') !== cleanTarget.replace(/^TP-/, '')
+  );
   saveFriends(userId, friends);
 
-  const reqs = getIncomingRequests(userId).filter(r => r.id !== friendUserIdOrRequestId && r.fromUid !== friendUserIdOrRequestId);
+  const reqs = getIncomingRequests(userId).filter(
+    (r) =>
+      r.id !== friendUserIdOrCodeOrId &&
+      r.fromUid !== friendUserIdOrCodeOrId &&
+      r.fromFriendCode?.toUpperCase() !== cleanTarget
+  );
   saveIncomingRequests(userId, reqs);
 
+  // 2. Broadcast removal via MQTT Mesh so other side also updates instantly
+  syncManager.sendFriendMessage({
+    type: 'FRIEND_REMOVED',
+    fromUserId: userId,
+    targetUserId: friendUserIdOrCodeOrId,
+    targetFriendCode: cleanTarget
+  });
+
+  // 3. Delete from Backend Database
   const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -463,11 +484,13 @@ export async function removeFriend(
   headers['x-user-id'] = userId;
 
   try {
-    await fetch(`${baseUrl}/api/friends/${encodeURIComponent(friendUserIdOrRequestId)}?userId=${encodeURIComponent(userId)}`, {
+    await fetch(`${baseUrl}/api/friends/${encodeURIComponent(friendUserIdOrCodeOrId)}?userId=${encodeURIComponent(userId)}`, {
       method: 'DELETE',
       headers
     });
-  } catch (err: any) {}
+  } catch (err: any) {
+    console.warn('[FriendService] Delete friend DB notice:', err);
+  }
 
   return { success: true, message: 'Arkadaş silindi.' };
 }
@@ -719,6 +742,27 @@ export function subscribeToFriendsAndRequests(
         }
       }
       refreshAll();
+    } else if (data.type === 'FRIEND_REMOVED') {
+      const cleanFromId = (data.fromUserId || '').trim().toUpperCase();
+      const cleanTargetId = (data.targetUserId || '').trim().toUpperCase();
+      const cleanTargetCode = (data.targetFriendCode || '').trim().toUpperCase();
+
+      const isTargetForMe =
+        cleanTargetId === uid.toUpperCase() ||
+        cleanTargetId === cleanMyCode ||
+        (cleanMyCode && (cleanTargetCode === cleanMyCode || cleanTargetCode === `TP-${cleanMyCode}`));
+
+      if (isTargetForMe || cleanFromId === uid.toUpperCase()) {
+        const toRemove = isTargetForMe ? cleanFromId : cleanTargetId;
+        const nextFriends = getFriends(uid).filter(
+          (f) =>
+            f.uid?.toUpperCase() !== toRemove &&
+            f.friendCode?.toUpperCase() !== toRemove &&
+            f.friendCode?.toUpperCase().replace(/^TP-/, '') !== toRemove.replace(/^TP-/, '')
+        );
+        saveFriends(uid, nextFriends);
+        safeNotify(nextFriends, getIncomingRequests(uid));
+      }
     } else if (data.type === 'PRESENCE_UPDATE') {
       if (data.userId && data.userId !== uid) {
         const currentFriends = getFriends(uid);

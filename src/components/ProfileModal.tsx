@@ -188,12 +188,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   };
 
   // Remove friend
-  const handleRemoveFriend = async (friendUid: string) => {
+  const handleRemoveFriend = async (friendUidOrCode: string) => {
+    const cleanTarget = (friendUidOrCode || '').trim().toUpperCase();
+    setFriendsList((prev) =>
+      prev.filter(
+        (f) =>
+          f.uid !== friendUidOrCode &&
+          f.friendCode?.toUpperCase() !== cleanTarget &&
+          f.friendCode?.toUpperCase().replace(/^TP-/, '') !== cleanTarget.replace(/^TP-/, '')
+      )
+    );
     try {
-      const res = await removeFriend(userAccount.uid, friendUid);
+      const res = await removeFriend(userAccount.uid, friendUidOrCode);
       if (res.success) {
-        const { friends } = await fetchFriendsFromDB(userAccount.uid);
-        setFriendsList(friends);
         setStatusMessage({ text: 'Arkadaş listenizden çıkarıldı.', type: 'success' });
       } else {
         setStatusMessage({ text: res.message || 'Arkadaş çıkarılamadı.', type: 'error' });
