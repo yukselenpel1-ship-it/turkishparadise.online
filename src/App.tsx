@@ -42,6 +42,7 @@ import {
   handleGoogleOAuthCallback
 } from './services/googleAuth';
 import { soundManager } from './services/soundEffects';
+import { updateUserPresence } from './services/friendService';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -251,6 +252,20 @@ export const App: React.FC = () => {
       } catch (e) {}
     }
   }, [myPlayerId]);
+
+  // 3.5 Broadcast user online presence & current room in real-time
+  useEffect(() => {
+    if (userAccount && userAccount.friendCode) {
+      const activeRoom = gameState.roomId || gameState.settings?.roomCode || 'TR-1001';
+      updateUserPresence(
+        userAccount.uid,
+        userAccount.friendCode,
+        userAccount.displayName,
+        true,
+        activeRoom
+      );
+    }
+  }, [userAccount, gameState.roomId, gameState.settings?.roomCode, gameState.phase]);
 
   // 4. Real-time Room State Synchronization & Auto Session Recovery on F5 Reload
   useEffect(() => {
@@ -767,7 +782,7 @@ export const App: React.FC = () => {
   // Remove player or bot from room (Host Only)
   const handleRemovePlayer = (playerIdToRemove: string) => {
     updateAndBroadcastGameState((prev) => {
-      const isHost = prev.players.length === 0 || prev.players[0].id === myPlayerId;
+      const isHost = prev.players.length === 0 || prev.players[0].id === myPlayerId || prev.players[0].isHost;
       if (!isHost) return prev;
 
       const pToRemove = prev.players.find((p) => p.id === playerIdToRemove);
@@ -784,6 +799,9 @@ export const App: React.FC = () => {
 
   // Update Game Settings (Host Only)
   const handleUpdateSettings = (newSettings: GameSettings) => {
+    const isMeHost = gameState.players.length === 0 || gameState.players[0].id === myPlayerId || gameState.players[0].isHost;
+    if (!isMeHost) return;
+
     updateAndBroadcastGameState((prev) => ({
       ...prev,
       settings: newSettings,
@@ -791,9 +809,10 @@ export const App: React.FC = () => {
     }));
   };
 
-  // Add Bot Player with Difficulty & Guaranteed Unique Color
+  // Add Bot Player with Difficulty & Guaranteed Unique Color (Host Only)
   const handleAddBot = (difficulty: BotDifficulty = 'medium') => {
-    if (gameState.players.length >= 6) return;
+    const isMeHost = gameState.players.length === 0 || gameState.players[0].id === myPlayerId || gameState.players[0].isHost;
+    if (!isMeHost || gameState.players.length >= 6) return;
 
     const botNumber = gameState.players.filter((p) => p.isBot).length + 1;
     const difficultyPrefix = difficulty === 'hard' ? 'Zor ' : difficulty === 'easy' ? 'Kolay ' : '';
@@ -834,9 +853,10 @@ export const App: React.FC = () => {
     });
   };
 
-  // Start Game
+  // Start Game (Host Only)
   const handleStartGame = () => {
-    if (gameState.players.length < 2) return;
+    const isMeHost = gameState.players.length === 0 || gameState.players[0].id === myPlayerId || gameState.players[0].isHost;
+    if (!isMeHost || gameState.players.length < 2) return;
 
     updateAndBroadcastGameState((prev) => {
       const startMoney = prev.settings?.startingMoney || 1500;
@@ -856,6 +876,30 @@ export const App: React.FC = () => {
       addLog(updated, '🎮 Turkish Paradise oyunu başladı! İyi şanslar!', 'success');
       return updated;
     });
+  };
+
+  // Join Friend's Room Directly from Profile Modal
+  const handleJoinFriendRoom = (targetRoomId: string) => {
+    const cleanRoom = targetRoomId.trim().toUpperCase();
+    if (!cleanRoom) return;
+
+    if (gameState.roomId !== cleanRoom) {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('room', cleanRoom);
+      window.history.replaceState(null, '', currentUrl.toString());
+
+      try {
+        sessionStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
+        localStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
+      } catch (e) {}
+
+      const existingPlayer = gameState.players.find(p => p.id === myPlayerId);
+      const myName = existingPlayer?.name || userAccount?.displayName || 'Oyuncu';
+      const myAvatar = existingPlayer?.avatar || '🎩';
+      const myColor = existingPlayer?.color || '#3b82f6';
+
+      handleJoin(myName, myAvatar, myColor, true, cleanRoom);
+    }
   };
 
   // Step-by-Step Animated Roll Dice Action
@@ -1156,6 +1200,7 @@ export const App: React.FC = () => {
           onUpdateUserAccount={setUserAccount}
           onUpdateSettings={handleUpdateSettings}
           onJoin={handleJoin}
+          onJoinRoom={handleJoinFriendRoom}
           onAddBot={handleAddBot}
           onRemovePlayer={handleRemovePlayer}
           onStartGame={handleStartGame}
@@ -1514,6 +1559,7 @@ export const App: React.FC = () => {
           onLogout={handleLogout}
           onUpdateUserAccount={setUserAccount}
           onGoogleLogin={handleGoogleLogin}
+          onJoinRoom={handleJoinFriendRoom}
           roomId={gameState.roomId || gameState.settings?.roomCode || 'TR-1001'}
         />
       )}

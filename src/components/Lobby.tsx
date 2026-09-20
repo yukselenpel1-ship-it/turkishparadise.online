@@ -46,6 +46,7 @@ interface LobbyProps {
   onUpdateUserAccount?: (account: UserAccount) => void;
   onUpdateSettings: (newSettings: GameSettings) => void;
   onJoin: (name: string, avatar: string, color: string, isOnline?: boolean, targetRoomCode?: string) => void;
+  onJoinRoom?: (roomId: string) => void;
   onAddBot: (difficulty?: BotDifficulty) => void;
   onRemovePlayer?: (playerId: string) => void;
   onStartGame: () => void;
@@ -63,6 +64,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   onUpdateUserAccount,
   onUpdateSettings,
   onJoin,
+  onJoinRoom,
   onAddBot,
   onRemovePlayer,
   onStartGame,
@@ -615,33 +617,35 @@ export const Lobby: React.FC<LobbyProps> = ({
                       <span>Oyuncular ({players.length}/6)</span>
                     </div>
 
-                    {/* Bot Add Buttons with difficulty */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => onAddBot('easy')}
-                        disabled={players.length >= 6}
-                        className="bg-emerald-500/10 hover:bg-emerald-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-emerald-500/30 text-emerald-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
-                        title="Kolay Bot Ekle"
-                      >
-                        + Kolay
-                      </button>
-                      <button
-                        onClick={() => onAddBot('medium')}
-                        disabled={players.length >= 6}
-                        className="bg-amber-500/10 hover:bg-amber-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-amber-500/30 text-amber-300 transition disabled:opacity-40 cursor-pointer active:scale-95"
-                        title="Orta Bot Ekle"
-                      >
-                        + Orta
-                      </button>
-                      <button
-                        onClick={() => onAddBot('hard')}
-                        disabled={players.length >= 6}
-                        className="bg-rose-500/10 hover:bg-rose-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-rose-500/30 text-rose-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
-                        title="Zor Bot Ekle"
-                      >
-                        + Zor
-                      </button>
-                    </div>
+                    {/* Bot Add Buttons with difficulty (Host Only) */}
+                    {isHost && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => onAddBot('easy')}
+                          disabled={players.length >= 6}
+                          className="bg-emerald-500/10 hover:bg-emerald-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-emerald-500/30 text-emerald-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
+                          title="Kolay Bot Ekle"
+                        >
+                          + Kolay
+                        </button>
+                        <button
+                          onClick={() => onAddBot('medium')}
+                          disabled={players.length >= 6}
+                          className="bg-amber-500/10 hover:bg-amber-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-amber-500/30 text-amber-300 transition disabled:opacity-40 cursor-pointer active:scale-95"
+                          title="Orta Bot Ekle"
+                        >
+                          + Orta
+                        </button>
+                        <button
+                          onClick={() => onAddBot('hard')}
+                          disabled={players.length >= 6}
+                          className="bg-rose-500/10 hover:bg-rose-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-rose-500/30 text-rose-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
+                          title="Zor Bot Ekle"
+                        >
+                          + Zor
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Player Items */}
@@ -1293,6 +1297,25 @@ export const Lobby: React.FC<LobbyProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Profile & Friends Modal */}
+      {isProfileModalOpen && userAccount && (
+        <ProfileModal
+          userAccount={userAccount}
+          onClose={() => setIsProfileModalOpen(false)}
+          onLogout={onLogout}
+          onUpdateUserAccount={onUpdateUserAccount}
+          onGoogleLogin={onGoogleLogin}
+          onJoinRoom={(targetRoom) => {
+            setIsProfileModalOpen(false);
+            if (onJoinRoom) {
+              onJoinRoom(targetRoom);
+            }
+          }}
+          roomId={settings.roomCode || roomCode || 'TR-1001'}
+          initialTab={profileInitialTab}
+        />
       )}
 
     </div>

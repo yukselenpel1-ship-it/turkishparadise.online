@@ -156,6 +156,18 @@ export interface UserStats {
   history?: MatchRecord[];
 }
 
+export interface FriendRequest {
+  id: string;
+  fromUid: string;
+  fromDisplayName: string;
+  fromPhotoURL?: string | null;
+  fromFriendCode: string;
+  toUid: string;
+  toFriendCode: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  createdAt: string;
+}
+
 export interface FriendUser {
   uid: string;
   friendCode: string;
@@ -164,6 +176,9 @@ export interface FriendUser {
   email?: string | null;
   addedAt: string;
   stats?: UserStats;
+  isOnline?: boolean;
+  activeRoomId?: string;
+  lastSeen?: number;
 }
 
 export interface UserAccount {
@@ -175,6 +190,7 @@ export interface UserAccount {
   provider: 'google' | 'guest';
   friendCode?: string;
   friends?: FriendUser[];
+  incomingRequests?: FriendRequest[];
   stats?: UserStats;
 }
 

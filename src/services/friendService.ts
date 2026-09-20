@@ -1,10 +1,20 @@
-import { UserAccount, FriendUser, UserStats } from '../types/game';
+import { UserAccount, FriendUser, FriendRequest, UserStats } from '../types/game';
 import { database, isFirebaseConfigured } from './firebase';
-import { ref, set, get } from 'firebase/database';
+import { ref, set, get, update, onValue, off, remove } from 'firebase/database';
 
 const PUBLIC_REGISTRY_KEY = 'tp_public_users_registry';
 const FRIENDS_KEY_PREFIX = 'tp_friends_';
 const FRIEND_CODE_PREFIX = 'tp_friend_code_';
+const INCOMING_REQUESTS_PREFIX = 'tp_incoming_requests_';
+const PRESENCE_KEY_PREFIX = 'tp_presence_';
+
+// Local BroadcastChannel for instant cross-tab / cross-window real-time synchronization
+let friendsChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    friendsChannel = new BroadcastChannel('tp_friends_presence_channel');
+  }
+} catch (e) {}
 
 /**
  * Generate a deterministic 6-character alphanumeric Friend Code (e.g. TP-7K9A2X)
@@ -25,7 +35,7 @@ export function getOrGenerateFriendCode(uid: string, email?: string | null): str
       hash |= 0;
     }
     const positiveHash = Math.abs(hash);
-    const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // Removed ambiguous 0,1,I,O
+    const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let code = '';
     let num = positiveHash;
     for (let i = 0; i < 6; i++) {
@@ -37,13 +47,12 @@ export function getOrGenerateFriendCode(uid: string, email?: string | null): str
     localStorage.setItem(storageKey, friendCode);
     return friendCode;
   } catch (e) {
-    const fallbackCode = `TP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    return fallbackCode;
+    return `TP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   }
 }
 
 /**
- * Register user in the public player directory (both local & Firebase if available)
+ * Register user in the public player directory (both local & Firebase)
  */
 export async function saveUserToPublicRegistry(user: UserAccount): Promise<void> {
   if (!user.friendCode) return;
@@ -63,10 +72,9 @@ export async function saveUserToPublicRegistry(user: UserAccount): Promise<void>
     const raw = localStorage.getItem(PUBLIC_REGISTRY_KEY);
     const registry: Record<string, FriendUser> = raw ? JSON.parse(raw) : {};
     registry[user.friendCode.toUpperCase()] = publicData;
+    registry[user.uid] = publicData;
     localStorage.setItem(PUBLIC_REGISTRY_KEY, JSON.stringify(registry));
-  } catch (e) {
-    console.warn('[FriendService] Local registry save warning:', e);
-  }
+  } catch (e) {}
 
   // 2. Save to Firebase Realtime Database if configured
   if (isFirebaseConfigured && database) {
@@ -76,20 +84,25 @@ export async function saveUserToPublicRegistry(user: UserAccount): Promise<void>
         ...publicData,
         updatedAt: Date.now()
       });
+      const uidRef = ref(database, `usersByUid/${user.uid}`);
+      await set(uidRef, {
+        ...publicData,
+        updatedAt: Date.now()
+      });
     } catch (err) {
-      console.warn('[FriendService] Firebase user registration error:', err);
+      console.warn('[FriendService] Firebase user registration warning:', err);
     }
   }
 }
 
 /**
- * Find user by their unique Friend Code (e.g. TP-7K9A2X)
+ * Find user by their unique Friend Code or UID
  */
 export async function findUserByFriendCode(inputCode: string): Promise<FriendUser | null> {
   if (!inputCode) return null;
 
   let cleanCode = inputCode.trim().toUpperCase();
-  if (!cleanCode.startsWith('TP-')) {
+  if (!cleanCode.startsWith('TP-') && !cleanCode.startsWith('GOOGLE_') && !cleanCode.startsWith('GUEST_')) {
     cleanCode = `TP-${cleanCode}`;
   }
 
@@ -121,12 +134,10 @@ export async function findUserByFriendCode(inputCode: string): Promise<FriendUse
           stats: data.stats
         };
       }
-    } catch (err) {
-      console.warn('[FriendService] Firebase lookup error:', err);
-    }
+    } catch (err) {}
   }
 
-  // 3. Fallback for validly formatted friend code when playing across fresh local instances
+  // 3. Fallback for valid friend codes format
   if (/^TP-[A-Z0-9]{5,8}$/.test(cleanCode)) {
     const seed = cleanCode.replace('TP-', '');
     const num = seed.charCodeAt(0) + (seed.charCodeAt(1) || 50);
@@ -169,30 +180,50 @@ export function getFriends(uid: string): FriendUser[] {
 export function saveFriends(uid: string, friends: FriendUser[]): void {
   try {
     localStorage.setItem(`${FRIENDS_KEY_PREFIX}${uid}`, JSON.stringify(friends));
-  } catch (e) {
-    console.warn('[FriendService] Save friends error:', e);
-  }
+  } catch (e) {}
 }
 
 /**
- * Add a friend by their unique Friend Code
+ * Get incoming friend requests
  */
-export async function addFriendByCode(
+export function getIncomingRequests(uid: string): FriendRequest[] {
+  try {
+    const raw = localStorage.getItem(`${INCOMING_REQUESTS_PREFIX}${uid}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((r) => r.status === 'PENDING');
+    }
+  } catch (e) {}
+  return [];
+}
+
+/**
+ * Save incoming friend requests locally
+ */
+export function saveIncomingRequests(uid: string, requests: FriendRequest[]): void {
+  try {
+    localStorage.setItem(`${INCOMING_REQUESTS_PREFIX}${uid}`, JSON.stringify(requests));
+  } catch (e) {}
+}
+
+/**
+ * Send a Friend Request from User A to User B
+ */
+export async function sendFriendRequest(
   currentUser: UserAccount,
   targetCode: string
-): Promise<{ success: boolean; message: string; friend?: FriendUser; friends: FriendUser[] }> {
+): Promise<{ success: boolean; message: string; targetUser?: FriendUser }> {
   const currentFriends = getFriends(currentUser.uid);
 
   if (!targetCode || !targetCode.trim()) {
     return {
       success: false,
-      message: 'Lütfen geçerli bir Arkadaş ID giriniz (Örn: TP-849201).',
-      friends: currentFriends
+      message: 'Lütfen geçerli bir Arkadaş ID giriniz (Örn: TP-849201).'
     };
   }
 
   let cleanCode = targetCode.trim().toUpperCase();
-  if (!cleanCode.startsWith('TP-')) {
+  if (!cleanCode.startsWith('TP-') && !cleanCode.startsWith('GOOGLE_')) {
     cleanCode = `TP-${cleanCode}`;
   }
 
@@ -200,8 +231,7 @@ export async function addFriendByCode(
   if (currentUser.friendCode && cleanCode === currentUser.friendCode.toUpperCase()) {
     return {
       success: false,
-      message: 'Kendi Özel ID numaranızı arkadaş olarak ekleyemezsiniz!',
-      friends: currentFriends
+      message: 'Kendi Özel ID numaranıza arkadaşlık isteği gönderemezsiniz!'
     };
   }
 
@@ -209,34 +239,224 @@ export async function addFriendByCode(
   if (currentFriends.some((f) => f.friendCode.toUpperCase() === cleanCode)) {
     return {
       success: false,
-      message: 'Bu oyuncu zaten arkadaş listenizde ekli!',
-      friends: currentFriends
+      message: 'Bu oyuncu zaten arkadaş listenizde ekli!'
     };
   }
 
-  const foundUser = await findUserByFriendCode(cleanCode);
-  if (!foundUser) {
+  const targetUser = await findUserByFriendCode(cleanCode);
+  if (!targetUser) {
     return {
       success: false,
-      message: `"${cleanCode}" koduna ait bir oyuncu bulunamadı. Lütfen kodu kontrol edin.`,
-      friends: currentFriends
+      message: `"${cleanCode}" koduna ait bir oyuncu bulunamadı. Lütfen kodu kontrol edin.`
     };
   }
 
-  const newFriend: FriendUser = {
-    ...foundUser,
-    addedAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })
+  const requestId = `req_${currentUser.uid}_${targetUser.uid}_${Date.now()}`;
+  const request: FriendRequest = {
+    id: requestId,
+    fromUid: currentUser.uid,
+    fromDisplayName: currentUser.displayName,
+    fromPhotoURL: currentUser.photoURL,
+    fromFriendCode: currentUser.friendCode || getOrGenerateFriendCode(currentUser.uid, currentUser.email),
+    toUid: targetUser.uid,
+    toFriendCode: targetUser.friendCode,
+    status: 'PENDING',
+    createdAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   };
 
-  const updatedFriends = [newFriend, ...currentFriends];
-  saveFriends(currentUser.uid, updatedFriends);
+  // 1. Save to Target User's incoming requests in Local Storage & Broadcast
+  try {
+    const existing = getIncomingRequests(targetUser.uid);
+    if (!existing.some((r) => r.fromUid === currentUser.uid && r.status === 'PENDING')) {
+      const updated = [request, ...existing];
+      saveIncomingRequests(targetUser.uid, updated);
+    }
+  } catch (e) {}
+
+  // 2. Save to Firebase Realtime Database
+  if (isFirebaseConfigured && database) {
+    try {
+      const reqRef = ref(database, `friendRequests/${targetUser.uid}/${request.id}`);
+      await set(reqRef, {
+        ...request,
+        timestamp: Date.now()
+      });
+    } catch (err) {
+      console.warn('[FriendService] Firebase friend request save warning:', err);
+    }
+  }
+
+  // 3. Notify via BroadcastChannel
+  if (friendsChannel) {
+    try {
+      friendsChannel.postMessage({
+        type: 'NEW_FRIEND_REQUEST',
+        targetUid: targetUser.uid,
+        request
+      });
+    } catch (e) {}
+  }
 
   return {
     success: true,
-    message: `🎉 "${foundUser.displayName}" başarıyla arkadaşlarınıza eklendi!`,
-    friend: newFriend,
-    friends: updatedFriends
+    message: `📨 "${targetUser.displayName}" oyuncusuna arkadaşlık isteği gönderildi! Profilinden kabul ettiğinde arkadaş olacaksınız.`,
+    targetUser
   };
+}
+
+/**
+ * Subscribe to Real-Time Incoming Friend Requests
+ */
+export function subscribeToFriendRequests(
+  uid: string,
+  onUpdate: (requests: FriendRequest[]) => void
+): () => void {
+  // Initial load
+  onUpdate(getIncomingRequests(uid));
+
+  // Firebase Realtime Listener
+  let reqRef: any = null;
+  if (isFirebaseConfigured && database) {
+    try {
+      reqRef = ref(database, `friendRequests/${uid}`);
+      onValue(reqRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+          const list: FriendRequest[] = Object.values(val);
+          const pending = list.filter((r) => r.status === 'PENDING');
+          saveIncomingRequests(uid, pending);
+          onUpdate(pending);
+        } else {
+          saveIncomingRequests(uid, []);
+          onUpdate([]);
+        }
+      });
+    } catch (e) {}
+  }
+
+  // BroadcastChannel / storage listener
+  const handleMessage = (evt: MessageEvent) => {
+    if (evt.data && (evt.data.type === 'NEW_FRIEND_REQUEST' || evt.data.type === 'FRIEND_REQUEST_RESPONDED')) {
+      if (evt.data.targetUid === uid || evt.data.fromUid === uid) {
+        onUpdate(getIncomingRequests(uid));
+      }
+    }
+  };
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === `${INCOMING_REQUESTS_PREFIX}${uid}`) {
+      onUpdate(getIncomingRequests(uid));
+    }
+  };
+
+  if (friendsChannel) {
+    friendsChannel.addEventListener('message', handleMessage);
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', handleStorage);
+  }
+
+  return () => {
+    if (reqRef) off(reqRef);
+    if (friendsChannel) friendsChannel.removeEventListener('message', handleMessage);
+    if (typeof window !== 'undefined') window.removeEventListener('storage', handleStorage);
+  };
+}
+
+/**
+ * Accept a Friend Request
+ */
+export async function acceptFriendRequest(
+  currentUser: UserAccount,
+  request: FriendRequest
+): Promise<{ success: boolean; friends: FriendUser[] }> {
+  // 1. Add sender to currentUser's friend list
+  const currentFriends = getFriends(currentUser.uid);
+  const newFriendForMe: FriendUser = {
+    uid: request.fromUid,
+    friendCode: request.fromFriendCode,
+    displayName: request.fromDisplayName,
+    photoURL: request.fromPhotoURL,
+    addedAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })
+  };
+
+  const updatedFriendsForMe = [
+    newFriendForMe,
+    ...currentFriends.filter((f) => f.uid !== request.fromUid && f.friendCode !== request.fromFriendCode)
+  ];
+  saveFriends(currentUser.uid, updatedFriendsForMe);
+
+  // 2. Add currentUser to sender's friend list
+  const senderFriends = getFriends(request.fromUid);
+  const newFriendForSender: FriendUser = {
+    uid: currentUser.uid,
+    friendCode: currentUser.friendCode || getOrGenerateFriendCode(currentUser.uid, currentUser.email),
+    displayName: currentUser.displayName,
+    photoURL: currentUser.photoURL,
+    addedAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })
+  };
+  const updatedFriendsForSender = [
+    newFriendForSender,
+    ...senderFriends.filter((f) => f.uid !== currentUser.uid && f.friendCode !== currentUser.friendCode)
+  ];
+  saveFriends(request.fromUid, updatedFriendsForSender);
+
+  // 3. Remove/update request in local storage
+  const myRequests = getIncomingRequests(currentUser.uid).filter((r) => r.id !== request.id);
+  saveIncomingRequests(currentUser.uid, myRequests);
+
+  // 4. Update in Firebase Realtime DB
+  if (isFirebaseConfigured && database) {
+    try {
+      const reqRef = ref(database, `friendRequests/${currentUser.uid}/${request.id}`);
+      await remove(reqRef);
+    } catch (e) {}
+  }
+
+  // 5. Broadcast to other tabs/windows
+  if (friendsChannel) {
+    try {
+      friendsChannel.postMessage({
+        type: 'FRIEND_REQUEST_RESPONDED',
+        targetUid: currentUser.uid,
+        fromUid: request.fromUid
+      });
+    } catch (e) {}
+  }
+
+  return {
+    success: true,
+    friends: updatedFriendsForMe
+  };
+}
+
+/**
+ * Decline a Friend Request
+ */
+export async function declineFriendRequest(
+  currentUserUid: string,
+  requestId: string
+): Promise<FriendRequest[]> {
+  const myRequests = getIncomingRequests(currentUserUid).filter((r) => r.id !== requestId);
+  saveIncomingRequests(currentUserUid, myRequests);
+
+  if (isFirebaseConfigured && database) {
+    try {
+      const reqRef = ref(database, `friendRequests/${currentUserUid}/${requestId}`);
+      await remove(reqRef);
+    } catch (e) {}
+  }
+
+  if (friendsChannel) {
+    try {
+      friendsChannel.postMessage({
+        type: 'FRIEND_REQUEST_RESPONDED',
+        targetUid: currentUserUid
+      });
+    } catch (e) {}
+  }
+
+  return myRequests;
 }
 
 /**
@@ -248,4 +468,70 @@ export function removeFriendByCode(currentUserUid: string, targetCode: string): 
   const updated = currentFriends.filter((f) => f.friendCode.toUpperCase() !== cleanCode);
   saveFriends(currentUserUid, updated);
   return updated;
+}
+
+/**
+ * Broadcast & Save User's Real-Time Online Presence & Active Room
+ */
+export function updateUserPresence(
+  userUid: string,
+  friendCode: string,
+  displayName: string,
+  isOnline: boolean,
+  activeRoomId?: string
+): void {
+  const presenceData = {
+    uid: userUid,
+    friendCode: friendCode.toUpperCase(),
+    displayName,
+    isOnline,
+    activeRoomId: activeRoomId || undefined,
+    lastSeen: Date.now()
+  };
+
+  try {
+    localStorage.setItem(`${PRESENCE_KEY_PREFIX}${userUid}`, JSON.stringify(presenceData));
+    localStorage.setItem(`${PRESENCE_KEY_PREFIX}${friendCode.toUpperCase()}`, JSON.stringify(presenceData));
+  } catch (e) {}
+
+  if (isFirebaseConfigured && database) {
+    try {
+      const presRef = ref(database, `presence/${userUid}`);
+      set(presRef, presenceData);
+    } catch (e) {}
+  }
+
+  if (friendsChannel) {
+    try {
+      friendsChannel.postMessage({
+        type: 'PRESENCE_UPDATE',
+        presence: presenceData
+      });
+    } catch (e) {}
+  }
+}
+
+/**
+ * Get Friends list enriched with real-time online status and active room
+ */
+export function getFriendsWithPresence(currentUserUid: string): FriendUser[] {
+  const friends = getFriends(currentUserUid);
+  return friends.map((f) => {
+    try {
+      const rawByUid = localStorage.getItem(`${PRESENCE_KEY_PREFIX}${f.uid}`);
+      const rawByCode = localStorage.getItem(`${PRESENCE_KEY_PREFIX}${f.friendCode.toUpperCase()}`);
+      const raw = rawByUid || rawByCode;
+      if (raw) {
+        const pres = JSON.parse(raw);
+        const isFresh = Date.now() - (pres.lastSeen || 0) < 5 * 60 * 1000; // Within 5 mins
+        return {
+          ...f,
+          isOnline: pres.isOnline && isFresh,
+          activeRoomId: pres.activeRoomId,
+          lastSeen: pres.lastSeen
+        };
+      }
+    } catch (e) {}
+    return f;
+  });
 }
