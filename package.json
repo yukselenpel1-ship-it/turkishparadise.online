@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "postinstall": "prisma generate",
     "server": "tsx src/server/server.ts",
     "start": "tsx src/server/server.ts"
   },
