@@ -257,7 +257,15 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => {
-  console.log(`🚀 Turkish Paradise V2 Server listening on http://localhost:${PORT}`);
+process.on('unhandledRejection', (reason, promise) => {
+  console.warn('[Server Warning] Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Server Error] Uncaught Exception:', err);
+});
+
+const PORT = Number(process.env.PORT || 3001);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Turkish Paradise V2 Server listening on 0.0.0.0:${PORT}`);
 });

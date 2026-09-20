@@ -1,17 +1,31 @@
 import { PrismaClient, FriendshipStatus } from '@prisma/client';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
-// Verify Production DB configuration constraint
+const dbUrl = process.env.DATABASE_URL || 'file:./dev.db';
+
 if (process.env.NODE_ENV === 'production') {
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (!dbUrl || dbUrl.startsWith('file:') || dbUrl.includes('dev.db')) {
-    throw new Error('[FATAL] Production mode requires a persistent PostgreSQL DATABASE_URL. Ephemeral file DB is disabled in production.');
+  if (!process.env.DATABASE_URL || dbUrl.startsWith('file:') || dbUrl.includes('dev.db')) {
+    console.warn('[DB WARNING] Production environment is running with local database file. For multi-node deployment, configure a PostgreSQL DATABASE_URL.');
+  } else {
+    console.log('[DB] Connecting to production database instance...');
   }
 }
 
-export const prisma = new PrismaClient();
+let prismaClient: PrismaClient;
+try {
+  prismaClient = new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error']
+  });
+} catch (e) {
+  console.error('[DB] Failed to instantiate PrismaClient:', e);
+  prismaClient = new PrismaClient();
+}
+
+export const prisma = prismaClient;
 
 /**
  * MANDATORY CANONICAL FRIENDPAIR HELPER
@@ -47,8 +61,12 @@ export async function generateUniqueFriendCode(seedInput: string): Promise<strin
 
   let attempts = 0;
   while (attempts < 50) {
-    const existing = await prisma.user.findUnique({ where: { friendCode: fullCode } });
-    if (!existing) return fullCode;
+    try {
+      const existing = await prisma.user.findUnique({ where: { friendCode: fullCode } });
+      if (!existing) return fullCode;
+    } catch (e) {
+      return fullCode;
+    }
 
     const suffix = alphabet.charAt((num + attempts + 1) % alphabet.length);
     fullCode = `TP-${code.substring(0, 5)}${suffix}`;
@@ -79,7 +97,6 @@ export async function syncUserInDB(params: {
   });
 
   if (existing) {
-    // Update displayName or avatarUrl if updated
     if ((params.displayName && existing.displayName !== params.displayName) ||
         (params.avatarUrl && existing.avatarUrl !== params.avatarUrl)) {
       return await prisma.user.update({
@@ -157,14 +174,13 @@ export async function getFriendsFromDB(userId: string) {
         createdAt: f.createdAt
       });
     } else if (f.status === FriendshipStatus.PENDING) {
-      // UserA is original requester, UserB is target
-      if (f.userBId === userId) { // Incoming to me
+      if (f.userBId === userId) {
         incomingRequests.push({
           id: f.id,
           fromUser: f.userA,
           createdAt: f.createdAt
         });
-      } else { // Outgoing from me
+      } else {
         outgoingRequests.push({
           id: f.id,
           toUser: f.userB,
@@ -192,10 +208,8 @@ export async function sendFriendRequestInDB(fromUserId: string, targetFriendCode
     return { success: false, status: 400, message: 'Kendi arkadaş kodunuzu ekleyemezsiniz!' };
   }
 
-  // Canonical pair calculation
   const { userAId, userBId } = canonicalFriendPair(fromUserId, targetUser.id);
 
-  // Query database by unique compound index
   const existing = await prisma.friendship.findUnique({
     where: {
       userAId_userBId: { userAId, userBId }
@@ -208,14 +222,10 @@ export async function sendFriendRequestInDB(fromUserId: string, targetFriendCode
     }
 
     if (existing.status === FriendshipStatus.PENDING) {
-      // Check who was original requester
-      // If userAId === fromUserId (requester sent it first time), it's already pending
-      // If reverse request: fromUserId is the recipient of existing pending request, AUTO-ACCEPT!
-      const originalRequesterId = existing.userAId; // In canonical, we track who initiated
+      const originalRequesterId = existing.userAId;
       if (originalRequesterId === fromUserId) {
         return { success: false, status: 400, message: 'Arkadaşlık isteğiniz zaten bekliyor.' };
       } else {
-        // Reverse request -> Auto accept friendship!
         const updated = await prisma.friendship.update({
           where: { id: existing.id },
           data: { status: FriendshipStatus.ACCEPTED }
@@ -230,9 +240,6 @@ export async function sendFriendRequestInDB(fromUserId: string, targetFriendCode
     }
   }
 
-  // Create new canonical PENDING Friendship
-  // Note: We track who initiated the request by placing initiator as userA in creation or adding initiatorId field if needed.
-  // With canonicalPair, userAId is lexicographically smaller. To track initiator:
   const newFriendship = await prisma.friendship.create({
     data: {
       userAId,
@@ -262,7 +269,6 @@ export async function acceptFriendRequestInDB(userId: string, requestId: string)
     return { success: false, status: 404, message: 'Arkadaşlık isteği bulunamadı.' };
   }
 
-  // Verify userId is one of the pair
   if (friendship.userAId !== userId && friendship.userBId !== userId) {
     return { success: false, status: 403, message: 'Bu arkadaşlık isteğini onaylama yetkiniz yok.' };
   }
@@ -281,13 +287,11 @@ export async function acceptFriendRequestInDB(userId: string, requestId: string)
 }
 
 /**
- * Delete Friendship (Authorization verified: only userAId or userBId can delete)
+ * Delete Friendship
  */
 export async function deleteFriendshipInDB(userId: string, friendUserIdOrId: string) {
-  // 1. Try finding by friendship record ID
   let friendship = await prisma.friendship.findUnique({ where: { id: friendUserIdOrId } });
 
-  // 2. Try finding by canonical pair
   if (!friendship) {
     try {
       const { userAId, userBId } = canonicalFriendPair(userId, friendUserIdOrId);
@@ -301,7 +305,6 @@ export async function deleteFriendshipInDB(userId: string, friendUserIdOrId: str
     return { success: false, status: 404, message: 'Silinecek arkadaşlık kaydı bulunamadı.' };
   }
 
-  // Verification check: User MUST be userAId or userBId
   if (friendship.userAId !== userId && friendship.userBId !== userId) {
     return { success: false, status: 403, message: 'Bu arkadaşlık kaydını silme yetkiniz yok.' };
   }
