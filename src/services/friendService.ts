@@ -96,6 +96,9 @@ export async function saveUserToPublicRegistry(user: UserAccount): Promise<void>
   }
 }
 
+// Global in-memory user registry for live MQTT resolution across devices
+const mqttUserRegistry: Record<string, FriendUser> = {};
+
 /**
  * Find user by their unique Friend Code or UID
  */
@@ -107,7 +110,12 @@ export async function findUserByFriendCode(inputCode: string): Promise<FriendUse
     cleanCode = `TP-${cleanCode}`;
   }
 
-  // 1. Check Local Registry
+  // 1. Check Global Memory MQTT User Registry
+  if (mqttUserRegistry[cleanCode]) {
+    return mqttUserRegistry[cleanCode];
+  }
+
+  // 2. Check Local Registry
   try {
     const raw = localStorage.getItem(PUBLIC_REGISTRY_KEY);
     if (raw) {
@@ -118,14 +126,14 @@ export async function findUserByFriendCode(inputCode: string): Promise<FriendUse
     }
   } catch (e) {}
 
-  // 2. Check Firebase Realtime Database
+  // 3. Check Firebase Realtime Database
   if (isFirebaseConfigured && database) {
     try {
       const codeRef = ref(database, `usersByCode/${cleanCode}`);
       const snapshot = await get(codeRef);
       if (snapshot.exists()) {
         const data = snapshot.val();
-        return {
+        const user: FriendUser = {
           uid: data.uid,
           friendCode: data.friendCode,
           displayName: data.displayName,
@@ -134,11 +142,13 @@ export async function findUserByFriendCode(inputCode: string): Promise<FriendUse
           addedAt: data.addedAt || new Date().toISOString(),
           stats: data.stats
         };
+        mqttUserRegistry[cleanCode] = user;
+        return user;
       }
     } catch (err) {}
   }
 
-  // 3. Fallback for valid friend codes format
+  // 4. Fallback for valid friend codes format
   if (/^TP-[A-Z0-9]{5,8}$/.test(cleanCode)) {
     const seed = cleanCode.replace('TP-', '');
     const num = seed.charCodeAt(0) + (seed.charCodeAt(1) || 50);
@@ -325,6 +335,7 @@ export function subscribeToFriendRequests(
 ): () => void {
   // Initial load
   onUpdate(getIncomingRequests(uid));
+  const myFriendCode = (getOrGenerateFriendCode(uid) || '').trim().toUpperCase();
 
   // 1. Firebase Realtime Database Listener (if configured)
   let reqRef: any = null;
@@ -350,11 +361,29 @@ export function subscribeToFriendRequests(
   const unsubMqtt = syncManager.subscribeToFriendChannel((data) => {
     if (!data) return;
 
+    if (data.type === 'ANNOUNCE_USER' || data.type === 'PRESENCE_UPDATE') {
+      const user = data.user || data.presence;
+      if (user && user.friendCode) {
+        mqttUserRegistry[user.friendCode.toUpperCase()] = {
+          uid: user.uid,
+          friendCode: user.friendCode,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          addedAt: new Date().toISOString()
+        };
+      }
+    }
+
     if (data.type === 'NEW_FRIEND_REQUEST') {
-      const isForMe = data.targetUid === uid || (data.request && data.request.toUid === uid);
+      const targetCode = (data.targetCode || data.request?.toFriendCode || '').trim().toUpperCase();
+      const isForMe = 
+        data.targetUid === uid || 
+        (data.request && data.request.toUid === uid) ||
+        (myFriendCode && targetCode && myFriendCode === targetCode);
+
       if (isForMe && data.request) {
         const existing = getIncomingRequests(uid);
-        if (!existing.some((r) => r.id === data.request.id)) {
+        if (!existing.some((r) => r.id === data.request.id || (r.fromUid === data.request.fromUid && r.status === 'PENDING'))) {
           const updated = [data.request, ...existing];
           saveIncomingRequests(uid, updated);
           onUpdate(updated);
@@ -363,29 +392,51 @@ export function subscribeToFriendRequests(
       }
       onUpdate(getIncomingRequests(uid));
     } else if (data.type === 'FRIEND_REQUEST_ACCEPTED') {
-      // If someone accepted my request, automatically add them to my friends list
-      if (data.targetUid === uid && data.fromUid && data.fromFriendCode) {
-        const currentFriends = getFriends(uid);
-        if (!currentFriends.some((f) => f.uid === data.fromUid || f.friendCode === data.fromFriendCode)) {
-          const newFriend: FriendUser = {
-            uid: data.fromUid,
-            friendCode: data.fromFriendCode,
-            displayName: data.fromDisplayName || 'Arkadaş',
-            photoURL: data.fromPhotoURL,
-            addedAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })
-          };
-          saveFriends(uid, [newFriend, ...currentFriends]);
+      const targetCode = (data.targetCode || data.request?.fromFriendCode || data.toFriendCode || '').trim().toUpperCase();
+      const isForMe =
+        data.targetUid === uid ||
+        data.fromUid === uid ||
+        (myFriendCode && targetCode && myFriendCode === targetCode);
+
+      if (isForMe) {
+        const senderInfo = data.fromUid && data.fromUid !== uid ? {
+          uid: data.fromUid,
+          friendCode: data.fromFriendCode,
+          displayName: data.fromDisplayName,
+          photoURL: data.fromPhotoURL
+        } : data.acceptedBy || data.request;
+
+        if (senderInfo && senderInfo.friendCode) {
+          const currentFriends = getFriends(uid);
+          if (!currentFriends.some((f) => f.friendCode.toUpperCase() === senderInfo.friendCode.toUpperCase())) {
+            const newFriend: FriendUser = {
+              uid: senderInfo.uid || `user_${senderInfo.friendCode.toLowerCase()}`,
+              friendCode: senderInfo.friendCode,
+              displayName: senderInfo.displayName || 'Arkadaş',
+              photoURL: senderInfo.photoURL,
+              addedAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })
+            };
+            saveFriends(uid, [newFriend, ...currentFriends]);
+          }
         }
+        onUpdate(getIncomingRequests(uid));
       }
-      onUpdate(getIncomingRequests(uid));
     } else if (data.type === 'FRIEND_REQUEST_DECLINED') {
-      if (data.targetUid === uid) {
+      const targetCode = (data.targetCode || '').trim().toUpperCase();
+      if (data.targetUid === uid || (myFriendCode && targetCode && myFriendCode === targetCode)) {
         onUpdate(getIncomingRequests(uid));
       }
     } else if (data.type === 'PRESENCE_UPDATE' && data.presence) {
       try {
         localStorage.setItem(`${PRESENCE_KEY_PREFIX}${data.presence.uid}`, JSON.stringify(data.presence));
         localStorage.setItem(`${PRESENCE_KEY_PREFIX}${data.presence.friendCode.toUpperCase()}`, JSON.stringify(data.presence));
+        mqttUserRegistry[data.presence.friendCode.toUpperCase()] = {
+          uid: data.presence.uid,
+          friendCode: data.presence.friendCode,
+          displayName: data.presence.displayName,
+          isOnline: data.presence.isOnline,
+          addedAt: new Date().toISOString()
+        };
       } catch (e) {}
     }
   });

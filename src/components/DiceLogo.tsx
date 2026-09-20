@@ -38,7 +38,7 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
 
       {/* Brand Text */}
       {showText && (
-        <div className="flex flex-col text-left leading-none">
+        <div className={`flex flex-col text-left leading-none ${size === 'sm' ? 'hidden sm:flex' : ''}`}>
           <span className="font-['Cinzel',serif] text-xs sm:text-lg font-black tracking-wider text-white flex items-center gap-1 group-hover:text-amber-200 transition-colors duration-200">
             <span>TURKISH</span>
             <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">

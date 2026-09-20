@@ -1225,8 +1225,8 @@ export const App: React.FC = () => {
       ) : (
         <>
           {/* Top Navbar Header during Game */}
-          <header className="h-11 sm:h-12 px-2 sm:px-4 flex items-center justify-between shrink-0 bg-slate-900/90 border-b border-slate-800/80 backdrop-blur-md z-40">
-            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+          <header className="h-11 sm:h-12 px-1.5 sm:px-4 flex items-center justify-between shrink-0 bg-[#070c18]/95 border-b border-amber-500/30 backdrop-blur-md z-40 shadow-lg">
+            <div className="flex items-center gap-1 sm:gap-2 min-w-0">
               <DiceLogo size="sm" />
               <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0">
                 <Wifi className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 animate-pulse" />
@@ -1237,11 +1237,11 @@ export const App: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-3">
+            <div className="flex items-center gap-1 sm:gap-2">
               {/* User Balance Display (Visible on Mobile & Desktop) */}
               {me && (
-                <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 px-2 sm:px-2.5 py-1 rounded-xl text-xs font-black text-amber-300 shrink-0">
-                  <Coins className="w-3.5 h-3.5 text-amber-400" />
+                <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl text-[10.5px] sm:text-xs font-black text-amber-300 shrink-0 shadow-sm">
+                  <Coins className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
                   <span>₺{me.money.toLocaleString('tr-TR')}</span>
                 </div>
               )}
@@ -1252,27 +1252,27 @@ export const App: React.FC = () => {
                     setProfileInitialTab(pendingRequestsCount > 0 ? 'requests' : 'stats');
                     setIsProfileModalOpen(true);
                   }}
-                  className={`flex items-center gap-1.5 sm:gap-2 bg-slate-800/90 hover:bg-slate-700/90 border rounded-xl px-2 sm:px-3 py-1 text-xs transition cursor-pointer group shrink-0 active:scale-95 relative ${
+                  className={`flex items-center gap-1 sm:gap-1.5 bg-slate-800/90 hover:bg-slate-700/90 border rounded-lg sm:rounded-xl px-1.5 sm:px-3 py-0.5 sm:py-1 text-[10.5px] sm:text-xs transition cursor-pointer group shrink-0 active:scale-95 relative ${
                     pendingRequestsCount > 0
                       ? 'border-amber-400 text-amber-300 ring-1 ring-amber-400/50'
-                      : 'border-amber-500/40'
+                      : 'border-amber-500/40 text-white'
                   }`}
                   title={pendingRequestsCount > 0 ? `${pendingRequestsCount} yeni arkadaşlık isteği!` : "Profil & İstatistikleri Gör"}
                 >
                   {userAccount.photoURL ? (
-                    <img src={userAccount.photoURL} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
+                    <img src={userAccount.photoURL} alt="" className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full object-cover shrink-0" />
                   ) : (
-                    <span className="text-amber-400 font-bold shrink-0">👤</span>
+                    <span className="text-amber-400 font-bold shrink-0 text-xs">👤</span>
                   )}
-                  <span className="text-white font-bold group-hover:text-amber-300 transition hidden sm:inline truncate max-w-[90px]">
+                  <span className="font-bold group-hover:text-amber-300 transition hidden md:inline truncate max-w-[80px]">
                     {userAccount.displayName}
                   </span>
                   {pendingRequestsCount > 0 ? (
-                    <span className="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-black animate-bounce shadow">
+                    <span className="text-[9px] sm:text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-black animate-bounce shadow">
                       📩 {pendingRequestsCount}
                     </span>
                   ) : (
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-black border border-amber-500/30 shrink-0">
+                    <span className="text-[9px] sm:text-[10px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded font-black border border-amber-500/30 shrink-0">
                       🏆 {userAccount.stats?.gamesWon || 0}
                     </span>
                   )}
@@ -1280,10 +1280,10 @@ export const App: React.FC = () => {
               ) : (
                 <button
                   onClick={handleGoogleLogin}
-                  className="flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl px-2 sm:px-3 py-1 text-xs font-black text-slate-800 transition cursor-pointer shadow shrink-0 active:scale-95"
+                  className="flex items-center gap-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg sm:rounded-xl px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[10.5px] sm:text-xs font-black text-slate-800 transition cursor-pointer shadow shrink-0 active:scale-95"
                   title="Google ile Giriş Yap"
                 >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
@@ -1295,7 +1295,7 @@ export const App: React.FC = () => {
 
               <button
                 onClick={() => soundManager.toggle()}
-                className={`flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1 rounded-xl border transition cursor-pointer shrink-0 shadow ${
+                className={`flex items-center gap-1 p-1 sm:px-2.5 sm:py-1 rounded-lg sm:rounded-xl border transition cursor-pointer shrink-0 shadow ${
                   soundEnabled
                     ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
                     : 'bg-slate-850 border-slate-750 text-slate-400 hover:text-white hover:bg-slate-800'
@@ -1307,17 +1307,18 @@ export const App: React.FC = () => {
                 ) : (
                   <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0" />
                 )}
-                <span className="text-[11px] font-bold hidden sm:inline">
-                  {soundEnabled ? 'Ses Açık' : 'Sessiz'}
+                <span className="text-[11px] font-bold hidden md:inline">
+                  {soundEnabled ? 'Ses' : 'Sessiz'}
                 </span>
               </button>
 
               <button
                 onClick={handleRestart}
-                className="flex items-center gap-1 text-[11px] sm:text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-rose-500/30 transition cursor-pointer"
+                className="flex items-center gap-1 text-[10.5px] sm:text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl border border-rose-500/30 transition cursor-pointer active:scale-95 shrink-0"
+                title="Oyunu Yeniden Başlat / Lobiye Dön"
               >
-                <RotateCcw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                <span className="hidden xs:inline">Yeniden</span>
+                <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Yeniden</span>
               </button>
             </div>
           </header>
