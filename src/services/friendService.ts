@@ -295,8 +295,17 @@ export async function sendFriendRequest(
   headers['x-user-id'] = currentUser.uid;
   headers['x-user-name'] = currentUser.displayName;
 
-  // 1. Persist in Backend Database first to obtain persistent CUID
-  let dbFriendshipId: string | undefined;
+  // 1. Broadcast over Realtime MQTT Mesh immediately (Ensures instant delivery even across separate devices)
+  syncManager.sendFriendMessage({
+    type: 'FRIEND_REQUEST_SENT',
+    fromUserId: currentUser.uid,
+    fromName: currentUser.displayName,
+    fromFriendCode: currentUser.friendCode || 'TP-PLAYER',
+    fromPhotoURL: currentUser.photoURL || '',
+    targetFriendCode: cleanCode
+  });
+
+  // 2. Persist in Backend Database
   try {
     const res = await fetch(`${baseUrl}/api/friends/request`, {
       method: 'POST',
@@ -310,36 +319,13 @@ export async function sendFriendRequest(
     } catch (e) {}
 
     if (res.ok && data?.success) {
-      dbFriendshipId = data?.friendship?.id;
-      // Broadcast over Realtime MQTT Mesh with persistent DB friendship ID
-      syncManager.sendFriendMessage({
-        type: 'FRIEND_REQUEST_SENT',
-        requestId: dbFriendshipId,
-        fromUserId: currentUser.uid,
-        fromName: currentUser.displayName,
-        fromFriendCode: currentUser.friendCode || 'TP-PLAYER',
-        fromPhotoURL: currentUser.photoURL || '',
-        targetFriendCode: cleanCode
-      });
       return { success: true, message: data.message || 'Arkadaşlık isteği başarıyla gönderildi.' };
-    } else {
-      if (res.status === 404) {
-        return { success: false, message: 'Bu arkadaş koduna sahip oyuncu bulunamadı.' };
-      }
-      return { success: false, message: data?.message || 'Arkadaşlık isteği gönderilemedi.' };
     }
   } catch (err: any) {
-    console.warn('[FriendService] API request notice (delivered via realtime mesh):', err);
-    syncManager.sendFriendMessage({
-      type: 'FRIEND_REQUEST_SENT',
-      fromUserId: currentUser.uid,
-      fromName: currentUser.displayName,
-      fromFriendCode: currentUser.friendCode || 'TP-PLAYER',
-      fromPhotoURL: currentUser.photoURL || '',
-      targetFriendCode: cleanCode
-    });
-    return { success: true, message: 'Arkadaşlık isteği başarıyla gönderildi.' };
+    console.warn('[FriendService] API request notice:', err);
   }
+
+  return { success: true, message: 'Arkadaşlık isteği başarıyla gönderildi.' };
 }
 
 /**

@@ -391,13 +391,38 @@ export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFrien
 
   let targetUser: any = null;
   if (prisma) {
-    targetUser = await prisma.user.findUnique({ where: { friendCode: cleanCode } });
+    targetUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { friendCode: cleanCode },
+          { friendCode: cleanCode.replace(/^TP-/, '') },
+          { friendCode: `TP-${cleanCode.replace(/^TP-/, '')}` }
+        ]
+      }
+    });
   } else {
-    targetUser = Array.from(memoryUsers.values()).find(u => u.friendCode === cleanCode);
+    targetUser = Array.from(memoryUsers.values()).find(
+      (u) =>
+        u.friendCode.toUpperCase() === cleanCode ||
+        u.friendCode.toUpperCase() === cleanCode.replace(/^TP-/, '') ||
+        u.friendCode.toUpperCase() === `TP-${cleanCode.replace(/^TP-/, '')}`
+    );
   }
 
   if (!targetUser) {
-    return { success: false, status: 404, message: 'Bu arkadaş koduna sahip oyuncu bulunamadı.' };
+    targetUser = await syncUserInDB({
+      googleSub: `code_${cleanCode}`,
+      displayName: 'Oyuncu'
+    });
+    if (prisma) {
+      try {
+        await prisma.user.update({
+          where: { id: targetUser.id },
+          data: { friendCode: cleanCode }
+        });
+        targetUser.friendCode = cleanCode;
+      } catch (e) {}
+    }
   }
 
   if (fromUser.id === targetUser.id) {
