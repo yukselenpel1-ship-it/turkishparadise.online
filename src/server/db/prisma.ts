@@ -98,43 +98,48 @@ export function canonicalFriendPair(id1: string, id2: string) {
 }
 
 /**
- * Single Permanent Friend Code Generator (e.g. TP-Z4H4HD)
+ * Single Permanent Deterministic User ID Generator
  */
-export async function generateUniqueFriendCode(seedInput: string): Promise<string> {
+export function getDeterministicUserId(seed: string): string {
+  if (!seed) return `usr_${Math.random().toString(36).substring(2, 10)}`;
+  const clean = seed.trim().toLowerCase();
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hex = (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(12, '0');
+  return `usr_${hex.slice(0, 12)}`;
+}
+
+/**
+ * Single Permanent Deterministic Friend Code Generator (e.g. TP-HLCBXL)
+ */
+export function getDeterministicFriendCode(seedInput: string, email?: string | null): string {
+  const input = (email && email.trim() ? email.trim() : seedInput).toLowerCase();
   const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   let hash = 0;
-  for (let i = 0; i < seedInput.length; i++) {
-    hash = (hash << 5) - hash + seedInput.charCodeAt(i);
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
     hash |= 0;
   }
   let num = Math.abs(hash);
   let code = '';
   for (let i = 0; i < 6; i++) {
     code += alphabet.charAt(num % alphabet.length);
-    num = Math.floor(num / alphabet.length) + (i * 17) + 3;
+    num = Math.floor(num / alphabet.length) + (i * 13) + 7;
   }
-  let fullCode = `TP-${code}`;
+  return `TP-${code}`;
+}
 
-  let attempts = 0;
-  while (attempts < 50) {
-    try {
-      const prisma = await getPrisma();
-      if (prisma) {
-        const existing = await prisma.user.findUnique({ where: { friendCode: fullCode } });
-        if (!existing) return fullCode;
-      } else {
-        const existing = Array.from(memoryUsers.values()).find(u => u.friendCode === fullCode);
-        if (!existing) return fullCode;
-      }
-    } catch (e) {
-      return fullCode;
-    }
-
-    const suffix = alphabet.charAt((num + attempts + 1) % alphabet.length);
-    fullCode = `TP-${code.substring(0, 5)}${suffix}`;
-    attempts++;
-  }
-  return `TP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+/**
+ * Single Permanent Friend Code Generator (e.g. TP-Z4H4HD)
+ */
+export async function generateUniqueFriendCode(seedInput: string, email?: string | null): Promise<string> {
+  return getDeterministicFriendCode(seedInput, email);
 }
 
 /**
@@ -255,8 +260,8 @@ export async function syncUserInDB(params: {
     return existing;
   }
 
-  const id = `usr_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
-  const friendCode = await generateUniqueFriendCode(cleanSub + (params.email || ''));
+  const id = getDeterministicUserId(cleanSub);
+  const friendCode = getDeterministicFriendCode(cleanSub, params.email);
   const newUser: LocalUser = {
     id,
     googleSub: cleanSub,

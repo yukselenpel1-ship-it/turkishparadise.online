@@ -7,9 +7,11 @@ import { syncManager } from './multiplayerSync';
  * Determine Production / Development API Base URL cleanly.
  */
 export function getApiBaseUrl(): string {
-  if (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) {
-    return import.meta.env.VITE_API_URL.trim().replace(/\/+$/, '');
-  }
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) {
+      return (import.meta as any).env.VITE_API_URL.trim().replace(/\/+$/, '');
+    }
+  } catch (e) {}
 
   if (typeof window !== 'undefined') {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
@@ -44,6 +46,96 @@ export function saveAuthToken(token: string): void {
 const memoryLocalCache = new Map<string, string>();
 
 /**
+ * Single Permanent Deterministic User ID Generator
+ */
+export function getDeterministicUserId(seed: string): string {
+  if (!seed) return `usr_${Math.random().toString(36).substring(2, 10)}`;
+  const clean = seed.trim().toLowerCase();
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hex = (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(12, '0');
+  return `usr_${hex.slice(0, 12)}`;
+}
+
+/**
+ * Single Permanent Deterministic Friend Code Generator (e.g. TP-HLCBXL)
+ */
+export function getDeterministicFriendCode(seedInput: string, email?: string | null): string {
+  const input = (email && email.trim() ? email.trim() : seedInput).toLowerCase();
+  const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  let num = Math.abs(hash);
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += alphabet.charAt(num % alphabet.length);
+    num = Math.floor(num / alphabet.length) + (i * 13) + 7;
+  }
+  return `TP-${code}`;
+}
+
+export function getOrGenerateFriendCode(uid: string, email?: string | null): string {
+  return getDeterministicFriendCode(uid, email);
+}
+
+/**
+ * Publish full account state to MQTT Cloud Retained Topics for 100% Cross-Device Persistence
+ */
+export function saveAccountToCloud(
+  user: UserAccount,
+  friends?: FriendUser[],
+  stats?: UserStats,
+  incomingRequests?: FriendRequest[]
+): void {
+  if (!user) return;
+  const cleanCode = (user.friendCode || getDeterministicFriendCode(user.uid, user.email)).trim().toUpperCase();
+  const cleanUid = (user.uid || getDeterministicUserId(user.email || 'user')).trim();
+  const myFriends = friends !== undefined ? friends : getFriends(cleanUid);
+  const myStats = stats !== undefined ? stats : getUserStats(cleanUid);
+  const myRequests = incomingRequests !== undefined ? incomingRequests : getIncomingRequests(cleanUid);
+
+  const payload = {
+    uid: cleanUid,
+    displayName: user.displayName,
+    email: user.email || null,
+    photoURL: user.photoURL,
+    friendCode: cleanCode,
+    provider: user.provider,
+    friends: myFriends,
+    stats: myStats,
+    incomingRequests: myRequests,
+    updatedAt: Date.now()
+  };
+
+  // 1. Publish retained message to friendCode topic
+  if (cleanCode) {
+    syncManager.publishRetained(`turkishparadise/account/v1/${cleanCode}`, payload);
+    syncManager.publishRetained(`turkishparadise/registry/v1/${cleanCode}`, {
+      uid: cleanUid,
+      displayName: user.displayName,
+      friendCode: cleanCode,
+      photoURL: user.photoURL,
+      isOnline: true,
+      lastSeen: Date.now()
+    });
+  }
+
+  // 2. Publish retained message to UID topic
+  if (cleanUid) {
+    syncManager.publishRetained(`turkishparadise/account/v1/${cleanUid}`, payload);
+  }
+}
+
+/**
  * Local persistent friend & request caching so friends NEVER disappear on refresh or mobile
  */
 export function saveFriends(uid: string, friends: FriendUser[]): void {
@@ -54,6 +146,16 @@ export function saveFriends(uid: string, friends: FriendUser[]): void {
     if (typeof window !== 'undefined' && window.localStorage) {
       if (uid) localStorage.setItem(`tp_friends_${uid}`, json);
       localStorage.setItem('tp_friends_all', json);
+      // Also sync current user in local profile
+      const rawUser = localStorage.getItem('tp_user_profile');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u.uid === uid || !u.uid) {
+          u.friends = friends;
+          localStorage.setItem('tp_user_profile', JSON.stringify(u));
+          saveAccountToCloud(u, friends);
+        }
+      }
     }
   } catch (e) {}
 }
@@ -146,10 +248,19 @@ export function lookupUserByFriendCode(code: string): { uid: string; displayName
  * Idempotently sync user with backend database and load persistent friends.
  */
 export async function syncUserWithBackend(user: UserAccount, idToken?: string): Promise<UserAccount> {
-  const googleSub = user.uid;
+  const deterministicUid = getDeterministicUserId(user.email || user.uid);
+  const deterministicCode = getDeterministicFriendCode(deterministicUid, user.email);
+  const googleSub = user.uid || deterministicUid;
   const baseUrl = getApiBaseUrl();
 
-  saveUserToPublicRegistry(user);
+  const normalizedUser: UserAccount = {
+    ...user,
+    uid: deterministicUid,
+    friendCode: deterministicCode
+  };
+
+  saveUserToPublicRegistry(normalizedUser);
+  saveAccountToCloud(normalizedUser);
 
   try {
     const res = await fetch(`${baseUrl}/api/users/sync`, {
@@ -158,9 +269,9 @@ export async function syncUserWithBackend(user: UserAccount, idToken?: string): 
       body: JSON.stringify({
         idToken,
         googleSub,
-        displayName: user.displayName,
-        avatarUrl: user.photoURL,
-        email: user.email
+        displayName: normalizedUser.displayName,
+        avatarUrl: normalizedUser.photoURL,
+        email: normalizedUser.email
       })
     });
 
@@ -173,18 +284,19 @@ export async function syncUserWithBackend(user: UserAccount, idToken?: string): 
         const dbUser = data.user;
 
         // Immediately fetch persistent friends from PostgreSQL database for this account
-        const { friends } = await fetchFriendsFromDB(dbUser.id);
+        const { friends } = await fetchFriendsFromDB(dbUser.id || deterministicUid);
 
         const updated: UserAccount = {
-          ...user,
-          uid: dbUser.id,
-          friendCode: dbUser.friendCode,
-          displayName: dbUser.displayName || user.displayName,
-          photoURL: dbUser.avatarUrl || user.photoURL,
-          friends: friends || []
+          ...normalizedUser,
+          uid: dbUser.id || deterministicUid,
+          friendCode: dbUser.friendCode || deterministicCode,
+          displayName: dbUser.displayName || normalizedUser.displayName,
+          photoURL: dbUser.avatarUrl || normalizedUser.photoURL,
+          friends: friends && friends.length > 0 ? friends : getFriends(deterministicUid)
         };
         saveUserToPublicRegistry(updated);
-        saveFriends(dbUser.id, updated.friends || []);
+        saveFriends(updated.uid, updated.friends || []);
+        saveAccountToCloud(updated);
         return updated;
       }
     }
@@ -192,33 +304,7 @@ export async function syncUserWithBackend(user: UserAccount, idToken?: string): 
     console.warn('[FriendService] Backend user sync notice:', err);
   }
 
-  const friendCode = user.friendCode || getOrGenerateFriendCode(user.uid, user.email);
-  return { ...user, friendCode };
-}
-
-/**
- * Deterministic Fallback Friend Code Generator
- */
-export function getOrGenerateFriendCode(uid: string, email?: string | null): string {
-  try {
-    const seed = (email || uid || 'user').toLowerCase();
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) {
-      hash = (hash << 5) - hash + seed.charCodeAt(i);
-      hash |= 0;
-    }
-    const positiveHash = Math.abs(hash);
-    const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-    let code = '';
-    let num = positiveHash;
-    for (let i = 0; i < 6; i++) {
-      code += alphabet.charAt(num % alphabet.length);
-      num = Math.floor(num / alphabet.length) + (i * 13) + 7;
-    }
-    return `TP-${code}`;
-  } catch (e) {
-    return `TP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-  }
+  return normalizedUser;
 }
 
 /**
@@ -304,7 +390,7 @@ export async function fetchFriendsFromDB(userId: string): Promise<{
 }
 
 /**
- * Send a Friend Request (Dual Synchronized: DB + Realtime MQTT Mesh)
+ * Send a Friend Request (Dual Synchronized: Retained Cloud + DB + Realtime MQTT Mesh)
  */
 export async function sendFriendRequest(
   currentUser: UserAccount,
@@ -319,7 +405,9 @@ export async function sendFriendRequest(
     cleanCode = `TP-${cleanCode}`;
   }
 
-  if (currentUser.friendCode && cleanCode === currentUser.friendCode.toUpperCase()) {
+  const myCode = (currentUser.friendCode || getDeterministicFriendCode(currentUser.uid, currentUser.email)).toUpperCase();
+
+  if (myCode && cleanCode === myCode) {
     return { success: false, message: 'Kendi arkadaş kodunuzu ekleyemezsiniz!' };
   }
 
@@ -328,6 +416,34 @@ export async function sendFriendRequest(
     return { success: false, message: 'Bu oyuncu zaten arkadaş listenizde ekli.' };
   }
 
+  const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const requestPayload: FriendRequest = {
+    id: reqId,
+    fromUid: currentUser.uid,
+    fromDisplayName: currentUser.displayName,
+    fromFriendCode: myCode,
+    fromPhotoURL: currentUser.photoURL || null,
+    toUid: cleanCode,
+    toFriendCode: cleanCode,
+    status: 'PENDING',
+    createdAt: new Date().toISOString()
+  };
+
+  // 1. Publish Retained Friend Request to target's mailbox topic (Delivered even if recipient opens app next week)
+  syncManager.publishRetained(`turkishparadise/requests/v1/${cleanCode}/${currentUser.uid}`, requestPayload);
+
+  // 2. Broadcast over Realtime MQTT Mesh immediately
+  syncManager.sendFriendMessage({
+    type: 'FRIEND_REQUEST_SENT',
+    requestId: reqId,
+    fromUserId: currentUser.uid,
+    fromName: currentUser.displayName,
+    fromFriendCode: myCode,
+    fromPhotoURL: currentUser.photoURL || '',
+    targetFriendCode: cleanCode
+  });
+
+  // 3. Persist in Backend Database
   const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -335,17 +451,6 @@ export async function sendFriendRequest(
   headers['x-user-id'] = currentUser.uid;
   headers['x-user-name'] = currentUser.displayName;
 
-  // 1. Broadcast over Realtime MQTT Mesh immediately (Ensures instant delivery even across separate devices)
-  syncManager.sendFriendMessage({
-    type: 'FRIEND_REQUEST_SENT',
-    fromUserId: currentUser.uid,
-    fromName: currentUser.displayName,
-    fromFriendCode: currentUser.friendCode || 'TP-PLAYER',
-    fromPhotoURL: currentUser.photoURL || '',
-    targetFriendCode: cleanCode
-  });
-
-  // 2. Persist in Backend Database
   try {
     const res = await fetch(`${baseUrl}/api/friends/request`, {
       method: 'POST',
@@ -369,7 +474,7 @@ export async function sendFriendRequest(
 }
 
 /**
- * Accept Friend Request (Dual Synchronized: DB + Realtime MQTT Mesh)
+ * Accept Friend Request (Dual Synchronized: Retained Cloud + DB + Realtime MQTT Mesh)
  */
 export async function acceptFriendRequest(
   userId: string,
@@ -377,6 +482,8 @@ export async function acceptFriendRequest(
   fromUser?: { id: string; displayName: string; friendCode?: string; photoURL?: string },
   currentUser?: { id: string; displayName: string; friendCode?: string; photoURL?: string }
 ): Promise<{ success: boolean; message: string }> {
+  const cleanMyCode = (currentUser?.friendCode || getDeterministicFriendCode(userId)).toUpperCase();
+
   // 1. Update local cache immediately for current user (User B)
   if (fromUser) {
     const friends = getFriends(userId);
@@ -394,14 +501,47 @@ export async function acceptFriendRequest(
 
     const currentReqs = getIncomingRequests(userId).filter(r => r.id !== requestId && r.fromUid !== fromUser.id);
     saveIncomingRequests(userId, currentReqs);
+
+    // Save full account to cloud retained storage
+    if (currentUser) {
+      saveAccountToCloud({
+        uid: userId,
+        displayName: currentUser.displayName,
+        friendCode: cleanMyCode,
+        isAnonymous: false,
+        provider: 'google',
+        photoURL: currentUser.photoURL
+      }, friends, undefined, currentReqs);
+    }
+
+    // Clear pending request retained topic
+    syncManager.publishRetained(`turkishparadise/requests/v1/${cleanMyCode}/${fromUser.id}`, {
+      status: 'ACCEPTED',
+      id: requestId,
+      updatedAt: Date.now()
+    });
+
+    // Publish Retained Acceptance to sender's acceptance topic
+    if (fromUser.friendCode) {
+      syncManager.publishRetained(`turkishparadise/acceptance/v1/${fromUser.friendCode.toUpperCase()}`, {
+        type: 'FRIEND_REQUEST_ACCEPTED',
+        fromUserId: userId,
+        fromDisplayName: currentUser?.displayName || 'Oyuncu',
+        fromFriendCode: cleanMyCode,
+        fromPhotoURL: currentUser?.photoURL || '',
+        requestId: requestId,
+        targetUserId: fromUser.id,
+        targetFriendCode: fromUser.friendCode
+      });
+    }
   }
 
-  // 2. Broadcast acceptance over Realtime MQTT Mesh WITH CURRENT USER METADATA
+  // 2. Broadcast acceptance over Realtime MQTT Mesh
   syncManager.sendFriendMessage({
     type: 'FRIEND_REQUEST_ACCEPTED',
     fromUserId: userId,
     fromDisplayName: currentUser?.displayName || 'Oyuncu',
-    fromFriendCode: currentUser?.friendCode || '',
+    fromFriendCode: cleanMyCode,
     fromPhotoURL: currentUser?.photoURL || '',
     requestId: requestId,
     targetUserId: fromUser?.id,
@@ -414,7 +554,7 @@ export async function acceptFriendRequest(
   if (token) headers['Authorization'] = `Bearer ${token}`;
   headers['x-user-id'] = userId;
 
-  // 3. Persist in Backend Database with robust fallback identifier resolution
+  // 3. Persist in Backend Database
   try {
     const res = await fetch(`${baseUrl}/api/friends/accept`, {
       method: 'POST',
@@ -443,7 +583,7 @@ export async function acceptFriendRequest(
 }
 
 /**
- * Remove Friend
+ * Remove Friend (Dual Synchronized: Retained Cloud + DB + Realtime MQTT Mesh)
  */
 export async function removeFriend(
   userId: string,
@@ -468,7 +608,22 @@ export async function removeFriend(
   );
   saveIncomingRequests(userId, reqs);
 
-  // 2. Broadcast removal via MQTT Mesh so other side also updates instantly
+  // 2. Publish retained deletion event & updated account state
+  const myProfile = typeof window !== 'undefined' ? localStorage.getItem('tp_user_profile') : null;
+  if (myProfile) {
+    try {
+      const u = JSON.parse(myProfile);
+      saveAccountToCloud(u, friends, undefined, reqs);
+    } catch (e) {}
+  }
+
+  syncManager.publishRetained(`turkishparadise/friendship_del/v1/${cleanTarget}`, {
+    deletedBy: userId,
+    target: cleanTarget,
+    timestamp: Date.now()
+  });
+
+  // 3. Broadcast removal via MQTT Mesh so other side also updates instantly
   syncManager.sendFriendMessage({
     type: 'FRIEND_REMOVED',
     fromUserId: userId,
@@ -476,7 +631,7 @@ export async function removeFriend(
     targetFriendCode: cleanTarget
   });
 
-  // 3. Delete from Backend Database
+  // 4. Delete from Backend Database
   const baseUrl = getApiBaseUrl();
   const token = getStoredAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -513,138 +668,8 @@ export function updateUserPresence(
 }
 
 /**
- * Subscribe to Friend Requests via Polling + Real-Time MQTT Mesh
- * Supports both (uid, callback) and (uid, friendCode, callback) signatures seamlessly.
- */
-export function subscribeToFriendRequests(
-  uid: string,
-  callback: (requests: FriendRequest[]) => void
-): () => void;
-export function subscribeToFriendRequests(
-  uid: string,
-  friendCode: string | undefined,
-  callback: (requests: FriendRequest[]) => void
-): () => void;
-export function subscribeToFriendRequests(
-  uid: string,
-  arg2: string | undefined | ((requests: FriendRequest[]) => void),
-  arg3?: (requests: FriendRequest[]) => void
-): () => void {
-  let active = true;
-
-  let friendCode: string | undefined;
-  let callback: ((requests: FriendRequest[]) => void) | undefined;
-
-  if (typeof arg2 === 'function') {
-    callback = arg2;
-    friendCode = undefined;
-  } else {
-    friendCode = typeof arg2 === 'string' ? arg2 : undefined;
-    callback = typeof arg3 === 'function' ? arg3 : undefined;
-  }
-
-  // Attempt to resolve friendCode from localStorage user profile if not passed
-  if (!friendCode && typeof window !== 'undefined') {
-    try {
-      const rawUser = localStorage.getItem('tp_user_profile');
-      if (rawUser) {
-        const u = JSON.parse(rawUser);
-        if (u && u.friendCode) friendCode = u.friendCode;
-      }
-    } catch (e) {}
-  }
-
-  const cleanMyCode = (friendCode || '').trim().toUpperCase();
-
-  const safeNotify = (reqs: FriendRequest[]) => {
-    if (active && typeof callback === 'function') {
-      try {
-        callback(reqs);
-      } catch (err) {
-        console.warn('[FriendService] Callback execution notice:', err);
-      }
-    }
-  };
-
-  const refreshRequests = async () => {
-    if (!active || !uid) return;
-    try {
-      const { pendingRequests } = await fetchFriendsFromDB(uid);
-      safeNotify(pendingRequests);
-    } catch (err) {}
-  };
-
-  // 1. Initial load
-  refreshRequests();
-
-  // 2. Real-Time MQTT Friend Message Listener
-  const unsubscribeMqtt = syncManager.subscribeToFriendChannel((data) => {
-    if (!active || !uid) return;
-
-    if (data.type === 'FRIEND_REQUEST_SENT') {
-      const targetCode = (data.targetFriendCode || '').trim().toUpperCase();
-
-      if (cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`)) {
-        const newReq: FriendRequest = {
-          id: data.requestId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          fromUid: data.fromUserId || 'unknown',
-          fromDisplayName: data.fromName || 'Oyuncu',
-          fromPhotoURL: data.fromPhotoURL || null,
-          fromFriendCode: data.fromFriendCode || '',
-          toUid: uid,
-          toFriendCode: cleanMyCode,
-          status: 'PENDING',
-          createdAt: new Date().toISOString()
-        };
-
-        const current = getIncomingRequests(uid);
-        if (!current.some(r => r.fromUid === newReq.fromUid)) {
-          current.push(newReq);
-          saveIncomingRequests(uid, current);
-          safeNotify(current);
-        }
-      }
-    } else if (data.type === 'FRIEND_REQUEST_ACCEPTED') {
-      const isTargetForMe =
-        (data.targetUserId && (data.targetUserId === uid || data.targetUserId.includes(uid))) ||
-        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
-
-      if (isTargetForMe && data.fromUserId) {
-        const friendId = data.fromUserId;
-        const friendCode = data.fromFriendCode || 'TP-FRIEND';
-        const friendName = data.fromDisplayName || 'Arkadaş';
-        const friendPhoto = data.fromPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${friendId}`;
-
-        const friends = getFriends(uid);
-        if (!friends.some(f => f.uid === friendId || (friendCode && f.friendCode === friendCode))) {
-          friends.push({
-            uid: friendId,
-            displayName: friendName,
-            friendCode: friendCode,
-            photoURL: friendPhoto,
-            isOnline: true,
-            addedAt: new Date().toISOString()
-          });
-          saveFriends(uid, friends);
-        }
-      }
-      refreshRequests();
-    }
-  });
-
-  // 3. Periodic Background Sync (every 3 seconds)
-  const interval = setInterval(refreshRequests, 3000);
-
-  return () => {
-    active = false;
-    clearInterval(interval);
-    unsubscribeMqtt();
-  };
-}
-
-/**
  * Unified Real-Time Subscription for BOTH Friends List & Incoming Requests
- * Guarantees that sender & receiver UI update instantly when requests are accepted.
+ * Guarantees that Mobile and PC stay 100% synchronized in real time and across restarts.
  */
 export function subscribeToFriendsAndRequests(
   uid: string,
@@ -663,7 +688,7 @@ export function subscribeToFriendsAndRequests(
     } catch (e) {}
   }
 
-  const cleanMyCode = (friendCode || '').trim().toUpperCase();
+  const cleanMyCode = (friendCode || getDeterministicFriendCode(uid)).trim().toUpperCase();
 
   const safeNotify = (friends: FriendUser[], reqs: FriendRequest[]) => {
     if (active && typeof callback === 'function') {
@@ -675,6 +700,54 @@ export function subscribeToFriendsAndRequests(
     }
   };
 
+  const processIncomingAccountData = (data: any) => {
+    if (!data || !active) return;
+    let hasChanges = false;
+    const currentFriends = getFriends(uid);
+    let mergedFriends = [...currentFriends];
+
+    if (Array.isArray(data.friends) && data.friends.length > 0) {
+      for (const incoming of data.friends) {
+        if (!incoming || !incoming.uid) continue;
+        if (incoming.uid === uid) continue;
+        if (!mergedFriends.some(f => (f.uid && f.uid === incoming.uid) || (incoming.friendCode && f.friendCode && f.friendCode === incoming.friendCode))) {
+          mergedFriends.push(incoming);
+          hasChanges = true;
+        }
+      }
+    }
+
+    const currentRequests = getIncomingRequests(uid);
+    let mergedRequests = [...currentRequests];
+    if (Array.isArray(data.incomingRequests) && data.incomingRequests.length > 0) {
+      for (const req of data.incomingRequests) {
+        if (!req || !req.id || req.status !== 'PENDING') continue;
+        if (req.fromUid === uid) continue;
+        if (!mergedRequests.some(r => r.id === req.id || r.fromUid === req.fromUid)) {
+          mergedRequests.push(req);
+          hasChanges = true;
+        }
+      }
+    }
+
+    if (data.stats && typeof data.stats.gamesPlayed === 'number') {
+      const localStats = getUserStats(uid);
+      if (data.stats.gamesPlayed > localStats.gamesPlayed) {
+        saveUserStats(uid, data.stats);
+      }
+    }
+
+    if (hasChanges) {
+      saveFriends(uid, mergedFriends);
+      saveIncomingRequests(uid, mergedRequests);
+      safeNotify(mergedFriends, mergedRequests);
+    }
+  };
+
+  // 1. Initial local load
+  safeNotify(getFriends(uid), getIncomingRequests(uid));
+
+  // 2. Initial DB fetch
   const refreshAll = async () => {
     if (!active || !uid) return;
     try {
@@ -684,240 +757,193 @@ export function subscribeToFriendsAndRequests(
       safeNotify(getFriends(uid), getIncomingRequests(uid));
     }
   };
-
-  // 1. Initial load
   refreshAll();
 
-  // 2. Real-Time MQTT Listener
-  const unsubscribeMqtt = syncManager.subscribeToFriendChannel((data) => {
-    if (!active || !uid) return;
+  // 3. Subscribe to Cloud Retained Topics (Instant sync across Mobile, PC, and all devices)
+  const unsubs: Array<() => void> = [];
 
-    if (data.type === 'FRIEND_REQUEST_SENT') {
-      const targetCode = (data.targetFriendCode || '').trim().toUpperCase();
+  if (cleanMyCode) {
+    // Retained account state for my friendCode
+    unsubs.push(
+      syncManager.subscribeTopic(`turkishparadise/account/v1/${cleanMyCode}`, (payload) => {
+        processIncomingAccountData(payload);
+      })
+    );
 
-      if (cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`)) {
-        const newReq: FriendRequest = {
-          id: data.requestId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          fromUid: data.fromUserId || 'unknown',
-          fromDisplayName: data.fromName || 'Oyuncu',
-          fromPhotoURL: data.fromPhotoURL || null,
-          fromFriendCode: data.fromFriendCode || '',
-          toUid: uid,
-          toFriendCode: cleanMyCode,
-          status: 'PENDING',
-          createdAt: new Date().toISOString()
-        };
-
-        const current = getIncomingRequests(uid);
-        if (!current.some(r => r.fromUid === newReq.fromUid)) {
-          current.push(newReq);
-          saveIncomingRequests(uid, current);
-          safeNotify(getFriends(uid), current);
+    // Retained friend requests addressed to my friendCode
+    unsubs.push(
+      syncManager.subscribeTopic(`turkishparadise/requests/v1/${cleanMyCode}/#`, (payload) => {
+        if (payload && payload.fromUid && payload.fromUid !== uid && payload.status === 'PENDING') {
+          const current = getIncomingRequests(uid);
+          if (!current.some(r => r.id === payload.id || r.fromUid === payload.fromUid)) {
+            current.push(payload);
+            saveIncomingRequests(uid, current);
+            safeNotify(getFriends(uid), current);
+          }
         }
-      }
-    } else if (data.type === 'FRIEND_REQUEST_ACCEPTED') {
-      // If I am the original sender, targetUserId or targetFriendCode matches me!
-      const isTargetForMe =
-        (data.targetUserId && (data.targetUserId === uid || data.targetUserId.includes(uid))) ||
-        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
+      })
+    );
 
-      if (isTargetForMe && data.fromUserId) {
-        const friendId = data.fromUserId;
-        const fCode = data.fromFriendCode || 'TP-FRIEND';
-        const fName = data.fromDisplayName || 'Arkadaş';
-        const fPhoto = data.fromPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${friendId}`;
-
-        const currentFriends = getFriends(uid);
-        if (!currentFriends.some(f => f.uid === friendId || (fCode && f.friendCode === fCode))) {
-          currentFriends.push({
-            uid: friendId,
-            displayName: fName,
-            friendCode: fCode,
-            photoURL: fPhoto,
-            isOnline: true,
-            addedAt: new Date().toISOString()
-          });
-          saveFriends(uid, currentFriends);
-          safeNotify(currentFriends, getIncomingRequests(uid));
+    // Retained acceptances addressed to my friendCode
+    unsubs.push(
+      syncManager.subscribeTopic(`turkishparadise/acceptance/v1/${cleanMyCode}`, (payload) => {
+        if (payload && payload.fromUserId && payload.fromUserId !== uid) {
+          const current = getFriends(uid);
+          if (!current.some(f => f.uid === payload.fromUserId || (payload.fromFriendCode && f.friendCode === payload.fromFriendCode))) {
+            current.push({
+              uid: payload.fromUserId,
+              displayName: payload.fromDisplayName || 'Arkadaş',
+              friendCode: payload.fromFriendCode || 'TP-FRIEND',
+              photoURL: payload.fromPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${payload.fromUserId}`,
+              isOnline: true,
+              addedAt: new Date().toISOString()
+            });
+            saveFriends(uid, current);
+            safeNotify(current, getIncomingRequests(uid));
+          }
         }
-      }
-      refreshAll();
-    } else if (data.type === 'FRIEND_REMOVED') {
-      const cleanFromId = (data.fromUserId || '').trim().toUpperCase();
-      const cleanTargetId = (data.targetUserId || '').trim().toUpperCase();
-      const cleanTargetCode = (data.targetFriendCode || '').trim().toUpperCase();
+      })
+    );
+  }
 
-      const isTargetForMe =
-        cleanTargetId === uid.toUpperCase() ||
-        cleanTargetId === cleanMyCode ||
-        (cleanMyCode && (cleanTargetCode === cleanMyCode || cleanTargetCode === `TP-${cleanMyCode}`));
+  if (uid) {
+    unsubs.push(
+      syncManager.subscribeTopic(`turkishparadise/account/v1/${uid}`, (payload) => {
+        processIncomingAccountData(payload);
+      })
+    );
+  }
 
-      if (isTargetForMe || cleanFromId === uid.toUpperCase()) {
-        const toRemove = isTargetForMe ? cleanFromId : cleanTargetId;
-        const nextFriends = getFriends(uid).filter(
-          (f) =>
-            f.uid?.toUpperCase() !== toRemove &&
-            f.friendCode?.toUpperCase() !== toRemove &&
-            f.friendCode?.toUpperCase().replace(/^TP-/, '') !== toRemove.replace(/^TP-/, '')
-        );
-        saveFriends(uid, nextFriends);
-        safeNotify(nextFriends, getIncomingRequests(uid));
-      }
-    } else if (data.type === 'REQUEST_ACCOUNT_SYNC') {
-      const targetSub = (data.userId || '').trim().toUpperCase();
-      const targetCode = (data.friendCode || '').trim().toUpperCase();
+  // 4. Real-Time MQTT Broadcast Listener
+  unsubs.push(
+    syncManager.subscribeToFriendChannel((data) => {
+      if (!active || !uid) return;
 
-      const isSameAccount =
-        (targetSub && targetSub === uid.toUpperCase()) ||
-        (targetCode && cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`));
+      if (data.type === 'FRIEND_REQUEST_SENT') {
+        const targetCode = (data.targetFriendCode || '').trim().toUpperCase();
 
-      if (isSameAccount) {
-        // Send our local friends & stats to our other device
-        const myFriends = getFriends(uid);
-        const myStats = getUserStats(uid);
-        if (myFriends.length > 0 || myStats.gamesPlayed > 0) {
-          syncManager.sendFriendMessage({
-            type: 'ACCOUNT_SYNC_RESPONSE',
-            targetUserId: data.userId,
-            targetFriendCode: data.friendCode,
-            friends: myFriends,
-            stats: myStats
-          });
+        if (cleanMyCode && (targetCode === cleanMyCode || targetCode === `TP-${cleanMyCode}`)) {
+          const newReq: FriendRequest = {
+            id: data.requestId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            fromUid: data.fromUserId || 'unknown',
+            fromDisplayName: data.fromName || 'Oyuncu',
+            fromPhotoURL: data.fromPhotoURL || null,
+            fromFriendCode: data.fromFriendCode || '',
+            toUid: uid,
+            toFriendCode: cleanMyCode,
+            status: 'PENDING',
+            createdAt: new Date().toISOString()
+          };
+
+          const current = getIncomingRequests(uid);
+          if (!current.some(r => r.fromUid === newReq.fromUid)) {
+            current.push(newReq);
+            saveIncomingRequests(uid, current);
+            safeNotify(getFriends(uid), current);
+          }
         }
-      } else {
-        // Check if we have this user as a friend; if so, send them our friend metadata
-        const currentFriends = getFriends(uid);
-        const hasFriend = currentFriends.some(
-          (f) =>
-            (data.userId && f.uid?.toUpperCase() === targetSub) ||
-            (targetCode && f.friendCode?.toUpperCase() === targetCode)
-        );
+      } else if (data.type === 'FRIEND_REQUEST_ACCEPTED') {
+        const isTargetForMe =
+          (data.targetUserId && (data.targetUserId === uid || data.targetUserId.includes(uid))) ||
+          (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
 
-        if (hasFriend && typeof window !== 'undefined') {
-          try {
-            const rawUser = localStorage.getItem('tp_user_profile');
-            if (rawUser) {
-              const u = JSON.parse(rawUser);
-              syncManager.sendFriendMessage({
-                type: 'MUTUAL_FRIEND_SYNC',
-                targetUserId: data.userId,
-                targetFriendCode: data.friendCode,
-                friendUser: {
-                  uid,
-                  displayName: u.displayName || 'Oyuncu',
-                  friendCode: cleanMyCode || u.friendCode || 'TP-FRIEND',
-                  photoURL: u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
-                  isOnline: true,
-                  addedAt: new Date().toISOString()
-                }
-              });
-            }
-          } catch (e) {}
-        }
-      }
-    } else if (data.type === 'ACCOUNT_SYNC_RESPONSE') {
-      const isForMe =
-        (data.targetUserId && data.targetUserId === uid) ||
-        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
+        if (isTargetForMe && data.fromUserId) {
+          const friendId = data.fromUserId;
+          const fCode = data.fromFriendCode || 'TP-FRIEND';
+          const fName = data.fromDisplayName || 'Arkadaş';
+          const fPhoto = data.fromPhotoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${friendId}`;
 
-      if (isForMe) {
-        if (Array.isArray(data.friends) && data.friends.length > 0) {
           const currentFriends = getFriends(uid);
-          const merged = [...currentFriends];
-          for (const incoming of data.friends) {
-            if (!merged.some((f) => f.uid === incoming.uid || (incoming.friendCode && f.friendCode === incoming.friendCode))) {
-              merged.push(incoming);
-            }
+          if (!currentFriends.some(f => f.uid === friendId || (fCode && f.friendCode === fCode))) {
+            currentFriends.push({
+              uid: friendId,
+              displayName: fName,
+              friendCode: fCode,
+              photoURL: fPhoto,
+              isOnline: true,
+              addedAt: new Date().toISOString()
+            });
+            saveFriends(uid, currentFriends);
+            safeNotify(currentFriends, getIncomingRequests(uid));
           }
-          saveFriends(uid, merged);
-          safeNotify(merged, getIncomingRequests(uid));
         }
-        if (data.stats && typeof data.stats.gamesWon === 'number') {
-          saveUserStats(uid, data.stats);
-        }
-      }
-    } else if (data.type === 'MUTUAL_FRIEND_SYNC') {
-      const isForMe =
-        (data.targetUserId && data.targetUserId === uid) ||
-        (data.targetFriendCode && cleanMyCode && (data.targetFriendCode === cleanMyCode || data.targetFriendCode === `TP-${cleanMyCode}`));
+        refreshAll();
+      } else if (data.type === 'FRIEND_REMOVED') {
+        const cleanFromId = (data.fromUserId || '').trim().toUpperCase();
+        const cleanTargetId = (data.targetUserId || '').trim().toUpperCase();
+        const cleanTargetCode = (data.targetFriendCode || '').trim().toUpperCase();
 
-      if (isForMe && data.friendUser && data.friendUser.uid !== uid) {
-        const currentFriends = getFriends(uid);
-        const incoming = data.friendUser;
-        if (!currentFriends.some((f) => f.uid === incoming.uid || (incoming.friendCode && f.friendCode === incoming.friendCode))) {
-          currentFriends.push(incoming);
-          saveFriends(uid, currentFriends);
-          safeNotify(currentFriends, getIncomingRequests(uid));
-        }
-      }
-    } else if (data.type === 'PRESENCE_UPDATE') {
-      if (data.userId && data.userId !== uid) {
-        const currentFriends = getFriends(uid);
-        let updated = false;
-        const nextFriends = currentFriends.map((f) => {
-          if (f.uid === data.userId || (data.friendCode && f.friendCode === data.friendCode)) {
-            updated = true;
-            return {
-              ...f,
-              isOnline: Boolean(data.isOnline),
-              activeRoomId: data.currentRoomId || f.activeRoomId
-            };
-          }
-          return f;
-        });
-        if (updated) {
+        const isTargetForMe =
+          cleanTargetId === uid.toUpperCase() ||
+          cleanTargetId === cleanMyCode ||
+          (cleanMyCode && (cleanTargetCode === cleanMyCode || cleanTargetCode === `TP-${cleanMyCode}`));
+
+        if (isTargetForMe || cleanFromId === uid.toUpperCase()) {
+          const toRemove = isTargetForMe ? cleanFromId : cleanTargetId;
+          const nextFriends = getFriends(uid).filter(
+            (f) =>
+              f.uid?.toUpperCase() !== toRemove &&
+              f.friendCode?.toUpperCase() !== toRemove &&
+              f.friendCode?.toUpperCase().replace(/^TP-/, '') !== toRemove.replace(/^TP-/, '')
+          );
           saveFriends(uid, nextFriends);
           safeNotify(nextFriends, getIncomingRequests(uid));
         }
-
-        // If friend just came online, reply with mutual friend sync so both sides stay aligned
-        if (data.isOnline && cleanMyCode) {
-          const isMyFriend = currentFriends.some(
-            (f) => f.uid === data.userId || (data.friendCode && f.friendCode === data.friendCode)
-          );
-          if (isMyFriend && typeof window !== 'undefined') {
-            try {
-              const rawUser = localStorage.getItem('tp_user_profile');
-              if (rawUser) {
-                const u = JSON.parse(rawUser);
-                syncManager.sendFriendMessage({
-                  type: 'MUTUAL_FRIEND_SYNC',
-                  targetUserId: data.userId,
-                  targetFriendCode: data.friendCode,
-                  friendUser: {
-                    uid,
-                    displayName: u.displayName || 'Oyuncu',
-                    friendCode: cleanMyCode,
-                    photoURL: u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
-                    isOnline: true,
-                    addedAt: new Date().toISOString()
-                  }
-                });
-              }
-            } catch (e) {}
+      } else if (data.type === 'PRESENCE_UPDATE') {
+        if (data.userId && data.userId !== uid) {
+          const currentFriends = getFriends(uid);
+          let updated = false;
+          const nextFriends = currentFriends.map((f) => {
+            if (f.uid === data.userId || (data.friendCode && f.friendCode === data.friendCode)) {
+              updated = true;
+              return {
+                ...f,
+                isOnline: Boolean(data.isOnline),
+                activeRoomId: data.currentRoomId || f.activeRoomId
+              };
+            }
+            return f;
+          });
+          if (updated) {
+            saveFriends(uid, nextFriends);
+            safeNotify(nextFriends, getIncomingRequests(uid));
           }
         }
       }
-    }
-  });
+    })
+  );
 
-  // 3. Broadcast initial mesh account & friends discovery request
-  setTimeout(() => {
-    if (active && uid) {
-      syncManager.sendFriendMessage({
-        type: 'REQUEST_ACCOUNT_SYNC',
-        userId: uid,
-        friendCode: cleanMyCode
-      });
-    }
-  }, 500);
-
-  // 4. Periodic Background Polling
+  // 5. Periodic Background Polling (fallback)
   const interval = setInterval(refreshAll, 3000);
 
   return () => {
     active = false;
     clearInterval(interval);
-    unsubscribeMqtt();
+    unsubs.forEach((unsub) => {
+      try {
+        unsub();
+      } catch (e) {}
+    });
   };
+}
+
+export function subscribeToFriendRequests(
+  uid: string,
+  arg2: string | undefined | ((requests: FriendRequest[]) => void),
+  arg3?: (requests: FriendRequest[]) => void
+): () => void {
+  let friendCode: string | undefined;
+  let callback: ((requests: FriendRequest[]) => void) | undefined;
+
+  if (typeof arg2 === 'function') {
+    callback = arg2;
+    friendCode = undefined;
+  } else {
+    friendCode = typeof arg2 === 'string' ? arg2 : undefined;
+    callback = typeof arg3 === 'function' ? arg3 : undefined;
+  }
+
+  return subscribeToFriendsAndRequests(uid, friendCode, ({ requests }) => {
+    if (callback) callback(requests);
+  });
 }

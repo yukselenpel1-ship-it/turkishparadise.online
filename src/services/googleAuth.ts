@@ -1,6 +1,14 @@
 import { UserAccount } from '../types/game';
 import { getUserStats } from './firebase';
-import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry, syncUserWithBackend } from './friendService';
+import {
+  getDeterministicUserId,
+  getDeterministicFriendCode,
+  getOrGenerateFriendCode,
+  getFriends,
+  saveUserToPublicRegistry,
+  syncUserWithBackend,
+  saveAccountToCloud
+} from './friendService';
 
 const OAUTH_STATE_KEY = 'tp_oauth_state';
 const LOCAL_USER_KEY = 'tp_user_profile';
@@ -186,9 +194,9 @@ export async function handleGoogleOAuthCallback(): Promise<UserAccount | null> {
       return null;
     }
 
-    const uid = googleId || `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const uid = getDeterministicUserId(googleId || email);
     const stats = getUserStats(uid);
-    const friendCode = getOrGenerateFriendCode(uid, email);
+    const friendCode = getDeterministicFriendCode(googleId || uid, email);
     const friends = getFriends(uid);
 
     const userAccount: UserAccount = {
@@ -206,8 +214,9 @@ export async function handleGoogleOAuthCallback(): Promise<UserAccount | null> {
     // Sync with backend using server-verified ID Token
     const syncedAccount = await syncUserWithBackend(userAccount, idToken || undefined);
 
-    // Register user to public directory
+    // Register user to public directory & cloud retained topics
     saveUserToPublicRegistry(syncedAccount);
+    saveAccountToCloud(syncedAccount);
 
     // Save user session in localStorage
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(syncedAccount));

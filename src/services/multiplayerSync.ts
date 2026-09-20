@@ -37,20 +37,123 @@ class MultiplayerSyncManager {
   private currentVersion = 0;
   private brokerIndex = 0;
 
+  private subscribedTopics: Set<string> = new Set();
+  private topicListeners: Map<string, Set<(payload: any, topic: string) => void>> = new Map();
+
   constructor() {
     // 1. Setup local BroadcastChannel for multi-tab on same machine
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         this.localChannel = new BroadcastChannel('tp_global_multiplayer_channel');
         this.localChannel.onmessage = (event) => {
-          if (event.data && event.data.senderId !== LOCAL_CLIENT_ID) {
-            this.notifyListeners(event.data);
+          if (event.data) {
+            if (event.data.type === 'TOPIC_PUBLISH' && event.data.topic && event.data.payload) {
+              this.dispatchTopicMessage(event.data.topic, event.data.payload);
+            } else if (event.data.senderId !== LOCAL_CLIENT_ID) {
+              this.notifyListeners(event.data);
+            }
           }
         };
       }
     } catch (e) {
       console.warn('[Sync] BroadcastChannel unsupported:', e);
     }
+  }
+
+  /**
+   * Helper to match MQTT topic with wildcards (# and +)
+   */
+  private matchTopic(pattern: string, topic: string): boolean {
+    if (pattern === topic || pattern === '#') return true;
+    const pParts = pattern.split('/');
+    const tParts = topic.split('/');
+    for (let i = 0; i < pParts.length; i++) {
+      if (pParts[i] === '#') return true;
+      if (pParts[i] === '+') {
+        if (i >= tParts.length) return false;
+        continue;
+      }
+      if (pParts[i] !== tParts[i]) return false;
+    }
+    return pParts.length === tParts.length;
+  }
+
+  private dispatchTopicMessage(topic: string, payload: any): void {
+    this.topicListeners.forEach((callbacks, pattern) => {
+      if (this.matchTopic(pattern, topic)) {
+        callbacks.forEach((cb) => {
+          try {
+            cb(payload, topic);
+          } catch (e) {
+            console.warn('[Sync] Topic callback error:', e);
+          }
+        });
+      }
+    });
+  }
+
+  /**
+   * Publish retained message across MQTT cloud brokers for permanent cross-device persistence
+   */
+  public publishRetained(topic: string, data: any): void {
+    const cleanTopic = topic.trim();
+    const payloadStr = typeof data === 'string' ? data : JSON.stringify(data);
+
+    // 1. Local BroadcastChannel
+    if (this.localChannel) {
+      try {
+        this.localChannel.postMessage({ type: 'TOPIC_PUBLISH', topic: cleanTopic, payload: data });
+      } catch (e) {}
+    }
+
+    // 2. Local memory dispatch immediately
+    this.dispatchTopicMessage(cleanTopic, data);
+
+    // 3. Global MQTT Broker with retain: true, qos: 1
+    this.ensureMqttConnection();
+    if (this.mqttClient && this.isMqttConnected) {
+      try {
+        this.mqttClient.publish(cleanTopic, payloadStr, { retain: true, qos: 1 }, (err) => {
+          if (err) console.warn(`[MQTT] Retained publish error on ${cleanTopic}:`, err);
+        });
+      } catch (err) {
+        console.warn('[MQTT] Retained publish exception:', err);
+      }
+    }
+  }
+
+  /**
+   * Subscribe to specific MQTT topic pattern (supports wildcards + and #)
+   */
+  public subscribeTopic(topicPattern: string, callback: (payload: any, topic: string) => void): () => void {
+    const cleanPattern = topicPattern.trim();
+    this.subscribedTopics.add(cleanPattern);
+
+    if (!this.topicListeners.has(cleanPattern)) {
+      this.topicListeners.set(cleanPattern, new Set());
+    }
+    this.topicListeners.get(cleanPattern)!.add(callback);
+
+    this.ensureMqttConnection();
+    if (this.mqttClient && this.isMqttConnected) {
+      this.mqttClient.subscribe(cleanPattern, { qos: 1 });
+    }
+
+    return () => {
+      const listeners = this.topicListeners.get(cleanPattern);
+      if (listeners) {
+        listeners.delete(callback);
+        if (listeners.size === 0) {
+          this.topicListeners.delete(cleanPattern);
+          this.subscribedTopics.delete(cleanPattern);
+          if (this.mqttClient && this.isMqttConnected) {
+            try {
+              this.mqttClient.unsubscribe(cleanPattern);
+            } catch (e) {}
+          }
+        }
+      }
+    };
   }
 
   /**
@@ -119,13 +222,17 @@ class MultiplayerSyncManager {
 
           conn.on('data', (data) => {
             try {
-              const msg = (typeof data === 'string' ? JSON.parse(data) : data) as SyncMessage;
-              if (msg && msg.senderId !== LOCAL_CLIENT_ID) {
+              const msg = data as SyncMessage;
+              if (msg.senderId !== LOCAL_CLIENT_ID) {
                 this.notifyListeners(msg);
+                // Relay to other connected peers
+                this.peerConnections.forEach((otherConn, otherPeerId) => {
+                  if (otherPeerId !== conn.peer && otherConn.open) {
+                    otherConn.send(msg);
+                  }
+                });
               }
-            } catch (e) {
-              console.warn('[WebRTC] Data parse error:', e);
-            }
+            } catch (e) {}
           });
 
           conn.on('close', () => {
@@ -143,10 +250,22 @@ class MultiplayerSyncManager {
         });
       } else {
         // CLIENT: Connect to host
-        this.initPeerJsClient(roomId, hostPeerId);
+        this.peer = new Peer({
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:global.stun.twilio.com:3478' }
+            ]
+          }
+        });
+
+        this.peer.on('open', () => {
+          this.connectToHost(hostPeerId);
+        });
       }
-    } catch (e) {
-      console.warn('[WebRTC] Failed to init PeerJS:', e);
+    } catch (err) {
+      console.warn('[WebRTC] PeerJS init error:', err);
     }
   }
 
@@ -194,6 +313,32 @@ class MultiplayerSyncManager {
       });
     } catch (e) {
       console.warn('[WebRTC] Error in client peer init:', e);
+    }
+  }
+
+  private connectToHost(hostPeerId: string) {
+    if (!this.peer) return;
+    try {
+      this.hostConnection = this.peer.connect(hostPeerId, { reliable: true });
+
+      this.hostConnection.on('open', () => {
+        console.log(`[WebRTC] Connected to Host DataChannel: ${hostPeerId}`);
+      });
+
+      this.hostConnection.on('data', (data) => {
+        try {
+          const msg = data as SyncMessage;
+          if (msg.senderId !== LOCAL_CLIENT_ID) {
+            this.notifyListeners(msg);
+          }
+        } catch (e) {}
+      });
+
+      this.hostConnection.on('close', () => {
+        console.log('[WebRTC] Host connection closed');
+      });
+    } catch (err) {
+      console.warn('[WebRTC] Connect to host error:', err);
     }
   }
 
@@ -338,13 +483,28 @@ class MultiplayerSyncManager {
         }
         // Always subscribe to global friend channel
         this.mqttClient?.subscribe('turkishparadise/global/friends', { qos: 1 });
+
+        // Re-subscribe to all dynamic topics
+        this.subscribedTopics.forEach((tp) => {
+          this.mqttClient?.subscribe(tp, { qos: 1 });
+        });
       });
 
       this.mqttClient.on('message', (topic, message) => {
         try {
-          const parsed = JSON.parse(message.toString());
+          const raw = message.toString();
+          let parsed: any;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (e) {
+            parsed = raw;
+          }
+
+          // Dispatch to dynamic topic listeners
+          this.dispatchTopicMessage(topic, parsed);
+
           if (topic === 'turkishparadise/global/friends') {
-            if (parsed.senderClientId === LOCAL_CLIENT_ID) return;
+            if (parsed && parsed.senderClientId === LOCAL_CLIENT_ID) return;
             this.friendListeners.forEach((cb) => {
               try {
                 cb(parsed);
@@ -354,7 +514,7 @@ class MultiplayerSyncManager {
           }
 
           const syncMsg = parsed as SyncMessage;
-          if (syncMsg.senderId === LOCAL_CLIENT_ID) return;
+          if (syncMsg && syncMsg.senderId === LOCAL_CLIENT_ID) return;
           this.notifyListeners(syncMsg);
         } catch (e) {}
       });

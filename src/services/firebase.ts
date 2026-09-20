@@ -21,23 +21,45 @@ import {
   DatabaseReference
 } from 'firebase/database';
 import { GameState, Player, UserAccount, UserStats, MatchRecord, ChatMessage } from '../types/game';
-import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry, syncUserWithBackend } from './friendService';
+import {
+  getDeterministicUserId,
+  getDeterministicFriendCode,
+  getOrGenerateFriendCode,
+  getFriends,
+  saveUserToPublicRegistry,
+  syncUserWithBackend,
+  saveAccountToCloud
+} from './friendService';
+
+const getEnv = (key: string): string => {
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
+      return (import.meta as any).env[key];
+    }
+  } catch (e) {}
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return process.env[key] || '';
+    }
+  } catch (e) {}
+  return '';
+};
 
 // Firebase configuration from environment variables or default placeholder
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoTurkishParadiseKey12345',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'turkishparadise-game.firebaseapp.com',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || 'https://turkishparadise-game-default-rtdb.firebaseio.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'turkishparadise-game',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'turkishparadise-game.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '123456789012',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:123456789012:web:abcdef1234567890'
+  apiKey: getEnv('VITE_FIREBASE_API_KEY') || 'AIzaSyDemoTurkishParadiseKey12345',
+  authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN') || 'turkishparadise-game.firebaseapp.com',
+  databaseURL: getEnv('VITE_FIREBASE_DATABASE_URL') || 'https://turkishparadise-game-default-rtdb.firebaseio.com',
+  projectId: getEnv('VITE_FIREBASE_PROJECT_ID') || 'turkishparadise-game',
+  storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET') || 'turkishparadise-game.appspot.com',
+  messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID') || '123456789012',
+  appId: getEnv('VITE_FIREBASE_APP_ID') || '1:123456789012:web:abcdef1234567890'
 };
 
 // Check if valid customized Firebase project is provided
 export const isFirebaseConfigured = Boolean(
-  import.meta.env.VITE_FIREBASE_API_KEY &&
-  import.meta.env.VITE_FIREBASE_API_KEY !== 'AIzaSyDemoTurkishParadiseKey12345'
+  getEnv('VITE_FIREBASE_API_KEY') &&
+  getEnv('VITE_FIREBASE_API_KEY') !== 'AIzaSyDemoTurkishParadiseKey12345'
 );
 
 let app: any = null;
@@ -71,8 +93,8 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
-      const uid = user.uid;
-      const friendCode = getOrGenerateFriendCode(uid, user.email);
+      const uid = getDeterministicUserId(user.uid || user.email || 'google_user');
+      const friendCode = getDeterministicFriendCode(uid, user.email);
       const friends = getFriends(uid);
       const account: UserAccount = {
         uid: uid,
@@ -83,11 +105,13 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
         provider: 'google',
         friendCode,
         friends,
-        stats: getUserStats(user.uid)
+        stats: getUserStats(uid)
       };
-      saveUserToPublicRegistry(account);
-      saveLocalUser(account);
-      return account;
+      const synced = await syncUserWithBackend(account);
+      saveUserToPublicRegistry(synced);
+      saveLocalUser(synced);
+      saveAccountToCloud(synced);
+      return synced;
     } catch (error: any) {
       console.warn('[Auth] Google popup error/fallback:', error);
     }
@@ -100,8 +124,9 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
     ? customName.trim()
     : nameParts.charAt(0).toUpperCase() + nameParts.slice(1);
 
-  // Derive unique Google sub string from email or auth ID
-  const cleanSub = `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  // Derive unique deterministic Google ID from email
+  const cleanSub = getDeterministicUserId(email);
+  const friendCode = getDeterministicFriendCode(cleanSub, email);
   const existingStats = getUserStats(cleanSub);
 
   const googleAccount: UserAccount = {
@@ -111,11 +136,13 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
     photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanSub}`,
     isAnonymous: false,
     provider: 'google',
+    friendCode,
     stats: existingStats
   };
 
   const syncedAccount = await syncUserWithBackend(googleAccount);
   saveLocalUser(syncedAccount);
+  saveAccountToCloud(syncedAccount);
   return syncedAccount;
 }
 
@@ -211,6 +238,7 @@ export function getSavedUser(): UserAccount | null {
 export function saveLocalUser(user: UserAccount) {
   try {
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(user));
+    saveAccountToCloud(user);
   } catch (e) {
     console.warn('[Storage] Could not save user:', e);
   }

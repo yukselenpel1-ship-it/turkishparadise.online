@@ -44,7 +44,7 @@ import {
   handleGoogleOAuthCallback
 } from './services/googleAuth';
 import { soundManager } from './services/soundEffects';
-import { updateUserPresence, subscribeToFriendRequests, syncUserWithBackend } from './services/friendService';
+import { updateUserPresence, subscribeToFriendRequests, subscribeToFriendsAndRequests, syncUserWithBackend } from './services/friendService';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -245,6 +245,24 @@ export const App: React.FC = () => {
 
     initAuth();
   }, []);
+
+  // 1.5 Real-time Cloud Account & Friends Sync Listener
+  useEffect(() => {
+    if (!userAccount?.uid) return;
+    const unsub = subscribeToFriendsAndRequests(
+      userAccount.uid,
+      userAccount.friendCode,
+      ({ friends }) => {
+        setUserAccount((prev) => {
+          if (!prev) return prev;
+          return { ...prev, friends };
+        });
+      }
+    );
+    return () => {
+      unsub();
+    };
+  }, [userAccount?.uid, userAccount?.friendCode]);
 
   // 2. Keep URL query param and Session Storage always synced with active room & game state
   useEffect(() => {
