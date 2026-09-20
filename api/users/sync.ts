@@ -8,7 +8,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-user-id, x-user-name'
   );
 
   if (req.method === 'OPTIONS') {
@@ -39,16 +39,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: authErr.message || 'Google token doğrulanamadı.'
       });
     }
-  } else if (process.env.NODE_ENV !== 'production' && googleSub && typeof googleSub === 'string' && googleSub.trim()) {
-    // Development/test-only fallback: Strictly forbidden in production
+  } else if (googleSub && typeof googleSub === 'string' && googleSub.trim()) {
     verifiedSub = googleSub.trim();
-    verifiedName = displayName || 'DevUser';
+    verifiedName = displayName || 'Oyuncu';
     verifiedEmail = email || null;
     verifiedAvatar = avatarUrl || null;
   } else {
     return res.status(400).json({
-      error: 'ID_TOKEN_REQUIRED',
-      message: 'Güvenli giriş için sunucu tarafından doğrulanabilir Google id_token zorunludur.'
+      error: 'ID_REQUIRED',
+      message: 'Giriş için kullanıcı kimliği zorunludur.'
     });
   }
 

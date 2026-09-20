@@ -43,7 +43,7 @@ import {
   handleGoogleOAuthCallback
 } from './services/googleAuth';
 import { soundManager } from './services/soundEffects';
-import { updateUserPresence, subscribeToFriendRequests } from './services/friendService';
+import { updateUserPresence, subscribeToFriendRequests, syncUserWithBackend } from './services/friendService';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -231,6 +231,14 @@ export const App: React.FC = () => {
       if (saved) {
         const freshStats = getUserStats(saved.uid);
         setUserAccount({ ...saved, stats: freshStats });
+        // Automatically sync session with backend to ensure fresh auth token in localStorage
+        syncUserWithBackend(saved)
+          .then((synced: UserAccount) => {
+            if (synced && synced.friendCode) {
+              setUserAccount((prev) => (prev ? { ...prev, ...synced } : synced));
+            }
+          })
+          .catch(() => {});
       }
     }
 
