@@ -45,9 +45,14 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
               PARADISE
             </span>
           </span>
-          <span className="text-[9px] sm:text-[10.5px] font-bold text-amber-300/80 font-mono tracking-widest uppercase hidden sm:block mt-0.5">
-            TÜRKİYE MASA OYUNU
-          </span>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[8.5px] sm:text-[10px] font-bold text-amber-300/80 font-mono tracking-widest uppercase">
+              TÜRKİYE MASA OYUNU
+            </span>
+            <span className="text-[7px] sm:text-[8px] font-black uppercase px-1 py-[0.5px] rounded bg-amber-500/20 text-amber-300 border border-amber-500/35 tracking-wider">
+              BETA
+            </span>
+          </div>
         </div>
       )}
     </div>
