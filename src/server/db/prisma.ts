@@ -279,28 +279,31 @@ export async function getFriendsFromDB(userIdOrSub: string) {
       }
     });
 
-    const friends: any[] = [];
+    const friendsMap = new Map<string, any>();
     const incomingRequests: any[] = [];
     const outgoingRequests: any[] = [];
 
     for (const f of rawFriendships) {
-      const isUserA = f.userAId === userId;
-      const otherUser = isUserA ? f.userB : f.userA;
+      const otherUser = f.userAId === userId ? f.userB : f.userA;
+      if (!otherUser) continue;
 
       if (f.status === FriendshipStatus.ACCEPTED) {
-        friends.push({
-          ...otherUser,
-          friendshipId: f.id,
-          createdAt: f.createdAt
-        });
+        if (!friendsMap.has(otherUser.id)) {
+          friendsMap.set(otherUser.id, {
+            ...otherUser,
+            friendshipId: f.id,
+            createdAt: f.createdAt
+          });
+        }
       } else if (f.status === FriendshipStatus.PENDING) {
+        // userBId is the recipient / target user
         if (f.userBId === userId) {
           incomingRequests.push({
             id: f.id,
             fromUser: f.userA,
             createdAt: f.createdAt
           });
-        } else {
+        } else if (f.userAId === userId) {
           outgoingRequests.push({
             id: f.id,
             toUser: f.userB,
@@ -310,39 +313,52 @@ export async function getFriendsFromDB(userIdOrSub: string) {
       }
     }
 
-    return { friends, incomingRequests, outgoingRequests };
+    return {
+      friends: Array.from(friendsMap.values()),
+      incomingRequests,
+      outgoingRequests
+    };
   }
 
   // Fallback memory repository
-  const friends: any[] = [];
+  const friendsMap = new Map<string, any>();
   const incomingRequests: any[] = [];
   const outgoingRequests: any[] = [];
 
   for (const f of memoryFriendships.values()) {
     if (f.userAId !== userId && f.userBId !== userId) continue;
 
-    const isUserA = f.userAId === userId;
-    const otherId = isUserA ? f.userBId : f.userAId;
+    const otherId = f.userAId === userId ? f.userBId : f.userAId;
     const otherUser = memoryUsers.get(otherId);
+    if (!otherUser) continue;
 
     if (f.status === FriendshipStatus.ACCEPTED) {
-      if (otherUser) {
-        friends.push({ ...otherUser, friendshipId: f.id, createdAt: f.createdAt });
+      if (!friendsMap.has(otherUser.id)) {
+        friendsMap.set(otherUser.id, {
+          ...otherUser,
+          friendshipId: f.id,
+          createdAt: f.createdAt
+        });
       }
     } else if (f.status === FriendshipStatus.PENDING) {
-      if (f.userBId === userId && otherUser) {
+      if (f.userBId === userId) {
         incomingRequests.push({ id: f.id, fromUser: otherUser, createdAt: f.createdAt });
-      } else if (otherUser) {
+      } else if (f.userAId === userId) {
         outgoingRequests.push({ id: f.id, toUser: otherUser, createdAt: f.createdAt });
       }
     }
   }
 
-  return { friends, incomingRequests, outgoingRequests };
+  return {
+    friends: Array.from(friendsMap.values()),
+    incomingRequests,
+    outgoingRequests
+  };
 }
 
 /**
- * Send Friend Request with canonicalization & reverse request auto-accept
+ * Send Friend Request with direct sender (userAId) -> receiver (userBId) semantics
+ * and automatic mutual accept if reverse request exists
  */
 export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFriendCode: string) {
   const cleanCode = targetFriendCode.trim().toUpperCase();
@@ -368,12 +384,17 @@ export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFrien
     return { success: false, status: 400, message: 'Kendi arkadaş kodunuzu ekleyemezsiniz!' };
   }
 
-  const { userAId, userBId } = canonicalFriendPair(fromUser.id, targetUser.id);
+  const senderId = fromUser.id;
+  const receiverId = targetUser.id;
 
   if (prisma) {
-    const existing = await prisma.friendship.findUnique({
+    // Check if any friendship or pending request already exists between these two users
+    const existing = await prisma.friendship.findFirst({
       where: {
-        userAId_userBId: { userAId, userBId }
+        OR: [
+          { userAId: senderId, userBId: receiverId },
+          { userAId: receiverId, userBId: senderId }
+        ]
       }
     });
 
@@ -383,10 +404,10 @@ export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFrien
       }
 
       if (existing.status === FriendshipStatus.PENDING) {
-        const originalRequesterId = existing.userAId;
-        if (originalRequesterId === fromUser.id) {
+        if (existing.userAId === senderId) {
           return { success: false, status: 400, message: 'Arkadaşlık isteğiniz zaten bekliyor.' };
         } else {
+          // The other user had already sent a request to me -> Auto-Accept!
           const updated = await prisma.friendship.update({
             where: { id: existing.id },
             data: { status: FriendshipStatus.ACCEPTED }
@@ -403,8 +424,8 @@ export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFrien
 
     const newFriendship = await prisma.friendship.create({
       data: {
-        userAId,
-        userBId,
+        userAId: senderId,
+        userBId: receiverId,
         status: FriendshipStatus.PENDING
       }
     });
@@ -418,23 +439,26 @@ export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFrien
   }
 
   // Fallback memory repository
-  const pairKey = `${userAId}_${userBId}`;
-  const existing = memoryFriendships.get(pairKey);
-  if (existing) {
-    if (existing.status === FriendshipStatus.ACCEPTED) {
-      return { success: false, status: 400, message: 'Bu oyuncu zaten arkadaş listenizde ekli.' };
-    }
-    if (existing.status === FriendshipStatus.PENDING) {
-      if (existing.userAId === fromUser.id) {
-        return { success: false, status: 400, message: 'Arkadaşlık isteğiniz zaten bekliyor.' };
-      } else {
-        existing.status = FriendshipStatus.ACCEPTED;
-        return {
-          success: true,
-          status: 200,
-          message: `Karşılıklı istek üzerine ${targetUser.displayName} ile arkadaşlık kabul edildi!`,
-          friendship: existing
-        };
+  for (const f of memoryFriendships.values()) {
+    if (
+      (f.userAId === senderId && f.userBId === receiverId) ||
+      (f.userAId === receiverId && f.userBId === senderId)
+    ) {
+      if (f.status === FriendshipStatus.ACCEPTED) {
+        return { success: false, status: 400, message: 'Bu oyuncu zaten arkadaş listenizde ekli.' };
+      }
+      if (f.status === FriendshipStatus.PENDING) {
+        if (f.userAId === senderId) {
+          return { success: false, status: 400, message: 'Arkadaşlık isteğiniz zaten bekliyor.' };
+        } else {
+          f.status = FriendshipStatus.ACCEPTED;
+          return {
+            success: true,
+            status: 200,
+            message: `Karşılıklı istek üzerine ${targetUser.displayName} ile arkadaşlık kabul edildi!`,
+            friendship: f
+          };
+        }
       }
     }
   }
@@ -442,13 +466,12 @@ export async function sendFriendRequestInDB(fromUserIdOrSub: string, targetFrien
   const fId = `fr_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
   const newF: LocalFriendship = {
     id: fId,
-    userAId,
-    userBId,
+    userAId: senderId,
+    userBId: receiverId,
     status: FriendshipStatus.PENDING,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
-  memoryFriendships.set(pairKey, newF);
   memoryFriendships.set(fId, newF);
 
   return {
@@ -530,9 +553,13 @@ export async function deleteFriendshipInDB(userIdOrSub: string, friendUserIdOrId
       try {
         const friendUser = await resolveUser(friendUserIdOrId);
         if (friendUser) {
-          const { userAId, userBId } = canonicalFriendPair(userId, friendUser.id);
-          friendship = await prisma.friendship.findUnique({
-            where: { userAId_userBId: { userAId, userBId } }
+          friendship = await prisma.friendship.findFirst({
+            where: {
+              OR: [
+                { userAId: userId, userBId: friendUser.id },
+                { userAId: friendUser.id, userBId: userId }
+              ]
+            }
           });
         }
       } catch (e) {}
@@ -551,6 +578,10 @@ export async function deleteFriendshipInDB(userIdOrSub: string, friendUserIdOrId
   }
 
   // Fallback memory repository
-  memoryFriendships.delete(friendUserIdOrId);
+  for (const [id, f] of memoryFriendships.entries()) {
+    if (id === friendUserIdOrId || f.userAId === friendUserIdOrId || f.userBId === friendUserIdOrId) {
+      memoryFriendships.delete(id);
+    }
+  }
   return { success: true, status: 200, message: 'Arkadaşlık kaydı başarıyla silindi.' };
 }

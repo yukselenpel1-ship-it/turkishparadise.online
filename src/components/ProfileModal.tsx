@@ -69,7 +69,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
   const [friendsList, setFriendsList] = useState<FriendUser[]>([]);
 
-  // Subscribe to Real-Time Incoming Friend Requests & Presence (Database Backend API)
+  // Subscribe to Real-Time Incoming Friend Requests & Presence (Database Backend API + MQTT Mesh)
   useEffect(() => {
     if (!userAccount.uid) return;
 
@@ -80,12 +80,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     };
 
     loadDbFriends();
+
+    const unsubscribe = subscribeToFriendRequests(userAccount.uid, userAccount.friendCode, (requests) => {
+      setIncomingRequests(requests);
+    });
+
     const interval = setInterval(loadDbFriends, 3000);
 
     return () => {
       clearInterval(interval);
+      unsubscribe();
     };
-  }, [userAccount.uid]);
+  }, [userAccount.uid, userAccount.friendCode]);
 
   const stats = userAccount.stats || { gamesWon: 0, gamesLost: 0, gamesPlayed: 0, totalMoneyEarned: 0, history: [] };
   const totalPlayed = stats.gamesPlayed || (stats.gamesWon + (stats.gamesLost || 0));
@@ -145,7 +151,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   // Accept incoming friend request
   const handleAcceptRequest = async (req: FriendRequest) => {
     try {
-      const res = await acceptFriendRequest(userAccount.uid, req.id);
+      const res = await acceptFriendRequest(userAccount.uid, req.id, {
+        id: req.fromUid,
+        displayName: req.fromDisplayName,
+        friendCode: req.fromFriendCode,
+        photoURL: req.fromPhotoURL || undefined
+      });
       if (res.success) {
         const { friends, pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
         setFriendsList(friends);
