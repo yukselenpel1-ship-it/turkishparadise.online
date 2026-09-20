@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Player, GameSettings, BotDifficulty, UserAccount } from '../types/game';
 import { PLAYER_AVATARS, PLAYER_COLORS } from '../engine/gameEngine';
+import { soundManager } from '../services/soundEffects';
 import { ProfileModal } from './ProfileModal';
 import { DiceLogo } from './DiceLogo';
 import {
@@ -73,7 +74,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [roomCode, setRoomCode] = useState(settings.roomCode || 'TR-1001');
   const [selectedAvatar, setSelectedAvatar] = useState(PLAYER_AVATARS[0]);
   const [selectedColor, setSelectedColor] = useState(PLAYER_COLORS[0]);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [activeModal, setActiveModal] = useState<'rules' | 'features' | 'community' | null>(null);
@@ -81,6 +82,13 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [profileInitialTab, setProfileInitialTab] = useState<'stats' | 'friends'>('stats');
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
   const [isInviteLink, setIsInviteLink] = useState(false);
+
+  // Sync sound settings with soundManager
+  useEffect(() => {
+    return soundManager.subscribe((enabled) => {
+      setSoundEnabled(enabled);
+    });
+  }, []);
 
   // Check URL query parameters for invite link: ?room=TR-XXXX or ?oda=TR-XXXX
   useEffect(() => {
@@ -316,11 +324,22 @@ export const Lobby: React.FC<LobbyProps> = ({
           )}
 
           <button
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className="p-1.5 sm:p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer shrink-0"
-            title="Ses"
+            onClick={() => soundManager.toggle()}
+            className={`flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border transition cursor-pointer shrink-0 shadow ${
+              soundEnabled
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+            title={soundEnabled ? "Ses Efektlerini Kapat" : "Ses Efektlerini Aç"}
           >
-            {soundEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />}
+            {soundEnabled ? (
+              <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0 animate-pulse" />
+            ) : (
+              <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />
+            )}
+            <span className="text-xs font-bold hidden md:inline">
+              {soundEnabled ? 'Ses Açık' : 'Sessiz'}
+            </span>
           </button>
 
           <button className="hidden sm:flex p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer shrink-0" title="Tema">

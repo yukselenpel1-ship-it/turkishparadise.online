@@ -41,6 +41,7 @@ import {
   initiateGoogleOAuthRedirect,
   handleGoogleOAuthCallback
 } from './services/googleAuth';
+import { soundManager } from './services/soundEffects';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -123,10 +124,58 @@ export const App: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
   const [mobileSheet, setMobileSheet] = useState<'players' | 'chat' | 'logs' | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const prevChatCountRef = useRef<number>(gameState.chatMessages?.length || 0);
+
+  // Sync sound setting changes globally with soundManager
+  useEffect(() => {
+    return soundManager.subscribe((enabled) => {
+      setSoundEnabled(enabled);
+    });
+  }, []);
+
+  // Subtle audio alert when it becomes the user's turn
+  const prevTurnIndexRef = useRef<number>(-1);
+  useEffect(() => {
+    if (gameState.phase === 'PLAYING') {
+      const currentPlayer = gameState.players[gameState.currentTurnIndex];
+      const isMe = currentPlayer?.id === myPlayerId;
+      if (isMe && prevTurnIndexRef.current !== gameState.currentTurnIndex) {
+        soundManager.playTurnAlert();
+      }
+      prevTurnIndexRef.current = gameState.currentTurnIndex;
+    }
+  }, [gameState.currentTurnIndex, gameState.phase, myPlayerId, gameState.players]);
+
+  // Audio alert on incoming trade offer
+  const prevTradeOfferRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const offerKey = gameState.incomingTradeOffer
+      ? `${gameState.incomingTradeOffer.fromPlayerId}_${gameState.incomingTradeOffer.toPlayerId}_${gameState.incomingTradeOffer.offeredMoney}`
+      : undefined;
+    if (offerKey && offerKey !== prevTradeOfferRef.current) {
+      if (gameState.incomingTradeOffer?.toPlayerId === myPlayerId) {
+        soundManager.playTradeOffer();
+      }
+    }
+    prevTradeOfferRef.current = offerKey;
+  }, [gameState.incomingTradeOffer, myPlayerId]);
+
+  // Audio alert on chance card
+  useEffect(() => {
+    if (gameState.pendingAction === 'CHANCE_CARD') {
+      soundManager.playChanceCard();
+    }
+  }, [gameState.pendingAction]);
+
+  // Audio alert on game end / victory
+  useEffect(() => {
+    if (gameState.phase === 'ENDED' && gameState.winner) {
+      soundManager.playWin();
+    }
+  }, [gameState.phase, gameState.winner]);
 
   // Track unread chat messages for mobile badge
   useEffect(() => {
@@ -828,6 +877,9 @@ export const App: React.FC = () => {
     const diceTotal = dice[0] + dice[1];
     const isDouble = dice[0] === dice[1];
 
+    // Trigger soft audio on dice roll
+    soundManager.playDiceRoll();
+
     // Check jail condition
     if (currentPlayer.isJailed) {
       if (isDouble) {
@@ -868,6 +920,7 @@ export const App: React.FC = () => {
     if (isDouble && !currentPlayer.isJailed) {
       const nextDoubles = (gameState.doublesCount || 0) + 1;
       if (nextDoubles >= 3) {
+        soundManager.playJail();
         updateAndBroadcastGameState(prev => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
@@ -905,6 +958,7 @@ export const App: React.FC = () => {
     let stepCount = 0;
     const interval = setInterval(() => {
       stepCount++;
+      soundManager.playStep();
       setGameState(prev => {
         const { state } = advancePlayerStep(prev, currentPlayer.id);
         return state;
@@ -927,6 +981,7 @@ export const App: React.FC = () => {
 
   // Buy Property Action
   const handleBuyPropertyAction = () => {
+    soundManager.playBuyProperty();
     updateAndBroadcastGameState((prev) => buyProperty(prev));
   };
 
@@ -942,11 +997,13 @@ export const App: React.FC = () => {
 
   // Pay 100 Bail to leave Kodes (Jail)
   const handlePayJailBailAction = () => {
+    soundManager.playBuyProperty();
     updateAndBroadcastGameState((prev) => payJailBail(prev));
   };
 
   // Build House Action
   const handleBuildHouseAction = (tileId: number) => {
+    soundManager.playBuyProperty();
     updateAndBroadcastGameState((prev) => {
       const next = buildHouse(prev, tileId, myPlayerId || undefined);
       if (selectedTile && selectedTile.id === tileId) {
@@ -1163,11 +1220,22 @@ export const App: React.FC = () => {
               )}
 
               <button
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className="p-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition cursor-pointer"
-                title="Ses Efektleri"
+                onClick={() => soundManager.toggle()}
+                className={`flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1 rounded-xl border transition cursor-pointer shrink-0 shadow ${
+                  soundEnabled
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                    : 'bg-slate-850 border-slate-750 text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+                title={soundEnabled ? "Ses Efektlerini Kapat" : "Ses Efektlerini Aç"}
               >
-                {soundEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />}
+                {soundEnabled ? (
+                  <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0 animate-pulse" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0" />
+                )}
+                <span className="text-[11px] font-bold hidden sm:inline">
+                  {soundEnabled ? 'Ses Açık' : 'Sessiz'}
+                </span>
               </button>
 
               <button

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BoardTile, Player } from '../types/game';
 import { Tile } from './Tile';
 import { Dice } from './Dice';
-import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt } from 'lucide-react';
+import { soundManager } from '../services/soundEffects';
+import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt, Volume2, VolumeX } from 'lucide-react';
 
 interface BoardProps {
   board: BoardTile[];
@@ -101,6 +102,14 @@ export const Board: React.FC<BoardProps> = ({
   const isJailed = currentTurnPlayer?.isJailed;
   const isAfk = Boolean(currentTurnPlayer?.isAfk);
 
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
+
+  useEffect(() => {
+    return soundManager.subscribe((enabled) => {
+      setSoundEnabled(enabled);
+    });
+  }, []);
+
   return (
     <div className="h-full max-h-full aspect-[1.12/1] w-full max-w-5xl bg-[#030712] border-[3px] sm:border-[8px] border-[#0c1424] rounded-xl sm:rounded-[28px] p-0.5 sm:p-1.5 shadow-[0_15px_60px_rgba(0,0,0,0.95)] relative select-none ring-1 sm:ring-2 ring-amber-500/30 flex flex-col justify-center">
       
@@ -137,6 +146,19 @@ export const Board: React.FC<BoardProps> = ({
           }}
           className="relative rounded-lg sm:rounded-2xl m-0.5 p-1.5 sm:p-3.5 flex flex-col justify-between items-center overflow-hidden border border-amber-500/30 shadow-[inset_0_0_50px_rgba(0,0,0,0.85)] bg-gradient-to-b from-[#060c1c] via-[#040813] to-[#02050b]"
         >
+          {/* Top-Right Quick Sound Toggle Button */}
+          <button
+            onClick={() => soundManager.toggle()}
+            className="absolute top-1.5 right-1.5 sm:top-2.5 sm:right-2.5 z-30 p-1 sm:p-1.5 rounded-lg bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-400 hover:text-white transition cursor-pointer backdrop-blur-sm shadow"
+            title={soundEnabled ? "Ses Efektlerini Kapat" : "Ses Efektlerini Aç"}
+          >
+            {soundEnabled ? (
+              <Volume2 className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400" />
+            ) : (
+              <VolumeX className="w-3 h-3 sm:w-4 sm:h-4 text-slate-500" />
+            )}
+          </button>
+
           {/* Subtle Bosphorus / Turkey Skyline Atmosphere Overlay */}
           <div className="absolute inset-0 z-0 pointer-events-none opacity-20">
             <div className="w-full h-full bg-[radial-gradient(ellipse_at_top,#f59e0b20,transparent_70%)]" />
