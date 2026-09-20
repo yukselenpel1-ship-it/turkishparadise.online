@@ -25,6 +25,9 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:3001',
+  'https://turkishparadise.xyz',
+  'https://www.turkishparadise.xyz',
+  'https://api.turkishparadise.xyz',
   'https://turkishparadise.online',
   'https://www.turkishparadise.online',
   'https://api.turkishparadise.online'
