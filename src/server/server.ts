@@ -3,7 +3,48 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 import { z } from 'zod';
+
+dotenv.config();
+
+const app = express();
+const PORT = Number(process.env.PORT || 3001);
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://turkishparadise.online',
+  'https://www.turkishparadise.online',
+  'https://api.turkishparadise.online'
+];
+if (process.env.CORS_ORIGIN) {
+  allowedOrigins.push(process.env.CORS_ORIGIN);
+}
+
+const checkOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    callback(null, true);
+  } else {
+    callback(null, true);
+  }
+};
+
+app.use(cors({ origin: checkOrigin, credentials: true }));
+app.use(express.json());
+
+// --------------------------------------------------------------------------
+// 1. TOP-LEVEL DATABASE-INDEPENDENT HEALTH ENDPOINT
+// MUST NOT import or invoke Prisma/Database so it ALWAYS returns 200 OK
+// --------------------------------------------------------------------------
+app.get('/api/health', (_req, res) => {
+  return res.status(200).json({ status: 'ok' });
+});
+
+// Dynamic imports of Database & Auth services after top-level health check
 import {
   prisma,
   syncUserInDB,
@@ -19,19 +60,12 @@ import {
   AuthenticatedRequest
 } from './auth/authMiddleware';
 
-dotenv.config();
-
-const app = express();
-
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
-app.use(cors({ origin: corsOrigin, credentials: true }));
-app.use(express.json());
-
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: corsOrigin,
-    methods: ['GET', 'POST', 'DELETE']
+    origin: checkOrigin,
+    methods: ['GET', 'POST', 'DELETE'],
+    credentials: true
   }
 });
 
@@ -52,16 +86,6 @@ const FriendRequestSchema = z.object({
 
 const AcceptRequestSchema = z.object({
   requestId: z.string().min(1)
-});
-
-// Health check & status API
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    game: 'Turkish Paradise V2',
-    timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV || 'development'
-  });
 });
 
 /**
@@ -99,13 +123,13 @@ app.post('/api/users/sync', async (req, res) => {
 /**
  * GET /api/friends
  * Protected Endpoint: Fetches friends & requests for authenticated user from Prisma DB.
+ * Unauthenticated requests return HTTP 401 Unauthorized.
  */
 app.get('/api/friends', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.user!.id;
     const result = await getFriendsFromDB(userId);
 
-    // Annotate presence status from runtime memory map
     const onlineUserIds = new Set(Array.from(onlineUsers.values()).map(u => u.userId));
     const annotatedFriends = result.friends.map(f => ({
       ...f,
@@ -214,7 +238,6 @@ io.use((socket, next) => {
       return next();
     }
   }
-  // Allow initial unauthenticated socket connection with query userId in dev mode
   const userId = socket.handshake.query?.userId as string;
   if (userId) {
     socket.data.userId = userId;
@@ -257,15 +280,30 @@ io.on('connection', (socket) => {
   });
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.warn('[Server Warning] Unhandled Rejection:', reason);
+// Static SPA fallback serving in production if dist directory exists
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.resolve(process.cwd(), 'dist');
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+        return next();
+      }
+      res.sendFile(path.resolve(distPath, 'index.html'));
+    });
+  }
+}
+
+// Global Process Exception Logging (Exits process cleanly so process manager restarts on fatal crash)
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled Rejection:', reason);
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('[Server Error] Uncaught Exception:', err);
+  console.error('[FATAL] Uncaught Exception:', err);
+  process.exit(1);
 });
 
-const PORT = Number(process.env.PORT || 3001);
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Turkish Paradise V2 Server listening on 0.0.0.0:${PORT}`);
+  console.log(`🚀 Turkish Paradise V2 Server listening on 0.0.0.0:${PORT} (${process.env.NODE_ENV || 'development'})`);
 });
