@@ -283,14 +283,29 @@ export async function getFriendsFromDB(userIdOrSub: string) {
   }
 
   const userId = user.id;
+  const userSub = user.googleSub;
+  const userFriendCode = user.friendCode;
   const prisma = await getPrisma();
 
   if (prisma) {
+    const matchingUsers = await prisma.user.findMany({
+      where: {
+        OR: [
+          { id: userId },
+          { googleSub: userSub },
+          { friendCode: userFriendCode }
+        ]
+      },
+      select: { id: true }
+    });
+    const userIds = matchingUsers.map((u: any) => u.id);
+    if (!userIds.includes(userId)) userIds.push(userId);
+
     const rawFriendships = await prisma.friendship.findMany({
       where: {
         OR: [
-          { userAId: userId },
-          { userBId: userId }
+          { userAId: { in: userIds } },
+          { userBId: { in: userIds } }
         ]
       },
       include: {
@@ -304,11 +319,13 @@ export async function getFriendsFromDB(userIdOrSub: string) {
     const outgoingRequests: any[] = [];
 
     for (const f of rawFriendships) {
-      const otherUser = f.userAId === userId ? f.userB : f.userA;
+      const isUserA = userIds.includes(f.userAId);
+      const isUserB = userIds.includes(f.userBId);
+      const otherUser = isUserA ? f.userB : f.userA;
       if (!otherUser) continue;
 
       if (f.status === FriendshipStatus.ACCEPTED) {
-        if (!friendsMap.has(otherUser.id)) {
+        if (!friendsMap.has(otherUser.id) && !friendsMap.has(otherUser.friendCode)) {
           friendsMap.set(otherUser.id, {
             ...otherUser,
             friendshipId: f.id,
@@ -316,14 +333,14 @@ export async function getFriendsFromDB(userIdOrSub: string) {
           });
         }
       } else if (f.status === FriendshipStatus.PENDING) {
-        // userBId is the recipient / target user
-        if (f.userBId === userId) {
+        // userB is the recipient / target user
+        if (isUserB) {
           incomingRequests.push({
             id: f.id,
             fromUser: f.userA,
             createdAt: f.createdAt
           });
-        } else if (f.userAId === userId) {
+        } else if (isUserA) {
           outgoingRequests.push({
             id: f.id,
             toUser: f.userB,
@@ -346,10 +363,14 @@ export async function getFriendsFromDB(userIdOrSub: string) {
   const outgoingRequests: any[] = [];
 
   for (const f of memoryFriendships.values()) {
-    if (f.userAId !== userId && f.userBId !== userId) continue;
+    const isUserA = f.userAId === userId || f.userAId === userSub;
+    const isUserB = f.userBId === userId || f.userBId === userSub;
+    if (!isUserA && !isUserB) continue;
 
-    const otherId = f.userAId === userId ? f.userBId : f.userAId;
-    const otherUser = memoryUsers.get(otherId);
+    const otherId = isUserA ? f.userBId : f.userAId;
+    const otherUser =
+      memoryUsers.get(otherId) ||
+      Array.from(memoryUsers.values()).find((u) => u.id === otherId || u.googleSub === otherId);
     if (!otherUser) continue;
 
     if (f.status === FriendshipStatus.ACCEPTED) {
@@ -361,9 +382,9 @@ export async function getFriendsFromDB(userIdOrSub: string) {
         });
       }
     } else if (f.status === FriendshipStatus.PENDING) {
-      if (f.userBId === userId) {
+      if (isUserB) {
         incomingRequests.push({ id: f.id, fromUser: otherUser, createdAt: f.createdAt });
-      } else if (f.userAId === userId) {
+      } else if (isUserA) {
         outgoingRequests.push({ id: f.id, toUser: otherUser, createdAt: f.createdAt });
       }
     }

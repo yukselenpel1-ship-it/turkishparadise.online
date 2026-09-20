@@ -50,19 +50,36 @@ export function saveFriends(uid: string, friends: FriendUser[]): void {
   try {
     const json = JSON.stringify(friends);
     memoryLocalCache.set(`tp_friends_${uid}`, json);
-    if (typeof window !== 'undefined' && window.localStorage && uid) {
-      localStorage.setItem(`tp_friends_${uid}`, json);
+    memoryLocalCache.set('tp_friends_all', json);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (uid) localStorage.setItem(`tp_friends_${uid}`, json);
+      localStorage.setItem('tp_friends_all', json);
     }
   } catch (e) {}
 }
 
 export function getFriends(uid: string): FriendUser[] {
   try {
-    if (typeof window !== 'undefined' && window.localStorage && uid) {
-      const raw = localStorage.getItem(`tp_friends_${uid}`);
-      if (raw) return JSON.parse(raw);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (uid) {
+        const raw = localStorage.getItem(`tp_friends_${uid}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+      const rawAll = localStorage.getItem('tp_friends_all');
+      if (rawAll) {
+        const parsed = JSON.parse(rawAll);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      const rawUser = localStorage.getItem('tp_user_profile');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u && Array.isArray(u.friends) && u.friends.length > 0) return u.friends;
+      }
     }
-    const mem = memoryLocalCache.get(`tp_friends_${uid}`);
+    const mem = memoryLocalCache.get(`tp_friends_${uid}`) || memoryLocalCache.get('tp_friends_all');
     if (mem) return JSON.parse(mem);
   } catch (e) {}
   return [];
@@ -249,11 +266,34 @@ export async function fetchFriendsFromDB(userId: string): Promise<{
           createdAt: req.createdAt || new Date().toISOString()
         }));
 
-        // Persist database truth to local cache
-        saveFriends(userId, friends);
-        saveIncomingRequests(userId, pendingRequests);
+        // Merge DB friends with locally cached friends so no friend is EVER lost
+        const mergedFriends = [...friends];
+        for (const cf of cachedFriends) {
+          if (
+            !mergedFriends.some(
+              (f) => (f.uid && f.uid === cf.uid) || (f.friendCode && cf.friendCode && f.friendCode === cf.friendCode)
+            )
+          ) {
+            mergedFriends.push(cf);
+          }
+        }
 
-        return { friends, pendingRequests };
+        const mergedRequests = [...pendingRequests];
+        for (const cr of cachedRequests) {
+          if (
+            !mergedRequests.some(
+              (r) => r.id === cr.id || (r.fromUid && cr.fromUid && r.fromUid === cr.fromUid && r.status === 'PENDING')
+            )
+          ) {
+            mergedRequests.push(cr);
+          }
+        }
+
+        // Persist merged truth to local cache
+        saveFriends(userId, mergedFriends);
+        saveIncomingRequests(userId, mergedRequests);
+
+        return { friends: mergedFriends, pendingRequests: mergedRequests };
       }
     }
   } catch (err) {

@@ -196,7 +196,10 @@ export function getSavedUser(): UserAccount | null {
       if (!user.friendCode) {
         user.friendCode = getOrGenerateFriendCode(user.uid, user.email);
       }
-      user.friends = getFriends(user.uid);
+      const cached = getFriends(user.uid);
+      if (cached && cached.length > 0) {
+        user.friends = cached;
+      }
       saveUserToPublicRegistry(user);
     }
     return user;
