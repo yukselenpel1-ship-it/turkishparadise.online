@@ -143,30 +143,13 @@ export const Board: React.FC<BoardProps> = ({
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,#030712_95%)]" />
           </div>
 
-          {/* Majestic Golden Emblem & Embossed TURKISH PARADISE Title */}
-          <div className="text-center relative z-10 w-full pt-0.5 sm:pt-1 flex flex-col items-center select-none pointer-events-none">
-            {/* Ornate Gold Filigree Crown */}
-            <div className="flex items-center justify-center gap-1.5 text-amber-300 drop-shadow-[0_2px_10px_rgba(245,158,11,0.7)] text-xs sm:text-2xl">
-              <span className="font-serif opacity-80">⚜️</span>
-              <span className="text-sm sm:text-2xl">👑</span>
-              <span className="font-serif opacity-80">⚜️</span>
-            </div>
-
-            {/* Embossed Gold Typography */}
-            <div className="relative flex flex-col items-center mt-0.5">
-              <h1 className="font-['Cinzel',serif] text-[11px] sm:text-2xl md:text-3xl font-black tracking-[0.2em] bg-gradient-to-b from-[#fff6d6] via-[#f59e0b] to-[#b45309] bg-clip-text text-transparent drop-shadow-[0_3px_8px_rgba(0,0,0,0.95)] leading-tight">
-                TURKISH
-              </h1>
-              <h2 className="font-['Cinzel',serif] text-base sm:text-3xl md:text-4xl font-black tracking-[0.15em] bg-gradient-to-b from-[#fffbeb] via-[#fbbf24] to-[#78350f] bg-clip-text text-transparent drop-shadow-[0_4px_12px_rgba(0,0,0,0.98)] leading-none -mt-0.5 sm:-mt-1">
-                PARADISE
-              </h2>
-
-              {/* Golden Crescent & Star */}
-              <div className="flex items-center justify-center gap-1 mt-0.5 sm:mt-1 text-amber-300 drop-shadow-[0_2px_8px_rgba(245,158,11,0.8)] text-[9px] sm:text-xs">
-                <span>🌙</span>
-                <span>⭐</span>
-              </div>
-            </div>
+          {/* Majestic Golden TURKISH PARADISE PNG Emblem */}
+          <div className="text-center relative z-10 w-full pt-1 sm:pt-2.5 flex flex-col items-center select-none pointer-events-none">
+            <img
+              src="/turkish-paradise-logo.png"
+              alt="Turkish Paradise"
+              className="w-44 sm:w-60 md:w-72 max-w-[65%] h-auto object-contain drop-shadow-[0_4px_15px_rgba(245,158,11,0.45)]"
+            />
           </div>
 
           {/* Center Stage: Frosted Glass Dice & Action Controls */}
