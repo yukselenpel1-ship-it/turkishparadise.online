@@ -6,6 +6,20 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
+import {
+  getDatabaseStatus,
+  syncUserInDB,
+  getFriendsFromDB,
+  sendFriendRequestInDB,
+  acceptFriendRequestInDB,
+  deleteFriendshipInDB
+} from './db/prisma';
+import {
+  generateUserToken,
+  requireAuth,
+  verifyUserToken,
+  AuthenticatedRequest
+} from './auth/authMiddleware';
 
 dotenv.config();
 
@@ -38,27 +52,14 @@ app.use(express.json());
 
 // --------------------------------------------------------------------------
 // 1. TOP-LEVEL DATABASE-INDEPENDENT HEALTH ENDPOINT
-// MUST NOT import or invoke Prisma/Database so it ALWAYS returns 200 OK
+// Returns 200 OK unconditionally
 // --------------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
-  return res.status(200).json({ status: 'ok' });
+  return res.status(200).json({
+    status: 'ok',
+    database: getDatabaseStatus()
+  });
 });
-
-// Dynamic imports of Database & Auth services after top-level health check
-import {
-  prisma,
-  syncUserInDB,
-  getFriendsFromDB,
-  sendFriendRequestInDB,
-  acceptFriendRequestInDB,
-  deleteFriendshipInDB
-} from './db/prisma';
-import {
-  generateUserToken,
-  requireAuth,
-  verifyUserToken,
-  AuthenticatedRequest
-} from './auth/authMiddleware';
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -123,7 +124,7 @@ app.post('/api/users/sync', async (req, res) => {
 /**
  * GET /api/friends
  * Protected Endpoint: Fetches friends & requests for authenticated user from Prisma DB.
- * Unauthenticated requests return HTTP 401 Unauthorized.
+ * Unauthenticated requests return HTTP 401 Unauthorized JSON response.
  */
 app.get('/api/friends', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
@@ -294,7 +295,7 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
-// Global Process Exception Logging (Exits process cleanly so process manager restarts on fatal crash)
+// Global Process Exception Logging
 process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled Rejection:', reason);
 });

@@ -1,31 +1,50 @@
 import { PrismaClient, FriendshipStatus } from '@prisma/client';
 import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
 
 dotenv.config();
 
-const dbUrl = process.env.DATABASE_URL || 'file:./dev.db';
+let prismaInstance: PrismaClient | null = null;
+let prismaInitError: string | null = null;
 
-if (process.env.NODE_ENV === 'production') {
-  if (!process.env.DATABASE_URL || dbUrl.startsWith('file:') || dbUrl.includes('dev.db')) {
-    console.warn('[DB WARNING] Production environment is running with local database file. For multi-node deployment, configure a PostgreSQL DATABASE_URL.');
-  } else {
-    console.log('[DB] Connecting to production database instance...');
+/**
+ * Lazy Prisma Client Getter with resilient error isolation.
+ * Module import NEVER crashes the Node process.
+ */
+export function getPrisma(): PrismaClient {
+  if (prismaInstance) {
+    return prismaInstance;
+  }
+
+  try {
+    const dbUrl = process.env.DATABASE_URL || '';
+    if (!dbUrl) {
+      prismaInitError = 'DATABASE_URL environment variable is missing.';
+      console.warn('[Prisma Warning] ' + prismaInitError);
+    }
+
+    prismaInstance = new PrismaClient({
+      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error']
+    });
+
+    prismaInitError = null;
+    return prismaInstance;
+  } catch (err: any) {
+    prismaInitError = err?.message || 'Prisma client initialization failed.';
+    console.error('[Prisma Error] Failed to initialize PrismaClient:', prismaInitError);
+    throw new Error(`DATABASE_UNAVAILABLE: ${prismaInitError}`);
   }
 }
 
-let prismaClient: PrismaClient;
-try {
-  prismaClient = new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error']
-  });
-} catch (e) {
-  console.error('[DB] Failed to instantiate PrismaClient:', e);
-  prismaClient = new PrismaClient();
+export function getDatabaseStatus(): { ok: boolean; message: string } {
+  if (prismaInitError) {
+    return { ok: false, message: prismaInitError };
+  }
+  const hasUrl = Boolean(process.env.DATABASE_URL);
+  return {
+    ok: hasUrl,
+    message: hasUrl ? 'Database URL configured' : 'DATABASE_URL not set'
+  };
 }
-
-export const prisma = prismaClient;
 
 /**
  * MANDATORY CANONICAL FRIENDPAIR HELPER
@@ -62,6 +81,7 @@ export async function generateUniqueFriendCode(seedInput: string): Promise<strin
   let attempts = 0;
   while (attempts < 50) {
     try {
+      const prisma = getPrisma();
       const existing = await prisma.user.findUnique({ where: { friendCode: fullCode } });
       if (!existing) return fullCode;
     } catch (e) {
@@ -89,6 +109,8 @@ export async function syncUserInDB(params: {
   if (!cleanSub) {
     throw new Error('googleSub is required');
   }
+
+  const prisma = getPrisma();
 
   // 1. Check if user exists by unique googleSub
   const existing = await prisma.user.findUnique({
@@ -141,6 +163,7 @@ export async function syncUserInDB(params: {
  * Fetch friends directly from Database
  */
 export async function getFriendsFromDB(userId: string) {
+  const prisma = getPrisma();
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
     return { friends: [], incomingRequests: [], outgoingRequests: [] };
@@ -198,6 +221,7 @@ export async function getFriendsFromDB(userId: string) {
  */
 export async function sendFriendRequestInDB(fromUserId: string, targetFriendCode: string) {
   const cleanCode = targetFriendCode.trim().toUpperCase();
+  const prisma = getPrisma();
   const targetUser = await prisma.user.findUnique({ where: { friendCode: cleanCode } });
 
   if (!targetUser) {
@@ -260,6 +284,7 @@ export async function sendFriendRequestInDB(fromUserId: string, targetFriendCode
  * Accept Friend Request
  */
 export async function acceptFriendRequestInDB(userId: string, requestId: string) {
+  const prisma = getPrisma();
   const friendship = await prisma.friendship.findUnique({
     where: { id: requestId },
     include: { userA: true, userB: true }
@@ -290,6 +315,7 @@ export async function acceptFriendRequestInDB(userId: string, requestId: string)
  * Delete Friendship
  */
 export async function deleteFriendshipInDB(userId: string, friendUserIdOrId: string) {
+  const prisma = getPrisma();
   let friendship = await prisma.friendship.findUnique({ where: { id: friendUserIdOrId } });
 
   if (!friendship) {
