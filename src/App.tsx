@@ -54,6 +54,7 @@ import { TradeModal } from './components/TradeModal';
 import { TransactionsModal } from './components/TransactionsModal';
 import { IncomingTradeModal } from './components/IncomingTradeModal';
 import { ProfileModal } from './components/ProfileModal';
+import { DiceLogo } from './components/DiceLogo';
 import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins } from 'lucide-react';
 
 const SESSION_PLAYER_ID_KEY = 'tp_active_player_id';
@@ -1108,11 +1109,7 @@ export const App: React.FC = () => {
           {/* Top Navbar Header during Game */}
           <header className="h-11 sm:h-12 px-2 sm:px-4 flex items-center justify-between shrink-0 bg-slate-900/90 border-b border-slate-800/80 backdrop-blur-md z-40">
             <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
-              <div className="flex items-center gap-1 sm:gap-1.5 font-['Cinzel',serif] font-black text-xs sm:text-sm tracking-wider shrink-0">
-                <span className="text-sm sm:text-base">🎲</span>
-                <span className="text-white hidden xs:inline">TURKISH</span>
-                <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
-              </div>
+              <DiceLogo size="sm" />
               <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0">
                 <Wifi className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 animate-pulse" />
                 <span className="hidden xs:inline">Canlı</span>

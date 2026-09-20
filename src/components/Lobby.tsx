@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Player, GameSettings, BotDifficulty, UserAccount } from '../types/game';
 import { PLAYER_AVATARS, PLAYER_COLORS } from '../engine/gameEngine';
 import { ProfileModal } from './ProfileModal';
+import { DiceLogo } from './DiceLogo';
 import {
   User,
   Gamepad2,
@@ -187,18 +188,8 @@ export const Lobby: React.FC<LobbyProps> = ({
       {/* 1. Top Navbar Header */}
       <header className="w-full max-w-7xl mx-auto px-3 sm:px-8 py-2.5 sm:py-5 flex items-center justify-between relative z-20">
         
-        {/* Brand Logo: TURKISH PARADISE */}
-        <div className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group shrink-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-sm sm:text-lg shadow-lg shadow-amber-500/30 group-hover:rotate-12 transition-transform duration-300 shrink-0">
-            🎲
-          </div>
-          <div className="flex flex-col text-left">
-            <span className="font-['Cinzel',serif] text-xs sm:text-lg font-black tracking-wider text-white flex items-center gap-1">
-              <span>TURKISH</span>
-              <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
-            </span>
-          </div>
-        </div>
+        {/* Interactive 3D Brand Logo: TURKISH PARADISE */}
+        <DiceLogo size="md" />
 
         {/* Center Nav Links */}
         <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-300">
