@@ -32,10 +32,9 @@ import {
 import {
   sendFriendRequest,
   acceptFriendRequest,
-  declineFriendRequest,
-  removeFriendByCode,
-  subscribeToFriendRequests,
-  getFriendsWithPresence
+  removeFriend,
+  fetchFriendsFromDB,
+  subscribeToFriendRequests
 } from '../services/friendService';
 
 export type ProfileTab = 'stats' | 'friends' | 'requests' | 'add';
@@ -68,25 +67,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [copiedInviteCode, setCopiedInviteCode] = useState<string | null>(null);
   const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
-  const [friendsList, setFriendsList] = useState<FriendUser[]>(() => getFriendsWithPresence(userAccount.uid));
+  const [friendsList, setFriendsList] = useState<FriendUser[]>([]);
 
-  // Subscribe to Real-Time Incoming Friend Requests & Presence (Cross-device sync)
+  // Subscribe to Real-Time Incoming Friend Requests & Presence (Database Backend API)
   useEffect(() => {
     if (!userAccount.uid) return;
 
-    const unsubscribe = subscribeToFriendRequests(userAccount.uid, (requests) => {
-      setIncomingRequests(requests);
-    });
-
-    const refreshFriends = () => {
-      setFriendsList(getFriendsWithPresence(userAccount.uid));
+    const loadDbFriends = async () => {
+      const { friends, pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
+      setFriendsList(friends);
+      setIncomingRequests(pendingRequests);
     };
 
-    refreshFriends();
-    const interval = setInterval(refreshFriends, 2500);
+    loadDbFriends();
+    const interval = setInterval(loadDbFriends, 3000);
 
     return () => {
-      unsubscribe();
       clearInterval(interval);
     };
   }, [userAccount.uid]);
@@ -133,6 +129,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       if (res.success) {
         setStatusMessage({ text: res.message, type: 'success' });
         setTargetCode('');
+        const { friends, pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
+        setFriendsList(friends);
+        setIncomingRequests(pendingRequests);
       } else {
         setStatusMessage({ text: res.message, type: 'error' });
       }
@@ -146,15 +145,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   // Accept incoming friend request
   const handleAcceptRequest = async (req: FriendRequest) => {
     try {
-      const res = await acceptFriendRequest(userAccount, req);
+      const res = await acceptFriendRequest(userAccount.uid, req.id);
       if (res.success) {
-        setFriendsList(res.friends);
-        setIncomingRequests((prev) => prev.filter((r) => r.id !== req.id));
-        if (onUpdateUserAccount) {
-          onUpdateUserAccount({ ...userAccount, friends: res.friends });
-        }
+        const { friends, pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
+        setFriendsList(friends);
+        setIncomingRequests(pendingRequests);
         setStatusMessage({ text: `🎉 "${req.fromDisplayName}" ile artık arkadaşsınız!`, type: 'success' });
         setTimeout(() => setStatusMessage(null), 3000);
+      } else {
+        setStatusMessage({ text: res.message || 'İstek kabul edilemedi.', type: 'error' });
       }
     } catch (e) {
       setStatusMessage({ text: 'İstek kabul edilemedi.', type: 'error' });
@@ -164,21 +163,28 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   // Decline incoming friend request
   const handleDeclineRequest = async (reqId: string) => {
     try {
-      const remaining = await declineFriendRequest(userAccount.uid, reqId);
-      setIncomingRequests(remaining);
+      await removeFriend(userAccount.uid, reqId);
+      const { pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
+      setIncomingRequests(pendingRequests);
       setStatusMessage({ text: 'Arkadaşlık isteği reddedildi.', type: 'error' });
       setTimeout(() => setStatusMessage(null), 2500);
     } catch (e) {}
   };
 
   // Remove friend
-  const handleRemoveFriend = (friendCode: string) => {
-    const updated = removeFriendByCode(userAccount.uid, friendCode);
-    setFriendsList(updated);
-    if (onUpdateUserAccount) {
-      onUpdateUserAccount({ ...userAccount, friends: updated });
+  const handleRemoveFriend = async (friendUid: string) => {
+    try {
+      const res = await removeFriend(userAccount.uid, friendUid);
+      if (res.success) {
+        const { friends } = await fetchFriendsFromDB(userAccount.uid);
+        setFriendsList(friends);
+        setStatusMessage({ text: 'Arkadaş listenizden çıkarıldı.', type: 'success' });
+      } else {
+        setStatusMessage({ text: res.message || 'Arkadaş çıkarılamadı.', type: 'error' });
+      }
+    } catch (e) {
+      setStatusMessage({ text: 'Arkadaş çıkarılamadı.', type: 'error' });
     }
-    setStatusMessage({ text: 'Arkadaş listenizden çıkarıldı.', type: 'success' });
     setTimeout(() => setStatusMessage(null), 2500);
   };
 

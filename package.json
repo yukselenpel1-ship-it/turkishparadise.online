@@ -10,10 +10,13 @@
     "start": "tsx src/server/server.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
+    "dotenv": "^18.0.1",
     "express": "^4.19.2",
     "firebase": "^12.19.0",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.395.0",
     "mqtt": "^5.16.0",
     "peerjs": "^1.5.5",
@@ -21,17 +24,20 @@
     "react-dom": "^18.3.1",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
-    "tailwind-merge": "^2.3.0"
+    "tailwind-merge": "^2.3.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.8",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38",
+    "prisma": "^6.19.3",
     "tailwindcss": "^3.4.4",
     "tsx": "^4.15.6",
     "typescript": "^5.4.5",

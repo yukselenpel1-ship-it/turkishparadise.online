@@ -34,7 +34,8 @@ import {
   syncRoomState,
   subscribeToRoom,
   recordGameMatch,
-  recordGameWin
+  recordGameWin,
+  getPersistentGuestId
 } from './services/firebase';
 import { syncManager } from './services/multiplayerSync';
 import {
@@ -283,6 +284,19 @@ export const App: React.FC = () => {
     }
   }, [userAccount, gameState.roomId, gameState.settings?.roomCode, gameState.phase]);
 
+  // 3.8 Window / Tab close listener to broadcast LEAVE_NOTICE to peers
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendLeaveNotice(gameState.roomId, myPlayerId);
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [gameState.roomId, myPlayerId]);
+
   // 4. Real-time Room State Synchronization & Auto Session Recovery on F5 Reload
   useEffect(() => {
     if (!gameState.roomId) return;
@@ -373,8 +387,108 @@ export const App: React.FC = () => {
       () => {
         // Reply with current state when a peer requests sync
         setGameState((prev) => {
-          if (prev.roomId && prev.players.length > 0 && prev.phase === 'PLAYING') {
+          if (prev.roomId && prev.players.length > 0) {
             syncRoomState(prev.roomId, prev);
+          }
+          return prev;
+        });
+      },
+      (leavingPlayerId) => {
+        // Handle player leaving/disconnecting
+        setGameState((prev) => {
+          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
+          const wasHostLeaving = prev.players[0]?.id === leavingPlayerId;
+
+          if (wasHostLeaving) {
+            // Host left! Perform Host Migration to next connected human player
+            const remainingHumans = prev.players.filter((p) => p.id !== leavingPlayerId && !p.isBot);
+            const nextHost = remainingHumans[0];
+
+            if (!nextHost) {
+              // No human players remaining
+              return prev;
+            }
+
+            const updatedPlayers = prev.players
+              .filter((p) => prev.phase === 'LOBBY' ? p.id !== leavingPlayerId : true)
+              .map((p) => ({
+                ...p,
+                isAfk: p.id === leavingPlayerId ? true : p.isAfk,
+                isHost: p.id === nextHost.id
+              }));
+
+            const leavingName = prev.players.find(p => p.id === leavingPlayerId)?.name || 'Kurucu';
+            const updated = { ...prev, players: updatedPlayers };
+            addLog(updated, `👑 Oda Kurucusu (${leavingName}) ayrıldı. Yeni Kurucu: ${nextHost.name}!`, 'warning');
+
+            if (nextHost.id === myPlayerId) {
+              syncManager.sendHostMigrated(prev.roomId, nextHost.id);
+              syncRoomState(prev.roomId, updated);
+            }
+            return updated;
+          }
+
+          if (!isMeHost) return prev;
+
+          const leavingPlayer = prev.players.find((p) => p.id === leavingPlayerId);
+          if (!leavingPlayer) return prev;
+
+          let updated: GameState;
+          if (prev.phase === 'LOBBY') {
+            updated = {
+              ...prev,
+              players: prev.players.filter((p) => p.id !== leavingPlayerId)
+            };
+            addLog(updated, `🚪 ${leavingPlayer.name} odadan ayrıldı.`, 'info');
+          } else {
+            const updatedPlayers = prev.players.map((p) =>
+              p.id === leavingPlayerId ? { ...p, isAfk: true } : p
+            );
+            updated = { ...prev, players: updatedPlayers };
+            addLog(updated, `🚪 ${leavingPlayer.name} oyundan ayrıldı (AFK moduna geçti).`, 'warning');
+          }
+
+          syncRoomState(prev.roomId, updated);
+          return updated;
+        });
+      },
+      (newHostPlayerId) => {
+        // Handle host migrated event
+        setGameState((prev) => {
+          const updatedPlayers = prev.players.map((p) => ({
+            ...p,
+            isHost: p.id === newHostPlayerId
+          }));
+          const newHostName = prev.players.find(p => p.id === newHostPlayerId)?.name || 'Oyuncu';
+          const updated = { ...prev, players: updatedPlayers };
+          addLog(updated, `👑 Oda kuruculuğu ${newHostName} oyuncusuna devredildi.`, 'info');
+          return updated;
+        });
+      },
+      (senderPlayerId, actionType, payload) => {
+        // Handle incoming game action from non-host client
+        setGameState((prev) => {
+          const isMeHost = prev.players.length > 0 && prev.players[0].id === myPlayerId;
+          if (!isMeHost) return prev;
+
+          if (actionType === 'ROLL_DICE') {
+            if (!isMoving && !prev.diceRolled) {
+              setTimeout(() => handleRollDiceAction(), 50);
+            }
+          } else if (actionType === 'BUY_PROPERTY') {
+            if (prev.pendingAction === 'BUY_PROPERTY') handleBuyPropertyAction();
+          } else if (actionType === 'PASS_PROPERTY') {
+            if (prev.pendingAction === 'BUY_PROPERTY') handlePassPropertyAction();
+          } else if (actionType === 'END_TURN') {
+            if (prev.diceRolled && !isMoving) handleEndTurnAction();
+          } else if (actionType === 'PAY_JAIL') {
+            handlePayJailBailAction();
+          } else if (actionType === 'BUILD_HOUSE' && payload?.tileId) {
+            handleBuildHouseAction(payload.tileId);
+          } else if (actionType === 'SELL_HOUSE' && payload?.tileId) {
+            handleSellHouseAction(payload.tileId);
+          } else if (actionType === 'MORTGAGE' && payload?.tileId) {
+            handleToggleMortgageAction(payload.tileId);
           }
           return prev;
         });
@@ -714,7 +828,7 @@ export const App: React.FC = () => {
   // Join Game as Player
   const handleJoin = (name: string, avatar: string, color?: string, isOnline = true, targetRoomCode?: string) => {
     const finalRoom = targetRoomCode || gameState.roomId || gameState.settings.roomCode || 'TR-1001';
-    const newId = userAccount?.uid || `player_${Math.random().toString(36).substring(2, 9)}`;
+    const newId = userAccount?.uid || getPersistentGuestId();
     const startMoney = gameState.settings?.startingMoney || 1500;
     
     // Determine unique color not taken by existing players
@@ -778,13 +892,14 @@ export const App: React.FC = () => {
     });
   };
 
-  // Leave Lobby / Go Back
+  // Leave Lobby / Go Back (Only affects departing player, preserves room for remaining players)
   const handleLeaveLobby = () => {
     if (!myPlayerId) return;
-    updateAndBroadcastGameState((prev) => ({
-      ...prev,
-      players: prev.players.filter((p) => p.id !== myPlayerId)
-    }));
+
+    if (gameState.roomId) {
+      syncManager.sendLeaveNotice(gameState.roomId, myPlayerId);
+    }
+
     try {
       sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
       localStorage.removeItem(SESSION_PLAYER_ID_KEY);
@@ -792,7 +907,9 @@ export const App: React.FC = () => {
       sessionStorage.removeItem(SESSION_GAME_STATE_KEY);
       localStorage.removeItem(SESSION_GAME_STATE_KEY);
     } catch (e) {}
+
     setMyPlayerId(null);
+    setGameState(createInitialState());
   };
 
   // Remove player or bot from room (Host Only)

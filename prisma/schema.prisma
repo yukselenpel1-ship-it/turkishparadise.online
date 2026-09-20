@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  googleSub   String   @unique
+  email       String?
+  displayName String
+  avatarUrl   String?
+  friendCode  String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  friendshipsSent     Friendship[] @relation("FriendshipA")
+  friendshipsReceived Friendship[] @relation("FriendshipB")
+  stats               PlayerStats?
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model Friendship {
+  id        String           @id @default(cuid())
+  userAId   String
+  userBId   String
+  status    FriendshipStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  userA User @relation("FriendshipA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("FriendshipB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+}
+
+model PlayerStats {
+  userId           String   @id
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gamesPlayed      Int      @default(0)
+  gamesWon         Int      @default(0)
+  gamesLost        Int      @default(0)
+  bankruptcies     Int      @default(0)
+  totalMoneyEarned Int      @default(0)
+  updatedAt        DateTime @updatedAt
+}

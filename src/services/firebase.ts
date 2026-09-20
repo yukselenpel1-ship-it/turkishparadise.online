@@ -21,7 +21,7 @@ import {
   DatabaseReference
 } from 'firebase/database';
 import { GameState, Player, UserAccount, UserStats, MatchRecord, ChatMessage } from '../types/game';
-import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry } from './friendService';
+import { getOrGenerateFriendCode, getFriends, saveUserToPublicRegistry, syncUserWithBackend } from './friendService';
 
 // Firebase configuration from environment variables or default placeholder
 const firebaseConfig = {
@@ -100,28 +100,38 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
     ? customName.trim()
     : nameParts.charAt(0).toUpperCase() + nameParts.slice(1);
 
-  // Derive unique ID from email
-  const cleanId = `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
-  const existingStats = getUserStats(cleanId);
-  const friendCode = getOrGenerateFriendCode(cleanId, email);
-  const friends = getFriends(cleanId);
+  // Derive unique Google sub string from email or auth ID
+  const cleanSub = `google_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const existingStats = getUserStats(cleanSub);
 
   const googleAccount: UserAccount = {
-    uid: cleanId,
+    uid: cleanSub,
     displayName: formattedName,
     email: email.includes('@') ? email : `${email}@gmail.com`,
-    photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanId}`,
+    photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanSub}`,
     isAnonymous: false,
     provider: 'google',
-    friendCode,
-    friends,
     stats: existingStats
   };
-  saveUserToPublicRegistry(googleAccount);
-  saveLocalUser(googleAccount);
-  return googleAccount;
+
+  const syncedAccount = await syncUserWithBackend(googleAccount);
+  saveLocalUser(syncedAccount);
+  return syncedAccount;
 }
 
+
+/**
+ * Get or generate persistent Guest UUID for guest players
+ */
+export function getPersistentGuestId(): string {
+  const KEY = 'tp_persistent_guest_id';
+  let guestId = localStorage.getItem(KEY);
+  if (!guestId) {
+    guestId = `guest_uuid_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
+    localStorage.setItem(KEY, guestId);
+  }
+  return guestId;
+}
 
 /**
  * Sign in as Guest (Misafir)
@@ -129,6 +139,7 @@ export async function loginWithGoogle(customEmail?: string, customName?: string)
 export async function loginAsGuest(customName?: string, avatar?: string): Promise<UserAccount> {
   const randomNum = Math.floor(1000 + Math.random() * 9000);
   const guestName = customName && customName.trim() ? customName.trim() : `Misafir_${randomNum}`;
+  const persistentGuestUid = getPersistentGuestId();
 
   if (isFirebaseConfigured && auth) {
     try {
@@ -149,11 +160,11 @@ export async function loginAsGuest(customName?: string, avatar?: string): Promis
   }
 
   const guestAccount: UserAccount = {
-    uid: `guest_${Math.random().toString(36).substring(2, 9)}`,
+    uid: persistentGuestUid,
     displayName: guestName,
     isAnonymous: true,
     provider: 'guest',
-    stats: { gamesWon: 0, gamesLost: 0, gamesPlayed: 0, totalMoneyEarned: 0, history: [] }
+    stats: getUserStats(persistentGuestUid)
   };
   saveLocalUser(guestAccount);
   return guestAccount;
@@ -311,6 +322,9 @@ export function subscribeToRoom(
   onUpdate: (state: GameState) => void,
   onJoinRequest?: (player: Player) => void,
   onRequestSync?: () => void,
+  onPlayerLeft?: (playerId: string) => void,
+  onHostMigrated?: (newHostPlayerId: string) => void,
+  onGameAction?: (playerId: string, actionType: string, payload?: any) => void,
   isHost = false
 ): () => void {
   // 1. Global Sync Manager Subscription (WebRTC + MQTT + BroadcastChannel)
@@ -323,6 +337,12 @@ export function subscribeToRoom(
         onJoinRequest(msg.player);
       } else if (msg.type === 'REQUEST_SYNC' && onRequestSync) {
         onRequestSync();
+      } else if (msg.type === 'LEAVE_NOTICE' && msg.playerId && onPlayerLeft) {
+        onPlayerLeft(msg.playerId);
+      } else if (msg.type === 'HOST_MIGRATED' && msg.newHostPlayerId && onHostMigrated) {
+        onHostMigrated(msg.newHostPlayerId);
+      } else if (msg.type === 'GAME_ACTION' && msg.playerId && msg.actionType && onGameAction) {
+        onGameAction(msg.playerId, msg.actionType, msg.payload);
       }
     },
     isHost

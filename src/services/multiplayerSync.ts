@@ -15,9 +15,11 @@ export type SyncMessage =
   | { type: 'STATE_SYNC'; senderId: string; roomId: string; version: number; state: GameState }
   | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; player: Player }
   | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; playerId: string }
-  | { type: 'REQUEST_SYNC'; senderId: string; roomId: string }
+  | { type: 'HOST_MIGRATED'; senderId: string; roomId: string; newHostPlayerId: string }
+  | { type: 'REQUEST_SYNC'; senderId: string; roomId: string; playerId?: string }
   | { type: 'CHAT_MESSAGE'; senderId: string; roomId: string; message: ChatMessage }
-  | { type: 'TRADE_OFFER'; senderId: string; roomId: string; offer: TradeOffer };
+  | { type: 'TRADE_OFFER'; senderId: string; roomId: string; offer: TradeOffer }
+  | { type: 'GAME_ACTION'; senderId: string; roomId: string; playerId: string; actionType: string; payload?: any };
 
 export type MessageCallback = (msg: SyncMessage) => void;
 
@@ -219,6 +221,47 @@ class MultiplayerSyncManager {
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       player
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Send leave notice when a player leaves/disconnects
+   */
+  public sendLeaveNotice(roomId: string, playerId: string): void {
+    const msg: SyncMessage = {
+      type: 'LEAVE_NOTICE',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      playerId
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Send host migration notification
+   */
+  public sendHostMigrated(roomId: string, newHostPlayerId: string): void {
+    const msg: SyncMessage = {
+      type: 'HOST_MIGRATED',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      newHostPlayerId
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Send authoritative game action request to host
+   */
+  public sendGameAction(roomId: string, playerId: string, actionType: string, payload?: any): void {
+    const msg: SyncMessage = {
+      type: 'GAME_ACTION',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      playerId,
+      actionType,
+      payload
     };
     this.send(msg);
   }

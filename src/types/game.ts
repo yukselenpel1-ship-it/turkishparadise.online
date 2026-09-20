@@ -60,6 +60,7 @@ export interface ChatMessage {
 
 export interface Player {
   id: string;
+  connectionId?: string;
   name: string;
   color: string;
   avatar: string;
@@ -73,6 +74,7 @@ export interface Player {
   lapsCompleted: number;
   firstLapPurchases: number;
   isHost?: boolean;
+  isOnline?: boolean;
   isAfk?: boolean;
 }
 
