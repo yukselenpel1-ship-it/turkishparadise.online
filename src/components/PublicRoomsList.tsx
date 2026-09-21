@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PublicRoomInfo } from '../types/game';
-import { subscribeToPublicRooms } from '../services/publicRoomsService';
+import { subscribeToPublicRooms, requestPublicRoomsRefresh } from '../services/publicRoomsService';
 import { useLanguage } from '../i18n/LanguageContext';
 import {
   Globe,
@@ -41,6 +41,7 @@ export const PublicRoomsList: React.FC<PublicRoomsListProps> = ({
 
   const handleRefresh = () => {
     setIsRefreshing(true);
+    requestPublicRoomsRefresh();
     setTimeout(() => setIsRefreshing(false), 500);
   };
 

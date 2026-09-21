@@ -48,7 +48,7 @@ import {
 } from './services/googleAuth';
 import { soundManager } from './services/soundEffects';
 import { updateUserPresence, subscribeToFriendRequests, subscribeToFriendsAndRequests, syncUserWithBackend } from './services/friendService';
-import { publishPublicRoom, unpublishPublicRoom } from './services/publicRoomsService';
+import { publishPublicRoom, unpublishPublicRoom, setActiveHostRoomProvider } from './services/publicRoomsService';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -292,32 +292,59 @@ export const App: React.FC = () => {
     }
   }, [gameState]);
 
-  // 2.5 Auto-sync public room directory if host and room is marked public
+  // 2.5 Auto-sync public room directory & register active host room provider
   useEffect(() => {
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const roomId = gameState.roomId || gameState.settings?.roomCode;
-    if (!isMeHost || !roomId || gameState.players.length === 0) {
-      return;
-    }
+    const isPublic = gameState.settings?.isPublic !== false;
 
-    if (gameState.settings?.isPublic) {
-      const hostPlayer = gameState.players.find(p => p.isHost) || gameState.players[0];
-      publishPublicRoom({
-        roomId,
-        hostName: hostPlayer?.name || 'Kurucu',
-        hostAvatar: hostPlayer?.avatar || '👑',
-        playerCount: gameState.players.length,
-        maxPlayers: 6,
-        botCount: gameState.players.filter(p => p.isBot).length,
-        phase: gameState.phase,
-        startingMoney: gameState.settings?.startingMoney || 1500,
-        isPublic: true,
-        updatedAt: Date.now()
-      });
-    } else if (gameState.phase === 'ENDED') {
-      unpublishPublicRoom(roomId);
+    if (isMeHost && roomId && gameState.players.length > 0 && isPublic && gameState.phase !== 'ENDED') {
+      const getRoomInfo = () => {
+        const hostPlayer = gameState.players.find(p => p.isHost) || gameState.players[0];
+        return {
+          roomId,
+          hostName: hostPlayer?.name || userAccount?.displayName || 'Kurucu',
+          hostAvatar: hostPlayer?.avatar || '👑',
+          playerCount: gameState.players.length,
+          maxPlayers: 6,
+          botCount: gameState.players.filter(p => p.isBot).length,
+          phase: gameState.phase,
+          startingMoney: gameState.settings?.startingMoney || 1500,
+          isPublic: true,
+          updatedAt: Date.now()
+        };
+      };
+
+      setActiveHostRoomProvider(getRoomInfo);
+
+      // Publish initial state immediately
+      publishPublicRoom(getRoomInfo());
+
+      // Periodic 3.5s heartbeat while host is in room
+      const heartbeatInterval = setInterval(() => {
+        publishPublicRoom(getRoomInfo());
+      }, 3500);
+
+      return () => {
+        clearInterval(heartbeatInterval);
+        setActiveHostRoomProvider(null);
+      };
+    } else {
+      setActiveHostRoomProvider(null);
+      if (gameState.phase === 'ENDED' && roomId) {
+        unpublishPublicRoom(roomId);
+      }
     }
-  }, [gameState.phase, gameState.players.length, gameState.settings?.isPublic, gameState.roomId, gameState.settings?.roomCode, myPlayerId]);
+  }, [
+    gameState.phase,
+    gameState.players.length,
+    gameState.settings?.isPublic,
+    gameState.settings?.startingMoney,
+    gameState.roomId,
+    gameState.settings?.roomCode,
+    myPlayerId,
+    userAccount?.displayName
+  ]);
 
   // 3. Keep myPlayerId persisted in sessionStorage/localStorage
   useEffect(() => {

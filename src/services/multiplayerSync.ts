@@ -39,6 +39,7 @@ class MultiplayerSyncManager {
 
   private subscribedTopics: Set<string> = new Set();
   private topicListeners: Map<string, Set<(payload: any, topic: string) => void>> = new Map();
+  private pendingPublishes: { topic: string; payload: string; retain: boolean; qos: 0 | 1 }[] = [];
 
   constructor() {
     // 1. Setup local BroadcastChannel for multi-tab on same machine
@@ -58,6 +59,9 @@ class MultiplayerSyncManager {
     } catch (e) {
       console.warn('[Sync] BroadcastChannel unsupported:', e);
     }
+
+    // Auto-connect to MQTT global cloud relay immediately
+    this.ensureMqttConnection();
   }
 
   /**
@@ -119,6 +123,40 @@ class MultiplayerSyncManager {
       } catch (err) {
         console.warn('[MQTT] Retained publish exception:', err);
       }
+    } else {
+      this.pendingPublishes.push({ topic: cleanTopic, payload: payloadStr, retain: true, qos: 1 });
+    }
+  }
+
+  /**
+   * Broadcast a message to a global topic across all devices (non-retained or retained)
+   */
+  public broadcastGlobal(topic: string, data: any, retain = false): void {
+    const cleanTopic = topic.trim();
+    const payloadStr = typeof data === 'string' ? data : JSON.stringify(data);
+
+    // 1. Local BroadcastChannel
+    if (this.localChannel) {
+      try {
+        this.localChannel.postMessage({ type: 'TOPIC_PUBLISH', topic: cleanTopic, payload: data });
+      } catch (e) {}
+    }
+
+    // 2. Local memory dispatch
+    this.dispatchTopicMessage(cleanTopic, data);
+
+    // 3. Global MQTT Broker
+    this.ensureMqttConnection();
+    if (this.mqttClient && this.isMqttConnected) {
+      try {
+        this.mqttClient.publish(cleanTopic, payloadStr, { retain, qos: 1 }, (err) => {
+          if (err) console.warn(`[MQTT] Global broadcast error on ${cleanTopic}:`, err);
+        });
+      } catch (err) {
+        console.warn('[MQTT] Global broadcast exception:', err);
+      }
+    } else {
+      this.pendingPublishes.push({ topic: cleanTopic, payload: payloadStr, retain, qos: 1 });
     }
   }
 
@@ -450,6 +488,8 @@ class MultiplayerSyncManager {
       } catch (err) {
         console.warn('[Sync] MQTT Publish error:', err);
       }
+    } else {
+      this.pendingPublishes.push({ topic, payload, retain: false, qos: 1 });
     }
   }
 
@@ -481,13 +521,25 @@ class MultiplayerSyncManager {
           const topic = `turkishparadise/rooms/${this.currentRoomId.toLowerCase()}`;
           this.mqttClient?.subscribe(topic, { qos: 1 });
         }
-        // Always subscribe to global friend channel
+        // Always subscribe to global channels
         this.mqttClient?.subscribe('turkishparadise/global/friends', { qos: 1 });
+        this.mqttClient?.subscribe('turkishparadise/global/public_rooms', { qos: 1 });
 
         // Re-subscribe to all dynamic topics
         this.subscribedTopics.forEach((tp) => {
           this.mqttClient?.subscribe(tp, { qos: 1 });
         });
+
+        // Flush pending queued messages
+        if (this.pendingPublishes.length > 0) {
+          const toSend = [...this.pendingPublishes];
+          this.pendingPublishes = [];
+          toSend.forEach((item) => {
+            try {
+              this.mqttClient?.publish(item.topic, item.payload, { retain: item.retain, qos: item.qos });
+            } catch (e) {}
+          });
+        }
       });
 
       this.mqttClient.on('message', (topic, message) => {

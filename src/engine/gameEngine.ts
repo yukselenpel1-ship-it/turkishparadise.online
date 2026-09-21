@@ -39,7 +39,8 @@ export function createInitialState(settings?: Partial<GameSettings>): GameState 
     passGoSalary: settings?.passGoSalary ?? 200,
     firstLapBuyLimit: settings?.firstLapBuyLimit ?? 0, // 0 = unlimited, 1..4
     botDifficulty: settings?.botDifficulty ?? 'medium',
-    roomCode: settings?.roomCode ?? `TR-${Math.floor(1000 + Math.random() * 9000)}`
+    roomCode: settings?.roomCode ?? `TR-${Math.floor(1000 + Math.random() * 9000)}`,
+    isPublic: settings?.isPublic ?? true
   };
 
   return {
