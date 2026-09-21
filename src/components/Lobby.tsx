@@ -229,7 +229,7 @@ export const Lobby: React.FC<LobbyProps> = ({
       </div>
 
       {/* 1. Top Navbar Header */}
-      <header className="w-full max-w-7xl mx-auto px-3 sm:px-8 py-2.5 sm:py-5 flex items-center justify-between relative z-20">
+      <header className="w-full max-w-7xl mx-auto px-3 sm:px-8 py-2.5 sm:py-5 flex items-center justify-between relative z-50">
         
         {/* Interactive 3D Brand Logo: TURKISH PARADISE */}
         <DiceLogo size="md" />
@@ -400,7 +400,7 @@ export const Lobby: React.FC<LobbyProps> = ({
       </header>
 
       {/* 2. Main Content Area */}
-      <main className={`w-full max-w-7xl mx-auto px-3 sm:px-8 py-2 sm:py-6 flex-1 relative z-20 ${
+      <main className={`w-full max-w-7xl mx-auto px-3 sm:px-8 py-2 sm:py-6 flex-1 relative z-10 ${
         hasJoined
           ? 'flex flex-col items-center justify-center my-auto'
           : 'grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center'

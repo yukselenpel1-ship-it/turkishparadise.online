@@ -147,13 +147,13 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ compact = fa
       {isOpen && (
         <>
           <div
-            className="fixed inset-0 z-[9998]"
+            className="fixed inset-0 z-[99998]"
             onClick={() => setIsOpen(false)}
           />
           <div
             className={`absolute ${
-              align === 'left' ? 'left-0' : 'right-0 sm:-right-2'
-            } top-full mt-2 w-36 sm:w-40 rounded-2xl bg-[#0b1328] border-2 border-amber-500/50 shadow-[0_15px_50px_rgba(0,0,0,0.95)] z-[99999] p-1.5 backdrop-blur-xl animate-fade-in divide-y divide-slate-800/80`}
+              align === 'left' ? 'left-0' : 'right-0'
+            } top-full mt-2 w-44 rounded-2xl bg-[#070e1f] border-2 border-amber-400 shadow-[0_20px_60px_rgba(0,0,0,1)] z-[99999] p-2 animate-fade-in divide-y divide-slate-850 select-none ring-2 ring-amber-500/20`}
           >
             <button
               type="button"
@@ -161,15 +161,15 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ compact = fa
                 setLanguage('tr');
                 setIsOpen(false);
               }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer mb-1 ${
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer mb-1 ${
                 language === 'tr'
-                  ? 'bg-amber-500/25 text-amber-300 font-black border border-amber-500/40'
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white'
+                  ? 'bg-amber-500/25 text-amber-300 font-black border border-amber-500/50 shadow-sm'
+                  : 'text-slate-200 hover:bg-slate-800/90 hover:text-white'
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <span className="text-base shrink-0">🇹🇷</span>
-                <span className="tracking-wide">Türkçe</span>
+                <span className="text-lg shrink-0">🇹🇷</span>
+                <span className="tracking-wide text-sm font-bold">Türkçe</span>
               </div>
               {language === 'tr' && <Check className="w-4 h-4 text-amber-400 shrink-0" />}
             </button>
@@ -180,15 +180,15 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ compact = fa
                 setLanguage('en');
                 setIsOpen(false);
               }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer mt-1 ${
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer mt-1 ${
                 language === 'en'
-                  ? 'bg-amber-500/25 text-amber-300 font-black border border-amber-500/40'
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white'
+                  ? 'bg-amber-500/25 text-amber-300 font-black border border-amber-500/50 shadow-sm'
+                  : 'text-slate-200 hover:bg-slate-800/90 hover:text-white'
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <span className="text-base shrink-0">🇬🇧</span>
-                <span className="tracking-wide">English</span>
+                <span className="text-lg shrink-0">🇬🇧</span>
+                <span className="tracking-wide text-sm font-bold">English</span>
               </div>
               {language === 'en' && <Check className="w-4 h-4 text-amber-400 shrink-0" />}
             </button>

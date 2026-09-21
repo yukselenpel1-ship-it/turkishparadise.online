@@ -1390,7 +1390,7 @@ export const App: React.FC = () => {
       ) : (
         <>
           {/* Top Navbar Header during Game */}
-          <header className="h-11 sm:h-12 px-1.5 sm:px-4 flex items-center justify-between shrink-0 bg-[#070c18]/95 border-b border-amber-500/30 backdrop-blur-md z-40 shadow-lg">
+          <header className="h-11 sm:h-12 px-1.5 sm:px-4 flex items-center justify-between shrink-0 bg-[#070c18]/95 border-b border-amber-500/30 backdrop-blur-md z-50 shadow-lg">
             <div className="flex items-center gap-1 sm:gap-2 min-w-0">
               <DiceLogo size="sm" />
               <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0">
