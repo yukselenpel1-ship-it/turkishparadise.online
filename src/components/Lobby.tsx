@@ -6,6 +6,8 @@ import { ProfileModal, ProfileTab } from './ProfileModal';
 import { subscribeToFriendRequests } from '../services/friendService';
 import { DiceLogo } from './DiceLogo';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
+import { PublicRoomsList } from './PublicRoomsList';
+import { subscribeToPublicRooms, publishPublicRoom } from '../services/publicRoomsService';
 import {
   User,
   Gamepad2,
@@ -78,9 +80,8 @@ export const Lobby: React.FC<LobbyProps> = ({
   onLeaveLobby,
 }) => {
   const { language, t, formatMoney } = useLanguage();
-  const [mode, setMode] = useState<'main' | 'guest' | 'friend'>('main');
+  const [mode, setMode] = useState<'main' | 'rooms' | 'friend'>('main');
   const [name, setName] = useState('');
-  const [guestName, setGuestName] = useState(() => `Misafir_${Math.floor(1000 + Math.random() * 9000)}`);
   const [roomCode, setRoomCode] = useState(settings.roomCode || 'TR-1001');
   const [selectedAvatar, setSelectedAvatar] = useState(PLAYER_AVATARS[0]);
   const [selectedColor, setSelectedColor] = useState(PLAYER_COLORS[0]);
@@ -94,6 +95,35 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
   const [isInviteLink, setIsInviteLink] = useState(false);
+  const [liveRoomsCount, setLiveRoomsCount] = useState<number>(0);
+  const [isRoomPublished, setIsRoomPublished] = useState<boolean>(false);
+
+  // Subscribe to live public rooms list for badge count
+  useEffect(() => {
+    const unsubscribe = subscribeToPublicRooms((activeRooms) => {
+      setLiveRoomsCount(activeRooms.length);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handlePublishPublicRoom = () => {
+    const hostPlayer = players.find((p) => p.isHost) || players[0];
+    const roomInfo = {
+      roomId: settings.roomCode || roomCode,
+      hostName: hostPlayer?.name || 'Kurucu',
+      hostAvatar: hostPlayer?.avatar || '👑',
+      playerCount: players.length,
+      maxPlayers: 6,
+      botCount: players.filter((p) => p.isBot).length,
+      phase: 'LOBBY' as const,
+      startingMoney: settings.startingMoney || 1500,
+      isPublic: true,
+      updatedAt: Date.now(),
+    };
+    publishPublicRoom(roomInfo);
+    setIsRoomPublished(true);
+    setTimeout(() => setIsRoomPublished(false), 5000);
+  };
 
   // Subscribe to real-time incoming friend requests for header badge
   useEffect(() => {
@@ -184,22 +214,10 @@ export const Lobby: React.FC<LobbyProps> = ({
     onJoin(finalName, selectedAvatar, selectedColor, true, roomCode);
   };
 
-  const handleGuestSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const finalName = guestName.trim() || `Misafir_${Math.floor(1000 + Math.random() * 9000)}`;
-    onJoin(finalName, selectedAvatar, selectedColor, true, roomCode);
-  };
-
   const handleFriendSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
     onJoin(finalName, selectedAvatar, selectedColor, true, roomCode.trim().toUpperCase());
-  };
-
-  const randomizeGuestName = () => {
-    setGuestName(`Misafir_${Math.floor(1000 + Math.random() * 9000)}`);
-    setSelectedAvatar(PLAYER_AVATARS[Math.floor(Math.random() * PLAYER_AVATARS.length)]);
-    setSelectedColor(PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)]);
   };
 
   const copyRoomCode = () => {
@@ -563,6 +581,21 @@ export const Lobby: React.FC<LobbyProps> = ({
                       <span>{copiedLink ? t('copied') : t('copyRoomLink')}</span>
                     </button>
                   </div>
+
+                  {isHost && (
+                    <button
+                      type="button"
+                      onClick={handlePublishPublicRoom}
+                      className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer mt-1 ${
+                        isRoomPublished
+                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                          : 'bg-slate-900/90 hover:bg-slate-850 border-amber-500/30 text-amber-300 hover:text-white'
+                      }`}
+                    >
+                      <Globe className={`w-3.5 h-3.5 ${isRoomPublished ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
+                      <span>{isRoomPublished ? '✅ ' + t('roomPublishedNotice') : t('shareRoomPublicly')}</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* 2. Host Game Rules & Options (Kurucu Oyun Ayarları) */}
@@ -767,147 +800,17 @@ export const Lobby: React.FC<LobbyProps> = ({
                 </div>
 
               </div>
-            ) : mode === 'guest' ? (
-              /* Guest Play Mode Form */
-              <form onSubmit={handleGuestSubmit} className="space-y-4 animate-fade-in">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <button
-                    type="button"
-                    onClick={() => setMode('main')}
-                    className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-white transition cursor-pointer"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>{t('backToMenu')}</span>
-                  </button>
-                  <span className="text-xs font-black text-amber-400 uppercase tracking-wide flex items-center gap-1">
-                    <Gamepad2 className="w-4 h-4" /> {t('guestLoginTitle')}
-                  </span>
-                </div>
-
-                {/* Guest Name Input */}
-                <div className="space-y-1.5 text-left">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300">
-                      {t('guestNameLabel')}
-                    </label>
-                    <button
-                      type="button"
-                      onClick={randomizeGuestName}
-                      className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-bold cursor-pointer"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>{language === 'en' ? 'Randomize' : 'Rastgele Seç'}</span>
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                      <User className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="text"
-                      value={guestName}
-                      onChange={(e) => setGuestName(e.target.value)}
-                      placeholder="Misafir_XXXX"
-                      maxLength={15}
-                      required
-                      className="w-full bg-[#070b14] border border-slate-800 focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-2.5 text-sm font-semibold placeholder-slate-600 outline-none transition"
-                    />
-                  </div>
-                </div>
-
-                {/* Token / Avatar Picker */}
-                <div className="space-y-1.5 text-left">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300">
-                      {t('selectAvatarLabel')}
-                    </label>
-                    <span className="text-[10px] text-slate-400 font-semibold">
-                      {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} {language === 'en' ? 'Available' : 'Müsait'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-6 gap-2">
-                    {PLAYER_AVATARS.map((avatar) => {
-                      const isTaken = takenAvatars.includes(avatar);
-                      const isSelected = selectedAvatar === avatar;
-
-                      return (
-                        <button
-                          key={avatar}
-                          type="button"
-                          disabled={isTaken}
-                          onClick={() => setSelectedAvatar(avatar)}
-                          className={`text-xl p-2 rounded-xl border text-center transition transform relative ${
-                            isTaken
-                              ? 'opacity-25 cursor-not-allowed grayscale border-slate-700 bg-slate-900/40'
-                              : isSelected
-                              ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-lg cursor-pointer active:scale-95'
-                              : 'bg-[#070b14] border-slate-800 hover:border-slate-700 cursor-pointer active:scale-90'
-                          }`}
-                          title={isTaken ? t('colorTaken') : undefined}
-                        >
-                          <span>{avatar}</span>
-                          {isTaken && (
-                            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] font-black text-white/80 bg-slate-950/90 px-1 rounded border border-slate-700">
-                              {t('colorTaken')}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Color Picker (6 Colors) */}
-                <div className="space-y-1.5 text-left">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
-                      <Palette className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{t('selectColorLabel')}</span>
-                    </label>
-                    <span className="text-[10px] text-slate-400 font-semibold">
-                      {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} {language === 'en' ? 'Available' : 'Müsait'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-6 gap-2">
-                    {PLAYER_COLORS.map((color) => {
-                      const isTaken = takenColors.includes(color);
-                      const isSelected = selectedColor === color;
-
-                      return (
-                        <button
-                          key={color}
-                          type="button"
-                          disabled={isTaken}
-                          onClick={() => setSelectedColor(color)}
-                          className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform relative ${
-                            isTaken
-                              ? 'opacity-25 cursor-not-allowed grayscale border-slate-700'
-                              : isSelected
-                              ? 'ring-2 ring-white scale-105 border-white shadow-lg cursor-pointer'
-                              : 'border-transparent opacity-80 hover:opacity-100 cursor-pointer active:scale-90'
-                          }`}
-                          style={{
-                            backgroundColor: color,
-                            boxShadow: isSelected && !isTaken ? `0 0 10px ${color}` : undefined
-                          }}
-                          title={isTaken ? t('colorTaken') : undefined}
-                        >
-                          {isSelected && !isTaken && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                          {isTaken && <span className="text-[8px] font-black text-white/90">{t('colorTaken')}</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-xl shadow-amber-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Gamepad2 className="w-5 h-5" />
-                  <span>{t('guestPlayBtn')}</span>
-                </button>
-              </form>
+            ) : mode === 'rooms' ? (
+              /* Public / Live Rooms Directory Mode */
+              <PublicRoomsList
+                onJoinRoom={(targetRoomCode) => {
+                  const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
+                  setRoomCode(targetRoomCode);
+                  onJoin(finalName, selectedAvatar, selectedColor, true, targetRoomCode);
+                }}
+                onBackToMain={() => setMode('main')}
+                onCreateRoom={() => setMode('main')}
+              />
             ) : mode === 'friend' ? (
               /* Join Friend Room Mode Form */
               <form onSubmit={handleFriendSubmit} className="space-y-4 animate-fade-in">
@@ -1230,11 +1133,16 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="grid grid-cols-2 gap-2.5 pt-1">
                     <button
                       type="button"
-                      onClick={() => setMode('guest')}
-                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition text-xs font-bold cursor-pointer"
+                      onClick={() => setMode('rooms')}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500/15 to-teal-500/10 hover:from-emerald-500/25 hover:to-teal-500/20 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-300 hover:text-white transition text-xs font-bold cursor-pointer relative"
                     >
-                      <Gamepad2 className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{t('playAsGuest')}</span>
+                      <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{t('publicRoomsBtn')}</span>
+                      {liveRoomsCount > 0 && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-black bg-emerald-500 text-slate-950 rounded-full">
+                          {liveRoomsCount}
+                        </span>
+                      )}
                     </button>
 
                     <button

@@ -48,6 +48,7 @@ import {
 } from './services/googleAuth';
 import { soundManager } from './services/soundEffects';
 import { updateUserPresence, subscribeToFriendRequests, subscribeToFriendsAndRequests, syncUserWithBackend } from './services/friendService';
+import { publishPublicRoom, unpublishPublicRoom } from './services/publicRoomsService';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -290,6 +291,33 @@ export const App: React.FC = () => {
       } catch (e) {}
     }
   }, [gameState]);
+
+  // 2.5 Auto-sync public room directory if host and room is marked public
+  useEffect(() => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const roomId = gameState.roomId || gameState.settings?.roomCode;
+    if (!isMeHost || !roomId || gameState.players.length === 0) {
+      return;
+    }
+
+    if (gameState.settings?.isPublic) {
+      const hostPlayer = gameState.players.find(p => p.isHost) || gameState.players[0];
+      publishPublicRoom({
+        roomId,
+        hostName: hostPlayer?.name || 'Kurucu',
+        hostAvatar: hostPlayer?.avatar || '👑',
+        playerCount: gameState.players.length,
+        maxPlayers: 6,
+        botCount: gameState.players.filter(p => p.isBot).length,
+        phase: gameState.phase,
+        startingMoney: gameState.settings?.startingMoney || 1500,
+        isPublic: true,
+        updatedAt: Date.now()
+      });
+    } else if (gameState.phase === 'ENDED') {
+      unpublishPublicRoom(roomId);
+    }
+  }, [gameState.phase, gameState.players.length, gameState.settings?.isPublic, gameState.roomId, gameState.settings?.roomCode, myPlayerId]);
 
   // 3. Keep myPlayerId persisted in sessionStorage/localStorage
   useEffect(() => {
@@ -1006,6 +1034,9 @@ export const App: React.FC = () => {
 
     if (gameState.roomId) {
       syncManager.sendLeaveNotice(gameState.roomId, myPlayerId);
+      if (isPlayerHost(gameState, myPlayerId)) {
+        unpublishPublicRoom(gameState.roomId);
+      }
     }
 
     try {

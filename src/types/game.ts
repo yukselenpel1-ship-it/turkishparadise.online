@@ -39,12 +39,26 @@ export interface BoardTile {
 
 export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
+export interface PublicRoomInfo {
+  roomId: string;
+  hostName: string;
+  hostAvatar: string;
+  playerCount: number;
+  maxPlayers: number;
+  botCount: number;
+  phase: 'LOBBY' | 'PLAYING' | 'ENDED';
+  startingMoney: number;
+  isPublic: boolean;
+  updatedAt: number;
+}
+
 export interface GameSettings {
   startingMoney: number;
   passGoSalary: number;
   firstLapBuyLimit: number; // 0 = unlimited, 1, 2, 3, 4
   botDifficulty: BotDifficulty;
   roomCode: string;
+  isPublic?: boolean;
 }
 
 export interface ChatMessage {

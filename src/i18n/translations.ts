@@ -245,6 +245,12 @@ export interface TranslationDictionary {
   spectatorBanner: string;
   spectatorMode: string;
 
+  // Public Rooms
+  publicRoomsBtn: string;
+  publicRoomsTitle: string;
+  shareRoomPublicly: string;
+  roomPublishedNotice: string;
+
   // Common
   currencySymbol: string;
   loginBtn: string;
@@ -502,6 +508,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     spectatorBanner: '👁️ İflas ettiniz ancak oyunu odada kalarak canlı izlemeye ve sohbet etmeye devam edebilirsiniz.',
     spectatorMode: 'İzleyici Modu',
 
+    // Public Rooms
+    publicRoomsBtn: '🌐 Canlı Odalar',
+    publicRoomsTitle: 'Açık Canlı Odalar',
+    shareRoomPublicly: 'Odayı Listede Paylaş 🌐',
+    roomPublishedNotice: 'Oda canlı odalar listesinde yayınlandı!',
+
     // Common
     currencySymbol: '₺',
     loginBtn: 'Giriş Yap',
@@ -756,6 +768,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     bankruptBadge: 'Bankrupt (Watching)',
     spectatorBanner: '👁️ You are bankrupt, but you can continue watching the game live and chatting in the room.',
     spectatorMode: 'Spectator Mode',
+
+    // Public Rooms
+    publicRoomsBtn: '🌐 Live Rooms',
+    publicRoomsTitle: 'Public Live Rooms',
+    shareRoomPublicly: 'Publish Room Publicly 🌐',
+    roomPublishedNotice: 'Room published to live directory!',
 
     // Common
     currencySymbol: '$',
