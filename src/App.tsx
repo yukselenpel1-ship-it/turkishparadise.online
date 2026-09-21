@@ -744,12 +744,10 @@ export const App: React.FC = () => {
       if (recordedMatchKeyRef.current === matchKey) return;
       recordedMatchKeyRef.current = matchKey;
 
-      const myPlayer = gameState.players.find(
-        (p) => p.id === myPlayerId || (p.userId && p.userId === userAccount.uid) || p.id === userAccount.uid
-      );
+      const myPlayer = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
       if (!myPlayer) return;
 
-      const isMeWinner = gameState.winner.id === myPlayer.id || (gameState.winner.userId && myPlayer.userId && gameState.winner.userId === myPlayer.userId);
+      const isMeWinner = gameState.winner.id === myPlayer.id;
       const result: 'WIN' | 'LOSS' | 'BANKRUPTCY' = isMeWinner
         ? 'WIN'
         : (!myPlayer.inGame ? 'BANKRUPTCY' : 'LOSS');
@@ -1206,7 +1204,7 @@ export const App: React.FC = () => {
         localStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
       } catch (e) {}
 
-      const existingPlayer = gameState.players.find(p => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
+      const existingPlayer = myPlayerId ? gameState.players.find(p => p.id === myPlayerId) : undefined;
       const myName = existingPlayer?.name || userAccount?.displayName || 'Oyuncu';
       const myAvatar = existingPlayer?.avatar || '🎩';
       const myColor = existingPlayer?.color || '#3b82f6';
@@ -1515,7 +1513,7 @@ export const App: React.FC = () => {
     setTradeSelectedTile(undefined);
   };
 
-  const me = gameState.players.find((p) => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
+  const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
 
   return (
     <div className={`w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none ${

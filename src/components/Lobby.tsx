@@ -183,9 +183,9 @@ export const Lobby: React.FC<LobbyProps> = ({
     }
   }, [userAccount]);
 
-  const hasJoined = players.some((p) => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
-  const me = players.find((p) => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
-  const isHost = Boolean(hostPlayerId ? hostPlayerId === myPlayerId : (me?.isHost || (players.length > 0 && players[0].id === myPlayerId)));
+  const hasJoined = Boolean(myPlayerId && players.some((p) => p.id === myPlayerId));
+  const me = hasJoined ? players.find((p) => p.id === myPlayerId) : undefined;
+  const isHost = Boolean(myPlayerId && (hostPlayerId ? hostPlayerId === myPlayerId : me?.isHost));
 
   // Taken colors and avatars by other players/bots in the room (only when inside an active joined room)
   const takenColors = hasJoined ? players.filter((p) => p.id !== myPlayerId).map((p) => p.color) : [];

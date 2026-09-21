@@ -97,8 +97,9 @@ export function isPlayerHost(state: GameState, playerId: string | null): boolean
   if (!playerId) return false;
   if (state.hostPlayerId) return state.hostPlayerId === playerId;
   const player = state.players.find((p) => p.id === playerId);
-  if (player?.isHost) return true;
-  return state.players.length > 0 && state.players[0].id === playerId;
+  if (player && typeof player.isHost === 'boolean') return player.isHost;
+  if (state.players.length === 1 && state.players[0].id === playerId) return true;
+  return false;
 }
 
 

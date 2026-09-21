@@ -122,10 +122,10 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
     const activeRooms: PublicRoomInfo[] = [];
 
     roomsMap.forEach((room, id) => {
-      // Exclude rooms stale for more than 45 seconds or explicitly marked private
-      if (now - room.updatedAt < 45000 && room.isPublic) {
+      // Exclude rooms stale for more than 35 seconds, private or ended
+      if (now - room.updatedAt < 35000 && room.isPublic && room.phase !== 'ENDED' && room.playerCount > 0) {
         activeRooms.push(room);
-      } else if (now - room.updatedAt >= 45000) {
+      } else if (now - room.updatedAt >= 35000 || room.phase === 'ENDED' || !room.isPublic || room.playerCount === 0) {
         roomsMap.delete(id);
       }
     });
@@ -149,10 +149,14 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
     if (!payload || typeof payload !== 'object') return;
 
     if (payload.type === 'ROOM_ANNOUNCE' && payload.room && payload.room.roomId) {
-      roomsMap.set(payload.room.roomId, {
-        ...payload.room,
-        updatedAt: Date.now(),
-      });
+      if (payload.room.isPublic && payload.room.phase !== 'ENDED' && payload.room.playerCount > 0) {
+        roomsMap.set(payload.room.roomId, {
+          ...payload.room,
+          updatedAt: Date.now(),
+        });
+      } else {
+        roomsMap.delete(payload.room.roomId);
+      }
       persistLocalCache();
       emitCleanRooms();
     } else if (payload.type === 'ROOM_CLOSED' && payload.roomId) {
@@ -164,7 +168,7 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
       if (activeHostRoomProvider) {
         try {
           const myRoom = activeHostRoomProvider();
-          if (myRoom && myRoom.roomId && myRoom.isPublic) {
+          if (myRoom && myRoom.roomId && myRoom.isPublic && myRoom.phase !== 'ENDED' && myRoom.playerCount > 0) {
             publishPublicRoom(myRoom);
           }
         } catch (e) {}
