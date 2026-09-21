@@ -1061,88 +1061,89 @@ export const App: React.FC = () => {
     targetRoomCode?: string,
     isCreating = false
   ) => {
-    const finalRoom = (targetRoomCode || gameState.roomId || gameState.settings?.roomCode || 'TR-1001').trim().toUpperCase();
-    const currentUserId = userAccount?.uid || getPersistentGuestId();
-    // Unique in-room playerId generated per join session
-    const cleanUid = currentUserId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
-    const randomSuffix = Math.random().toString(36).substring(2, 7);
-    const newPlayerId = `p_${cleanUid}_${randomSuffix}`;
-    const startMoney = gameState.settings?.startingMoney || 1500;
-    
-    // STRICT IDENTITY: User is creating room ONLY if explicitly requested AND no host is established yet
-    const isCreatingRoom = isCreating && (gameState.players.length === 0 || !gameState.hostPlayerId);
-
-    // Determine unique color not taken by existing players
-    const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
-    const existingColors = gameState.players.map((p) => p.color);
-    let chosenColor = color || '';
-    if (!chosenColor || existingColors.includes(chosenColor)) {
-      const freeColor = allColors.find((c) => !existingColors.includes(c));
-      chosenColor = freeColor || allColors[gameState.players.length % allColors.length];
-    }
-
-    // Determine unique avatar not taken by existing players
-    const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
-    const existingAvatars = gameState.players.map((p) => p.avatar);
-    let chosenAvatar = avatar || '';
-    if (!chosenAvatar || existingAvatars.includes(chosenAvatar)) {
-      const freeAvatar = allAvatars.find((a) => !existingAvatars.includes(a));
-      chosenAvatar = freeAvatar || allAvatars[gameState.players.length % allAvatars.length];
-    }
-
-    const newPlayer: Player = {
-      id: newPlayerId,
-      userId: currentUserId,
-      name: name || userAccount?.displayName || 'Oyuncu',
-      avatar: chosenAvatar,
-      color: chosenColor,
-      money: startMoney,
-      position: 0,
-      isJailed: false,
-      jailTurns: 0,
-      lapsCompleted: 0,
-      firstLapPurchases: 0,
-      inGame: true,
-      isBot: false,
-      isHost: isCreatingRoom
-    };
-
-    setMyPlayerId(newPlayerId);
-
     try {
-      sessionStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
-      localStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
-      sessionStorage.setItem(SESSION_PLAYER_NAME_KEY, newPlayer.name);
-      sessionStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
-      localStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
-    } catch (e) {}
+      const finalRoom = (targetRoomCode || gameState.roomId || gameState.settings?.roomCode || `TR-${Math.floor(1000 + Math.random() * 9000)}`).trim().toUpperCase();
+      const currentUserId = userAccount?.uid || getPersistentGuestId();
+      // Unique in-room playerId generated per join session
+      const cleanUid = currentUserId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+      const randomSuffix = Math.random().toString(36).substring(2, 7);
+      const newPlayerId = `p_${cleanUid}_${randomSuffix}`;
+      const startMoney = gameState.settings?.startingMoney || 1500;
+      
+      const isCreatingRoom = Boolean(isCreating);
 
-    if (isCreatingRoom) {
-      // Room Creator initializes the room and broadcasts as Host
-      updateAndBroadcastGameState((prev) => {
-        const updated: GameState = {
-          ...prev,
+      // Determine unique color
+      const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
+      let chosenColor = color || PLAYER_COLORS[0];
+
+      // Determine unique avatar
+      const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
+      let chosenAvatar = avatar || PLAYER_AVATARS[0];
+
+      const newPlayer: Player = {
+        id: newPlayerId,
+        userId: currentUserId,
+        name: name || userAccount?.displayName || 'Oyuncu',
+        avatar: chosenAvatar,
+        color: chosenColor,
+        money: startMoney,
+        position: 0,
+        isJailed: false,
+        jailTurns: 0,
+        lapsCompleted: 0,
+        firstLapPurchases: 0,
+        inGame: true,
+        isBot: false,
+        isHost: isCreatingRoom
+      };
+
+      setMyPlayerId(newPlayerId);
+
+      try {
+        sessionStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
+        localStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
+        sessionStorage.setItem(SESSION_PLAYER_NAME_KEY, newPlayer.name);
+        sessionStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
+        localStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
+      } catch (e) {}
+
+      if (isCreatingRoom) {
+        // Create fresh room state and broadcast as authoritative Host
+        const freshState: GameState = {
+          ...createInitialState({ roomCode: finalRoom, startingMoney: startMoney }),
           roomId: finalRoom,
           hostPlayerId: newPlayerId,
           isOnlineGame: isOnline,
-          settings: { ...prev.settings, roomCode: finalRoom },
-          players: [newPlayer]
+          settings: {
+            ...gameState.settings,
+            roomCode: finalRoom,
+            isPublic: false
+          },
+          players: [newPlayer],
+          phase: 'LOBBY'
         };
-        addLog(updated, `👋 ${newPlayer.name} odayı kurdu! (${finalRoom})`, 'success');
-        return updated;
-      }, true);
-    } else {
-      // Joiner sets local roomId and sends JOIN_REQUEST + REQUEST_SYNC to Host
-      setGameState((prev) => ({
-        ...prev,
-        roomId: finalRoom,
-        isOnlineGame: isOnline,
-        settings: { ...prev.settings, roomCode: finalRoom }
-      }));
 
-      // Send join request to room host
-      syncManager.sendJoinRequest(finalRoom, newPlayer);
-      syncManager.sendRequestSync(finalRoom);
+        setGameState(freshState);
+        syncRoomState(finalRoom, freshState);
+        try {
+          sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(freshState));
+          localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(freshState));
+        } catch (e) {}
+      } else {
+        // Joiner sets local roomId and sends JOIN_REQUEST + REQUEST_SYNC to Host
+        setGameState((prev) => ({
+          ...prev,
+          roomId: finalRoom,
+          isOnlineGame: isOnline,
+          settings: { ...prev.settings, roomCode: finalRoom }
+        }));
+
+        // Send join request to room host
+        syncManager.sendJoinRequest(finalRoom, newPlayer);
+        syncManager.sendRequestSync(finalRoom);
+      }
+    } catch (err) {
+      console.error('[handleJoin] Error joining/creating room:', err);
     }
   };
 
