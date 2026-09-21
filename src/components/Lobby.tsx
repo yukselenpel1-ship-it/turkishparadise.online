@@ -53,7 +53,7 @@ interface LobbyProps {
   onLogout: () => void;
   onUpdateUserAccount?: (account: UserAccount) => void;
   onUpdateSettings: (newSettings: GameSettings) => void;
-  onJoin: (name: string, avatar: string, color: string, isOnline?: boolean, targetRoomCode?: string) => void;
+  onJoin: (name: string, avatar: string, color: string, isOnline?: boolean, targetRoomCode?: string, isCreating?: boolean) => void;
   onJoinRoom?: (roomId: string) => void;
   onAddBot: (difficulty?: BotDifficulty) => void;
   onRemovePlayer?: (playerId: string) => void;
@@ -222,13 +222,13 @@ export const Lobby: React.FC<LobbyProps> = ({
   const handleMainSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
-    onJoin(finalName, selectedAvatar, selectedColor, true, roomCode);
+    onJoin(finalName, selectedAvatar, selectedColor, true, roomCode, true);
   };
 
   const handleFriendSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
-    onJoin(finalName, selectedAvatar, selectedColor, true, roomCode.trim().toUpperCase());
+    onJoin(finalName, selectedAvatar, selectedColor, true, roomCode.trim().toUpperCase(), false);
   };
 
   const copyRoomCode = () => {
@@ -821,7 +821,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                 onJoinRoom={(targetRoomCode) => {
                   const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
                   setRoomCode(targetRoomCode);
-                  onJoin(finalName, selectedAvatar, selectedColor, true, targetRoomCode);
+                  onJoin(finalName, selectedAvatar, selectedColor, true, targetRoomCode, false);
                 }}
                 onBackToMain={() => setMode('main')}
                 onCreateRoom={() => setMode('main')}

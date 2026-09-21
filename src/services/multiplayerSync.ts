@@ -409,6 +409,18 @@ class MultiplayerSyncManager {
   }
 
   /**
+   * Send request sync to room host
+   */
+  public sendRequestSync(roomId: string): void {
+    const msg: SyncMessage = {
+      type: 'REQUEST_SYNC',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase()
+    };
+    this.send(msg);
+  }
+
+  /**
    * Send leave notice when a player leaves/disconnects
    */
   public sendLeaveNotice(roomId: string, playerId: string): void {

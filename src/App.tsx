@@ -396,8 +396,32 @@ export const App: React.FC = () => {
     const unsubscribe = subscribeToRoom(
       gameState.roomId,
       (remoteState) => {
-        if (remoteState && remoteState.roomId === gameState.roomId) {
-          setGameState(remoteState);
+        if (!remoteState || remoteState.roomId !== gameState.roomId) return;
+
+        setGameState((prev) => {
+          const isCurrentlyHost = isPlayerHost(prev, myPlayerId);
+
+          // 🛡️ HOST PROTECTION SHIELD:
+          // If I am already established as Host in this room, never accept an external state
+          // that overwrites my host status or drops me from the player list!
+          if (isCurrentlyHost && prev.hostPlayerId === myPlayerId && prev.players.some(p => p.id === myPlayerId)) {
+            const remoteHost = remoteState.hostPlayerId;
+            const hasMeInRemote = remoteState.players?.some(p => p.id === myPlayerId);
+
+            if (remoteHost !== myPlayerId || !hasMeInRemote) {
+              console.warn('[Host Shield] Rejected rogue/stale STATE_SYNC from peer:', {
+                myPlayerId,
+                currentHost: prev.hostPlayerId,
+                remoteHost,
+                hasMeInRemote,
+                remotePlayersCount: remoteState.players?.length
+              });
+              // Force-rebroadcast authoritative host state to correct any out-of-sync peers
+              syncRoomState(prev.roomId, prev);
+              return prev;
+            }
+          }
+
           try {
             sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(remoteState));
             localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(remoteState));
@@ -411,7 +435,9 @@ export const App: React.FC = () => {
               setMyPlayerId(matchedPlayer.id);
             }
           }
-        }
+
+          return remoteState;
+        });
       },
       (newPlayer) => {
         // Host adds incoming player and broadcasts updated state
@@ -420,7 +446,7 @@ export const App: React.FC = () => {
           if (!isHost) return prev;
           if (newPlayer.id === myPlayerId) return prev;
 
-          // Check if player is already in room by exact ID
+          // Check if player is already in room by exact unique playerId
           const existingIdx = prev.players.findIndex((p) => p.id === newPlayer.id);
 
           let nextPlayers = [...prev.players];
@@ -436,13 +462,24 @@ export const App: React.FC = () => {
             };
             const updated = { ...prev, players: nextPlayers };
             addLog(updated, `✨ ${newPlayer.name} tekrar bağlandı ve oyuna döndü!`, 'success');
+
+            console.log('[Multiplayer Join Debug - Reconnect]', {
+              event: 'PLAYER_RECONNECTED',
+              roomId: prev.roomId,
+              hostPlayerId: prev.hostPlayerId,
+              joiningUserId: newPlayer.userId,
+              joiningPlayerId: newPlayer.id,
+              existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar })),
+              playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar }))
+            });
+
             syncRoomState(prev.roomId, updated);
             return updated;
           }
 
           if (prev.players.length >= 6) return prev;
 
-          // Auto-resolve color conflict: pick guaranteed free color
+          // Auto-resolve color conflict: pick guaranteed free color without affecting existing players
           const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
           const takenColors = prev.players.map((p) => p.color);
           let assignedColor = newPlayer.color;
@@ -451,7 +488,7 @@ export const App: React.FC = () => {
             assignedColor = freeColor || `hsl(${Math.floor(Math.random() * 360)}, 85%, 60%)`;
           }
 
-          // Auto-resolve avatar conflict: pick guaranteed free avatar
+          // Auto-resolve avatar conflict: pick guaranteed free avatar without affecting existing players
           const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
           const takenAvatars = prev.players.map((p) => p.avatar);
           let assignedAvatar = newPlayer.avatar;
@@ -477,11 +514,23 @@ export const App: React.FC = () => {
             isBot: false
           };
 
-          const updated = {
+          const updated: GameState = {
             ...prev,
+            hostPlayerId: prev.hostPlayerId || myPlayerId || undefined, // Strictly preserve hostPlayerId
             players: [...prev.players, playerToAdd]
           };
           addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${prev.roomId})`, 'success');
+
+          console.log('[Multiplayer Join Debug - New Player]', {
+            event: 'NEW_PLAYER_JOINED',
+            roomId: prev.roomId,
+            hostPlayerId: updated.hostPlayerId,
+            joiningUserId: newPlayer.userId,
+            joiningPlayerId: newPlayer.id,
+            existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar })),
+            playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar }))
+          });
+
           syncRoomState(prev.roomId, updated);
           return updated;
         });
@@ -511,6 +560,7 @@ export const App: React.FC = () => {
             if (prev.phase === 'LOBBY') {
               updated = {
                 ...prev,
+                hostPlayerId: prev.hostPlayerId || myPlayerId || undefined, // Preserve host
                 players: prev.players.filter((p) => p.id !== leavingPlayerId)
               };
               addLog(updated, `🚪 ${leavingPlayer.name} odadan ayrıldı.`, 'info');
@@ -518,9 +568,21 @@ export const App: React.FC = () => {
               const updatedPlayers = prev.players.map((p) =>
                 p.id === leavingPlayerId ? { ...p, isAfk: true } : p
               );
-              updated = { ...prev, players: updatedPlayers };
+              updated = {
+                ...prev,
+                hostPlayerId: prev.hostPlayerId || myPlayerId || undefined,
+                players: updatedPlayers
+              };
               addLog(updated, `🚪 ${leavingPlayer.name} oyundan ayrıldı (AFK moduna geçti).`, 'warning');
             }
+
+            console.log('[Multiplayer Leave Debug]', {
+              event: 'PLAYER_LEFT',
+              roomId: prev.roomId,
+              hostPlayerId: updated.hostPlayerId,
+              leavingPlayerId,
+              playersRemaining: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost }))
+            });
 
             syncRoomState(prev.roomId, updated);
             return updated;
@@ -625,11 +687,14 @@ export const App: React.FC = () => {
     };
   }, [gameState.roomId, myPlayerId, userAccount]);
 
-  // Sync state changes to room (always broadcast on deliberate local user / host action)
-  const updateAndBroadcastGameState = (updater: (prev: GameState) => GameState) => {
+  // Sync state changes to room (only host or initial room creator broadcasts to network)
+  const updateAndBroadcastGameState = (updater: (prev: GameState) => GameState, allowNonHost = false) => {
     setGameState((prev) => {
+      const isHost = isPlayerHost(prev, myPlayerId);
+      const isInitialRoomCreation = prev.players.length === 0 || !prev.hostPlayerId;
       const next = updater(prev);
-      if (next.roomId) {
+
+      if (next.roomId && (isHost || isInitialRoomCreation || allowNonHost)) {
         syncRoomState(next.roomId, next);
         try {
           sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(next));
@@ -981,8 +1046,15 @@ export const App: React.FC = () => {
   };
 
   // Join Game as Player
-  const handleJoin = (name: string, avatar: string, color?: string, isOnline = true, targetRoomCode?: string) => {
-    const finalRoom = targetRoomCode || gameState.roomId || gameState.settings.roomCode || 'TR-1001';
+  const handleJoin = (
+    name: string,
+    avatar: string,
+    color?: string,
+    isOnline = true,
+    targetRoomCode?: string,
+    isCreating = false
+  ) => {
+    const finalRoom = (targetRoomCode || gameState.roomId || gameState.settings?.roomCode || 'TR-1001').trim().toUpperCase();
     const currentUserId = userAccount?.uid || getPersistentGuestId();
     // Unique in-room playerId generated per join session
     const cleanUid = currentUserId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
@@ -990,8 +1062,8 @@ export const App: React.FC = () => {
     const newPlayerId = `p_${cleanUid}_${randomSuffix}`;
     const startMoney = gameState.settings?.startingMoney || 1500;
     
-    // Check if user is creating a brand new room or joining an existing room
-    const isCreatingRoom = gameState.players.length === 0 || (gameState.phase === 'LOBBY' && !gameState.hostPlayerId);
+    // STRICT IDENTITY: User is creating room ONLY if explicitly requested AND no host is established yet
+    const isCreatingRoom = isCreating && (gameState.players.length === 0 || !gameState.hostPlayerId);
 
     // Determine unique color not taken by existing players
     const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
@@ -1038,9 +1110,6 @@ export const App: React.FC = () => {
       localStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
     } catch (e) {}
 
-    // Send join request to room host
-    syncManager.sendJoinRequest(finalRoom, newPlayer);
-
     if (isCreatingRoom) {
       // Room Creator initializes the room and broadcasts as Host
       updateAndBroadcastGameState((prev) => {
@@ -1054,15 +1123,19 @@ export const App: React.FC = () => {
         };
         addLog(updated, `👋 ${newPlayer.name} odayı kurdu! (${finalRoom})`, 'success');
         return updated;
-      });
+      }, true);
     } else {
-      // Joiner sets local roomId and waits for Host's STATE_SYNC
+      // Joiner sets local roomId and sends JOIN_REQUEST + REQUEST_SYNC to Host
       setGameState((prev) => ({
         ...prev,
         roomId: finalRoom,
         isOnlineGame: isOnline,
         settings: { ...prev.settings, roomCode: finalRoom }
       }));
+
+      // Send join request to room host
+      syncManager.sendJoinRequest(finalRoom, newPlayer);
+      syncManager.sendRequestSync(finalRoom);
     }
   };
 
@@ -1209,7 +1282,7 @@ export const App: React.FC = () => {
       const myAvatar = existingPlayer?.avatar || '🎩';
       const myColor = existingPlayer?.color || '#3b82f6';
 
-      handleJoin(myName, myAvatar, myColor, true, cleanRoom);
+      handleJoin(myName, myAvatar, myColor, true, cleanRoom, false);
     }
   };
 
