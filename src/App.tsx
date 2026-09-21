@@ -655,36 +655,41 @@ export const App: React.FC = () => {
         });
       },
       (senderPlayerId, actionType, payload) => {
-        // Handle incoming game action from non-host client
-        setGameState((prev) => {
-          const isMeHost = isPlayerHost(prev, myPlayerId);
-          if (!isMeHost) return prev;
+        // Handle incoming game action from non-host client on authoritative Host
+        const isMeHost = isPlayerHost(gameState, myPlayerId);
+        if (!isMeHost) return;
 
-          if (actionType === 'ROLL_DICE') {
-            if (!isMoving && !prev.diceRolled) {
-              setTimeout(() => handleRollDiceAction(), 50);
-            }
-          } else if (actionType === 'BUY_PROPERTY') {
-            if (prev.pendingAction === 'BUY_PROPERTY') {
-              handleBuyPropertyAction(senderPlayerId);
-            }
-          } else if (actionType === 'PASS_PROPERTY') {
-            if (prev.pendingAction === 'BUY_PROPERTY') {
-              handlePassPropertyAction(senderPlayerId);
-            }
-          } else if (actionType === 'END_TURN') {
-            if (prev.diceRolled && !isMoving) handleEndTurnAction();
-          } else if (actionType === 'PAY_JAIL') {
-            handlePayJailBailAction();
-          } else if (actionType === 'BUILD_HOUSE' && payload?.tileId) {
-            handleBuildHouseAction(payload.tileId);
-          } else if (actionType === 'SELL_HOUSE' && payload?.tileId) {
-            handleSellHouseAction(payload.tileId);
-          } else if (actionType === 'MORTGAGE' && payload?.tileId) {
-            handleToggleMortgageAction(payload.tileId);
+        if (actionType === 'ROLL_DICE') {
+          if (!isMoving && !gameState.diceRolled) {
+            handleRollDiceAction();
           }
-          return prev;
-        });
+        } else if (actionType === 'BUY_PROPERTY') {
+          if (gameState.pendingAction === 'BUY_PROPERTY') {
+            handleBuyPropertyAction(senderPlayerId);
+          }
+        } else if (actionType === 'PASS_PROPERTY') {
+          if (gameState.pendingAction === 'BUY_PROPERTY') {
+            handlePassPropertyAction(senderPlayerId);
+          }
+        } else if (actionType === 'END_TURN') {
+          if (gameState.diceRolled && !isMoving) {
+            handleEndTurnAction();
+          }
+        } else if (actionType === 'PAY_JAIL') {
+          handlePayJailBailAction();
+        } else if (actionType === 'BUILD_HOUSE' && payload?.tileId) {
+          handleBuildHouseAction(payload.tileId);
+        } else if (actionType === 'SELL_HOUSE' && payload?.tileId) {
+          handleSellHouseAction(payload.tileId);
+        } else if (actionType === 'MORTGAGE' && payload?.tileId) {
+          handleToggleMortgageAction(payload.tileId);
+        } else if (actionType === 'BANKRUPTCY') {
+          handleDeclareBankruptcyAction(payload?.playerId || senderPlayerId);
+        } else if (actionType === 'CONFIRM_CHANCE') {
+          handleConfirmChanceCard();
+        } else if (actionType === 'SELL_TO_BANK' && payload?.tileId) {
+          handleSellToBankAction(payload.tileId);
+        }
       },
       isMeHost
     );
@@ -1309,6 +1314,15 @@ export const App: React.FC = () => {
       return;
     }
 
+    // Non-host player: forward action to authoritative host
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'ROLL_DICE');
+      }
+      return;
+    }
+
+    // Authoritative Host rolls dice and performs movement
     const dice = rollDice();
     const diceTotal = dice[0] + dice[1];
     const isDouble = dice[0] === dice[1];
@@ -1319,7 +1333,7 @@ export const App: React.FC = () => {
     // Check jail condition
     if (currentPlayer.isJailed) {
       if (isDouble) {
-        updateAndBroadcastGameState(prev => {
+        updateAndBroadcastGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
           p.isJailed = false;
@@ -1330,7 +1344,7 @@ export const App: React.FC = () => {
           return updated;
         });
       } else {
-        updateAndBroadcastGameState(prev => {
+        updateAndBroadcastGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
           p.jailTurns += 1;
@@ -1357,7 +1371,7 @@ export const App: React.FC = () => {
       const nextDoubles = (gameState.doublesCount || 0) + 1;
       if (nextDoubles >= 3) {
         soundManager.playJail();
-        updateAndBroadcastGameState(prev => {
+        updateAndBroadcastGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
           p.position = JAIL_TILE_INDEX;
@@ -1374,9 +1388,9 @@ export const App: React.FC = () => {
       }
     }
 
-    // Start Step-by-Step Movement
+    // Start Step-by-Step Movement and broadcast each step live to all devices
     setIsMoving(true);
-    updateAndBroadcastGameState(prev => {
+    updateAndBroadcastGameState((prev) => {
       const updated = JSON.parse(JSON.stringify(prev)) as GameState;
       updated.dice = dice;
       updated.diceRolled = true;
@@ -1395,7 +1409,7 @@ export const App: React.FC = () => {
     const interval = setInterval(() => {
       stepCount++;
       soundManager.playStep();
-      setGameState(prev => {
+      updateAndBroadcastGameState((prev) => {
         const { state } = advancePlayerStep(prev, currentPlayer.id);
         return state;
       });
@@ -1403,7 +1417,7 @@ export const App: React.FC = () => {
       if (stepCount >= diceTotal) {
         clearInterval(interval);
         setTimeout(() => {
-          updateAndBroadcastGameState(prev => {
+          updateAndBroadcastGameState((prev) => {
             const landingState = finalizePlayerLanding(prev, currentPlayer.id);
             landingState.turnStartedAt = Date.now(); // Fresh 60s timer for property decision
             return landingState;
@@ -1416,54 +1430,100 @@ export const App: React.FC = () => {
 
   // End Turn Action
   const handleEndTurnAction = () => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'END_TURN');
+      }
+      return;
+    }
     updateAndBroadcastGameState((prev) => nextTurn(prev));
   };
 
   // Declare Bankruptcy Action
   const handleDeclareBankruptcyAction = (playerId?: string) => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const targetId = playerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId;
+    if (!targetId) return;
+
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BANKRUPTCY', { playerId: targetId });
+      }
+      return;
+    }
     soundManager.playJail();
-    updateAndBroadcastGameState((prev) => {
-      const targetId = playerId || prev.players[prev.currentTurnIndex]?.id || myPlayerId;
-      if (!targetId) return prev;
-      return declareBankruptcy(prev, targetId);
-    });
+    updateAndBroadcastGameState((prev) => declareBankruptcy(prev, targetId));
   };
 
   // Buy Property Action
   const handleBuyPropertyAction = (actingPlayerId?: string) => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
+
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BUY_PROPERTY');
+      }
+      return;
+    }
     soundManager.playBuyProperty();
-    updateAndBroadcastGameState((prev) => {
-      const activeActorId = actingPlayerId || prev.players[prev.currentTurnIndex]?.id || myPlayerId || undefined;
-      return buyProperty(prev, activeActorId);
-    });
+    updateAndBroadcastGameState((prev) => buyProperty(prev, activeActorId));
   };
 
   // Pass Property Action (Skip buying)
   const handlePassPropertyAction = (actingPlayerId?: string) => {
-    updateAndBroadcastGameState((prev) => {
-      const activeActorId = actingPlayerId || prev.players[prev.currentTurnIndex]?.id || myPlayerId || undefined;
-      return passProperty(prev, activeActorId);
-    });
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
+
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'PASS_PROPERTY');
+      }
+      return;
+    }
+    updateAndBroadcastGameState((prev) => passProperty(prev, activeActorId));
   };
 
   // Sell Property to Bank for 2/3 price
   const handleSellToBankAction = (tileId: number) => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'SELL_TO_BANK', { tileId });
+      }
+      return;
+    }
     updateAndBroadcastGameState((prev) => sellPropertyToBank(prev, tileId));
   };
 
   // Pay 100 Bail to leave Kodes (Jail)
   const handlePayJailBailAction = () => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'PAY_JAIL');
+      }
+      return;
+    }
     soundManager.playBuyProperty();
     updateAndBroadcastGameState((prev) => payJailBail(prev));
   };
 
   // Build House Action
   const handleBuildHouseAction = (tileId: number) => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BUILD_HOUSE', { tileId });
+      }
+      return;
+    }
     soundManager.playBuyProperty();
     updateAndBroadcastGameState((prev) => {
       const next = buildHouse(prev, tileId, myPlayerId || undefined);
       if (selectedTile && selectedTile.id === tileId) {
-        const updatedTile = next.board.find(t => t.id === tileId);
+        const updatedTile = next.board.find((t) => t.id === tileId);
         if (updatedTile) setSelectedTile(updatedTile);
       }
       return next;
@@ -1472,10 +1532,17 @@ export const App: React.FC = () => {
 
   // Sell House Action
   const handleSellHouseAction = (tileId: number) => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'SELL_HOUSE', { tileId });
+      }
+      return;
+    }
     updateAndBroadcastGameState((prev) => {
       const next = sellHouse(prev, tileId, myPlayerId || undefined);
       if (selectedTile && selectedTile.id === tileId) {
-        const updatedTile = next.board.find(t => t.id === tileId);
+        const updatedTile = next.board.find((t) => t.id === tileId);
         if (updatedTile) setSelectedTile(updatedTile);
       }
       return next;
@@ -1484,10 +1551,17 @@ export const App: React.FC = () => {
 
   // Toggle Mortgage Action
   const handleToggleMortgageAction = (tileId: number) => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'MORTGAGE', { tileId });
+      }
+      return;
+    }
     updateAndBroadcastGameState((prev) => {
       const next = toggleMortgage(prev, tileId, myPlayerId || undefined);
       if (selectedTile && selectedTile.id === tileId) {
-        const updatedTile = next.board.find(t => t.id === tileId);
+        const updatedTile = next.board.find((t) => t.id === tileId);
         if (updatedTile) setSelectedTile(updatedTile);
       }
       return next;
@@ -1496,6 +1570,13 @@ export const App: React.FC = () => {
 
   // Apply Chance Card
   const handleConfirmChanceCard = () => {
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) {
+      if (gameState.roomId && myPlayerId) {
+        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'CONFIRM_CHANCE');
+      }
+      return;
+    }
     updateAndBroadcastGameState((prev) => applyChanceCard(prev));
   };
 
