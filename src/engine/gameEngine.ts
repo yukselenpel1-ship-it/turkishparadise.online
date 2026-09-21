@@ -458,6 +458,18 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
     newState.incomingTradeOffer = undefined;
   }
 
+  // Check if either player resolved debt settlement
+  if (fromPlayer.money >= 0 && newState.pendingAction === 'DEBT_SETTLEMENT') {
+    newState.pendingAction = 'NONE';
+    newState.actionMessage = undefined;
+    addLog(newState, `🎉 ${fromPlayer.name} takas geliriyle borcunu kapattı (${fromPlayer.money}₺ bakiye)!`, 'success');
+  }
+  if (toPlayer.money >= 0 && newState.pendingAction === 'DEBT_SETTLEMENT') {
+    newState.pendingAction = 'NONE';
+    newState.actionMessage = undefined;
+    addLog(newState, `🎉 ${toPlayer.name} takas geliriyle borcunu kapattı (${toPlayer.money}₺ bakiye)!`, 'success');
+  }
+
   return newState;
 }
 
@@ -989,6 +1001,12 @@ export function sellPropertyToBank(state: GameState, tileId: number, playerId?: 
   addTransaction(newState, player, 'income', 'bank_sell', totalRefund, `"${tile.name}" mülkü Banka'ya 2/3 fiyatına satıldı`);
   addLog(newState, `🏛️ ${player.name}, "${tile.name}" mülkünü Banka'ya 2/3 değerine (${totalRefund}₺) geri sattı.`, 'warning');
 
+  if (player.money >= 0 && newState.pendingAction === 'DEBT_SETTLEMENT') {
+    newState.pendingAction = 'NONE';
+    newState.actionMessage = undefined;
+    addLog(newState, `🎉 ${player.name} borcunu kapattı (${player.money}₺ bakiye)! Oyuna devam edebilir.`, 'success');
+  }
+
   return newState;
 }
 
@@ -1051,6 +1069,12 @@ export function sellHouse(state: GameState, tileId: number, playerId?: string): 
   addTransaction(newState, player, 'income', 'sell_house', refund, `"${tile.name}" üzerinden ${houseType}`);
   addLog(newState, `🏚️ ${player.name}, "${tile.name}" üzerinden bina satarak ${refund}₺ geri aldı.`, 'info');
 
+  if (player.money >= 0 && newState.pendingAction === 'DEBT_SETTLEMENT') {
+    newState.pendingAction = 'NONE';
+    newState.actionMessage = undefined;
+    addLog(newState, `🎉 ${player.name} borcunu kapattı (${player.money}₺ bakiye)! Oyuna devam edebilir.`, 'success');
+  }
+
   return newState;
 }
 
@@ -1094,39 +1118,123 @@ export function toggleMortgage(state: GameState, tileId: number, playerId?: stri
     addLog(newState, `🔒 ${player.name}, "${tile.name}" mülkünü ${mortgageValue}₺ karşılığında ipotek etti.`, 'warning');
   }
 
+  if (player.money >= 0 && newState.pendingAction === 'DEBT_SETTLEMENT') {
+    newState.pendingAction = 'NONE';
+    newState.actionMessage = undefined;
+    addLog(newState, `🎉 ${player.name} borcunu kapattı (${player.money}₺ bakiye)! Oyuna devam edebilir.`, 'success');
+  }
+
   return newState;
 }
 
+export function declareBankruptcy(state: GameState, playerId: string): GameState {
+  const newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const player = newState.players.find(p => p.id === playerId);
+  if (!player || !player.inGame) return newState;
+
+  player.inGame = false;
+  addLog(newState, `💀 ${player.name} iflas etti ve oyundan elendi!`, 'danger');
+
+  // Return all their properties to bank (unowned, clear houses & mortgage)
+  newState.board.forEach(t => {
+    if (t.ownerId === player.id) {
+      t.ownerId = undefined;
+      t.houses = 0;
+      t.isMortgaged = false;
+    }
+  });
+
+  newState.pendingAction = 'NONE';
+  newState.actionMessage = undefined;
+
+  // Check if only 1 active player remains -> Game Over!
+  const activePlayers = newState.players.filter(p => p.inGame);
+  if (activePlayers.length <= 1) {
+    newState.phase = 'ENDED';
+    newState.winner = activePlayers[0] || null;
+    if (activePlayers[0]) {
+      addLog(newState, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+    }
+  }
+
+  return newState;
+}
 
 export function checkBankruptcy(state: GameState, player: Player) {
   if (player.money < 0) {
-    // If player has properties, try auto-selling to bank to survive
-    const ownedProperties = state.board.filter(t => t.ownerId === player.id);
-    if (ownedProperties.length > 0) {
-      for (const prop of ownedProperties) {
+    if (player.isBot) {
+      // 1. Bot first sells houses on its properties for 50% refund
+      const botHouses = state.board.filter(t => t.ownerId === player.id && t.houses > 0);
+      for (const tile of botHouses) {
+        while (tile.houses > 0 && player.money < 0) {
+          const refund = Math.floor((tile.houseCost || 100) / 2);
+          tile.houses -= 1;
+          player.money += refund;
+          addTransaction(state, player, 'income', 'build_house', refund, `Bina satıldı: ${tile.name}`);
+          addLog(state, `🔨 ${player.name}, borcunu ödemek için "${tile.name}" binasını ${refund}₺ karşılığında sattı.`, 'warning');
+        }
         if (player.money >= 0) break;
-        sellPropertyToBank(state, prop.id, player.id);
       }
-    }
 
-    if (player.money < 0) {
-      player.inGame = false;
-      addLog(state, `💀 ${player.name} iflas etti ve elendi!`, 'danger');
-      state.board.forEach(t => {
-        if (t.ownerId === player.id) {
-          t.ownerId = undefined;
-          t.houses = 0;
-          t.isMortgaged = false;
+      // 2. Bot sells properties to bank (2/3 refund)
+      if (player.money < 0) {
+        const ownedProperties = state.board.filter(t => t.ownerId === player.id);
+        for (const prop of ownedProperties) {
+          const refund = Math.floor((prop.price || 100) * (2 / 3));
+          player.money += refund;
+          prop.ownerId = undefined;
+          prop.houses = 0;
+          prop.isMortgaged = false;
+          addTransaction(state, player, 'income', 'bank_sell', refund, `"${prop.name}" Banka'ya satıldı`);
+          addLog(state, `🏛️ ${player.name}, borcunu ödemek için "${prop.name}" mülkünü Banka'ya ${refund}₺ karşılığında sattı.`, 'warning');
+          if (player.money >= 0) break;
         }
-      });
+      }
 
-      const activePlayers = state.players.filter(p => p.inGame);
-      if (activePlayers.length <= 1) {
-        state.phase = 'ENDED';
-        state.winner = activePlayers[0] || null;
-        if (activePlayers[0]) {
-          addLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+      // 3. If bot still < 0, declare full bankruptcy
+      if (player.money < 0) {
+        player.inGame = false;
+        addLog(state, `💀 ${player.name} iflas etti ve elendi!`, 'danger');
+        state.board.forEach(t => {
+          if (t.ownerId === player.id) {
+            t.ownerId = undefined;
+            t.houses = 0;
+            t.isMortgaged = false;
+          }
+        });
+
+        const activePlayers = state.players.filter(p => p.inGame);
+        if (activePlayers.length <= 1) {
+          state.phase = 'ENDED';
+          state.winner = activePlayers[0] || null;
+          if (activePlayers[0]) {
+            addLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+          }
         }
+      }
+    } else {
+      // HUMAN PLAYER:
+      // Check if human has ANY assets left (properties, houses)
+      const ownedAssets = state.board.filter(t => t.ownerId === player.id);
+      if (ownedAssets.length === 0) {
+        // No assets at all -> unavoidable bankruptcy!
+        player.inGame = false;
+        addLog(state, `💀 ${player.name} borcunu ödeyecek hiçbir mülkü kalmadığı için iflas etti ve elendi!`, 'danger');
+        state.pendingAction = 'NONE';
+        state.actionMessage = undefined;
+        const activePlayers = state.players.filter(p => p.inGame);
+        if (activePlayers.length <= 1) {
+          state.phase = 'ENDED';
+          state.winner = activePlayers[0] || null;
+          if (activePlayers[0]) {
+            addLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+          }
+        }
+      } else {
+        // Human has assets -> Enter Debt Settlement mode so they can sell/mortgage/trade!
+        state.pendingAction = 'DEBT_SETTLEMENT';
+        state.actionMessage = `Borçtasınız (${player.money}₺)! İflas etmemek için mülk satabilir, ipotek edebilir veya takas yapabilirsiniz.`;
+        addLog(state, `⚠️ ${player.name} borca girdi (${player.money}₺)! İflastan kurtulmak için mülk satışı veya takas yapması gerekiyor.`, 'danger');
       }
     }
   }

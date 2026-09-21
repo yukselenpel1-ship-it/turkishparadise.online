@@ -3,7 +3,7 @@ import { BoardTile, Player } from '../types/game';
 import { Tile } from './Tile';
 import { Dice } from './Dice';
 import { soundManager } from '../services/soundEffects';
-import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt, Volume2, VolumeX } from 'lucide-react';
+import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt, Volume2, VolumeX, AlertTriangle, Skull } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 
 interface BoardProps {
@@ -25,6 +25,7 @@ interface BoardProps {
   onOpenProperties?: () => void;
   onOpenTrade?: () => void;
   onOpenTransactions?: () => void;
+  onDeclareBankruptcy?: () => void;
   turnSecondsRemaining?: number;
   onTakeBackControl?: () => void;
 }
@@ -58,24 +59,24 @@ const TILE_GRID_POSITIONS: Record<number, { row: number; col: number }> = {
   19: { row: 1, col: 1 },  // ÜCRETSİZ OTOPARK
   20: { row: 1, col: 2 },  // KASTAMONU
   21: { row: 1, col: 3 },  // GİRESUN
-  22: { row: 1, col: 4 },  // GELİR VERGİSİ
-  23: { row: 1, col: 5 },  // BEŞİKTAŞ
-  24: { row: 1, col: 6 },  // ŞANS 2
-  25: { row: 1, col: 7 },  // DENİZLİ
-  26: { row: 1, col: 8 },  // ANTALYA
-  27: { row: 1, col: 9 },  // BURSA
+  22: { row: 1, col: 4 },  // ŞANS 2
+  23: { row: 1, col: 5 },  // RİZE
+  24: { row: 1, col: 6 },  // DENİZLİ
+  25: { row: 1, col: 7 },  // BEŞİKTAŞ
+  26: { row: 1, col: 8 },  // MUĞLA
+  27: { row: 1, col: 9 },  // AYDIN
   28: { row: 1, col: 10 }, // KODESE GİT
 
   // Right column (Top to Bottom: Row 2 down to Row 10)
-  29: { row: 2, col: 10 }, // BALIKESİR
-  30: { row: 3, col: 10 }, // ÇANAKKALE
-  31: { row: 4, col: 10 }, // İZMİR
-  32: { row: 5, col: 10 }, // ÜSKÜDAR
-  33: { row: 6, col: 10 }, // KAMU FONU 2
-  34: { row: 7, col: 10 }, // BOĞAZ KÖPRÜSÜ
-  35: { row: 8, col: 10 }, // LÜKS VERGİSİ
-  36: { row: 9, col: 10 }, // ANKARA
-  37: { row: 10, col: 10 }, // İSTANBUL
+  29: { row: 2, col: 10 }, // ANTALYA
+  30: { row: 3, col: 10 }, // İZMİR
+  31: { row: 4, col: 10 }, // KAMU FONU 2
+  32: { row: 5, col: 10 }, // BURSA
+  33: { row: 6, col: 10 }, // ANKARA
+  34: { row: 7, col: 10 }, // ÜSKÜDAR
+  35: { row: 8, col: 10 }, // GELİR VERGİSİ
+  36: { row: 9, col: 10 }, // İSTANBUL
+  37: { row: 10, col: 10 }, // LÜKS VERGİSİ
 };
 
 export const Board: React.FC<BoardProps> = ({
@@ -97,6 +98,7 @@ export const Board: React.FC<BoardProps> = ({
   onOpenProperties,
   onOpenTrade,
   onOpenTransactions,
+  onDeclareBankruptcy,
   turnSecondsRemaining,
   onTakeBackControl,
 }) => {
@@ -228,13 +230,63 @@ export const Board: React.FC<BoardProps> = ({
               </div>
             )}
 
+            {/* Debt Settlement & Bankruptcy Recovery Mode */}
+            {(pendingAction === 'DEBT_SETTLEMENT' || (currentTurnPlayer && currentTurnPlayer.money < 0 && currentTurnPlayer.inGame)) && (
+              <div className="w-full bg-rose-950/90 border-2 border-rose-500 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 text-center space-y-1.5 sm:space-y-2 shadow-2xl animate-fade-in backdrop-blur-md">
+                <div className="flex items-center justify-center gap-1.5 text-rose-300 font-extrabold text-xs sm:text-sm">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 animate-pulse" />
+                  <span>{t('debtSettlementTitle')}</span>
+                </div>
+                
+                <div className="bg-rose-900/60 rounded-lg p-1.5 border border-rose-700/60">
+                  <p className="text-[10px] sm:text-xs text-rose-200 font-medium leading-tight">
+                    {isMyTurn ? t('debtSettlementInstruction') : t('debtSettlementWaiting', { name: currentTurnPlayer?.name || '' })}
+                  </p>
+                  {currentTurnPlayer && (
+                    <div className="text-xs sm:text-sm font-black text-rose-300 mt-0.5">
+                      {formatMoney(currentTurnPlayer.money)}
+                    </div>
+                  )}
+                </div>
+
+                {isMyTurn && (
+                  <div className="flex flex-col gap-1.5 pt-0.5">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        onClick={onOpenProperties}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs transition flex items-center justify-center gap-1 shadow cursor-pointer active:scale-95"
+                      >
+                        <Building2 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{t('managePropertiesBtn')}</span>
+                      </button>
+                      <button
+                        onClick={onOpenTrade}
+                        className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-1.5 px-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs transition flex items-center justify-center gap-1 shadow cursor-pointer active:scale-95"
+                      >
+                        <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{t('tradeForCashBtn')}</span>
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={onDeclareBankruptcy}
+                      className="w-full bg-slate-900/90 hover:bg-rose-900/90 text-rose-300 hover:text-white border border-rose-700/80 font-bold py-1 rounded-lg sm:rounded-xl text-[9.5px] sm:text-[11px] transition flex items-center justify-center gap-1 shadow cursor-pointer active:scale-95"
+                    >
+                      <Skull className="w-3 h-3 text-rose-400" />
+                      <span>{t('surrenderBankruptcyBtn')}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Dice Roll & End Turn Controls */}
             <Dice
               dice={dice}
               disabled={diceRolled}
               onRoll={onRollDice}
               onEndTurn={onEndTurn}
-              canEndTurn={diceRolled && pendingAction === 'NONE'}
+              canEndTurn={diceRolled && pendingAction === 'NONE' && (currentTurnPlayer ? currentTurnPlayer.money >= 0 : true)}
               currentTurnName={currentTurnPlayer?.name || ''}
               isMyTurn={isMyTurn}
               turnSecondsRemaining={turnSecondsRemaining}

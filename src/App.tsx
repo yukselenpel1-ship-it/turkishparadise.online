@@ -24,7 +24,8 @@ import {
   PLAYER_AVATARS,
   addLog,
   addTransaction,
-  isPlayerHost
+  isPlayerHost,
+  declareBankruptcy
 } from './engine/gameEngine';
 import {
   loginAsGuest,
@@ -1212,6 +1213,16 @@ export const App: React.FC = () => {
     updateAndBroadcastGameState((prev) => nextTurn(prev));
   };
 
+  // Declare Bankruptcy Action
+  const handleDeclareBankruptcyAction = (playerId?: string) => {
+    soundManager.playJail();
+    updateAndBroadcastGameState((prev) => {
+      const targetId = playerId || prev.players[prev.currentTurnIndex]?.id || myPlayerId;
+      if (!targetId) return prev;
+      return declareBankruptcy(prev, targetId);
+    });
+  };
+
   // Buy Property Action
   const handleBuyPropertyAction = (actingPlayerId?: string) => {
     soundManager.playBuyProperty();
@@ -1552,6 +1563,7 @@ export const App: React.FC = () => {
                   setIsTradeModalOpen(true);
                 }}
                 onOpenTransactions={() => setIsTransactionsModalOpen(true)}
+                onDeclareBankruptcy={() => handleDeclareBankruptcyAction(me?.id)}
                 turnSecondsRemaining={turnSecondsRemaining}
                 onTakeBackControl={handleTakeBackControl}
               />

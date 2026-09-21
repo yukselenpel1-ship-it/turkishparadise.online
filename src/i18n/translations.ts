@@ -231,6 +231,14 @@ export interface TranslationDictionary {
   jailedBadge: string;
   propertyCount: string;
 
+  // Debt Settlement & Bankruptcy Recovery
+  debtSettlementTitle: string;
+  debtSettlementInstruction: string;
+  debtSettlementWaiting: string;
+  managePropertiesBtn: string;
+  tradeForCashBtn: string;
+  surrenderBankruptcyBtn: string;
+
   // Common
   currencySymbol: string;
   loginBtn: string;
@@ -474,6 +482,14 @@ export const translations: Record<Language, TranslationDictionary> = {
     jailedBadge: 'KODESTE',
     propertyCount: '{count} Mülk',
 
+    // Debt Settlement & Bankruptcy Recovery
+    debtSettlementTitle: '⚠️ Borç Tasfiye ve Bakiye Kurtarma',
+    debtSettlementInstruction: 'Bakiyeniz eksiye düştü! İflas etmemek için mülk satışı, ev satışı veya diğer oyuncularla nakit takası yapın.',
+    debtSettlementWaiting: '🎲 {name} borcunu ödemek için mülklerini satıyor / takas yapıyor...',
+    managePropertiesBtn: 'Mülk / Ev Sat & İpotek 🏠',
+    tradeForCashBtn: 'Nakit İçin Takas Yap 🤝',
+    surrenderBankruptcyBtn: 'İflasımı Açıkla (Çekil) 💀',
+
     // Common
     currencySymbol: '₺',
     loginBtn: 'Giriş Yap',
@@ -714,6 +730,14 @@ export const translations: Record<Language, TranslationDictionary> = {
     afkBadge: 'AFK (BOT)',
     jailedBadge: 'IN JAIL',
     propertyCount: '{count} Properties',
+
+    // Debt Settlement & Bankruptcy Recovery
+    debtSettlementTitle: '⚠️ Debt Settlement & Recovery',
+    debtSettlementInstruction: 'Your balance is negative! Sell properties, sell houses, or trade with players to clear debt.',
+    debtSettlementWaiting: '🎲 {name} is liquidating assets or trading to pay off debt...',
+    managePropertiesBtn: 'Sell Assets / Mortgage 🏠',
+    tradeForCashBtn: 'Trade for Cash 🤝',
+    surrenderBankruptcyBtn: 'Declare Bankruptcy (Forfeit) 💀',
 
     // Common
     currencySymbol: '$',

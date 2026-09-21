@@ -110,6 +110,7 @@ export type ActionType =
   | 'TAX_PAYMENT' 
   | 'RENT_PAYMENT' 
   | 'JAIL_DECISION' 
+  | 'DEBT_SETTLEMENT'
   | 'NONE';
 
 export type TransactionType = 'income' | 'expense';
