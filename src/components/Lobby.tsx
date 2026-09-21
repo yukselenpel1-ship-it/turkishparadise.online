@@ -33,7 +33,10 @@ import {
   Trophy,
   Loader2,
   Trash2,
-  UserMinus
+  UserMinus,
+  Mail,
+  Send,
+  MessageSquare
 } from 'lucide-react';
 
 interface LobbyProps {
@@ -82,7 +85,8 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [activeModal, setActiveModal] = useState<'rules' | 'features' | 'community' | null>(null);
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const [activeModal, setActiveModal] = useState<'rules' | 'features' | 'community' | 'contact' | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileInitialTab, setProfileInitialTab] = useState<ProfileTab>('stats');
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
@@ -229,30 +233,37 @@ export const Lobby: React.FC<LobbyProps> = ({
         <DiceLogo size="md" />
 
         {/* Center Nav Links */}
-        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-300">
+        <nav className="hidden md:flex items-center gap-7 text-sm font-semibold text-slate-300">
           <button
             onClick={() => setActiveModal(null)}
-            className="text-amber-400 font-bold border-b-2 border-amber-400 pb-1 cursor-pointer"
+            className={`${activeModal === null ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
             Ana Sayfa
           </button>
           <button
             onClick={() => setActiveModal('rules')}
-            className="hover:text-white transition pb-1 cursor-pointer"
+            className={`${activeModal === 'rules' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
             Nasıl Oynanır?
           </button>
           <button
             onClick={() => setActiveModal('features')}
-            className="hover:text-white transition pb-1 cursor-pointer"
+            className={`${activeModal === 'features' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
             Özellikler
           </button>
           <button
             onClick={() => setActiveModal('community')}
-            className="hover:text-white transition pb-1 cursor-pointer"
+            className={`${activeModal === 'community' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
             Topluluk
+          </button>
+          <button
+            onClick={() => setActiveModal('contact')}
+            className={`${activeModal === 'contact' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-amber-300 text-amber-400/90'} pb-1 cursor-pointer transition flex items-center gap-1.5`}
+          >
+            <Mail className="w-3.5 h-3.5 text-amber-400" />
+            İletişim
           </button>
         </nav>
 
@@ -1311,8 +1322,17 @@ export const Lobby: React.FC<LobbyProps> = ({
       </main>
 
       {/* 3. Footer */}
-      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 text-center text-xs font-semibold text-slate-500 relative z-20">
-        © 2026 Turkish Paradise - Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.
+      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-semibold text-slate-500 relative z-20">
+        <span>© 2026 Turkish Paradise - Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setActiveModal('contact')}
+            className="hover:text-amber-400 text-slate-400 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+          >
+            <Mail className="w-3.5 h-3.5 text-amber-400" />
+            <span>İletişim: <span className="font-mono text-amber-300/90">turkishparadisegame@gmail.com</span></span>
+          </button>
+        </div>
       </footer>
 
       {/* Profile & Stats Modal */}
@@ -1328,7 +1348,7 @@ export const Lobby: React.FC<LobbyProps> = ({
         />
       )}
 
-      {/* Info Modals (Nasıl Oynanır, Özellikler, Topluluk) */}
+      {/* Info Modals (Nasıl Oynanır, Özellikler, Topluluk, İletişim) */}
       {activeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-[#0e1628] border border-slate-800 rounded-3xl max-w-md w-full p-6 text-left shadow-2xl relative space-y-4">
@@ -1378,6 +1398,72 @@ export const Lobby: React.FC<LobbyProps> = ({
                 <p className="text-xs text-slate-300 leading-relaxed">
                   Turkish Paradise oyuncu topluluğuna katılın, arkadaşlarınızla özel odalarda rekabet edin ve Türkiye'nin en büyük emlak kralı olun!
                 </p>
+              </>
+            )}
+
+            {activeModal === 'contact' && (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 shadow-lg shadow-amber-500/20 shrink-0">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white">İletişim & Geri Bildirim</h3>
+                    <p className="text-xs text-amber-400/90 font-medium">Bizimle iletişime geçin</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Turkish Paradise ile ilgili her türlü <strong>soru, öneri, hata bildirimi (bug), yeni özellik isteği ve iş birliği</strong> için resmi e-posta adresimiz üzerinden bize doğrudan ulaşabilirsiniz.
+                </p>
+
+                <div className="bg-slate-900/90 border border-amber-500/30 rounded-2xl p-4 space-y-3 shadow-inner">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <div className="truncate">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Resmi E-Posta Adresi</span>
+                        <span className="text-xs sm:text-sm font-bold text-amber-300 font-mono select-all">turkishparadisegame@gmail.com</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText('turkishparadisegame@gmail.com');
+                        setCopiedEmail(true);
+                        setTimeout(() => setCopiedEmail(false), 2000);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition flex items-center gap-1 shrink-0 cursor-pointer shadow-md"
+                    >
+                      {copiedEmail ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedEmail ? 'Kopyalandı' : 'Kopyala'}
+                    </button>
+                  </div>
+
+                  <a
+                    href="mailto:turkishparadisegame@gmail.com?subject=Turkish%20Paradise%20-%20%C4%B0leti%C5%9Fim%20%2F%20%C3%96neri"
+                    className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5 text-amber-400" />
+                    E-Posta Uygulamasında Aç
+                  </a>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] text-slate-400 font-medium">
+                  <div className="bg-slate-900/60 border border-slate-800/80 p-2 rounded-xl">
+                    <span className="block text-amber-400 font-bold mb-0.5">💡 Öneriler</span>
+                    Yeni fikir & istekler
+                  </div>
+                  <div className="bg-slate-900/60 border border-slate-800/80 p-2 rounded-xl">
+                    <span className="block text-rose-400 font-bold mb-0.5">🐛 Hata Bildirimi</span>
+                    Gördüğünüz bug'lar
+                  </div>
+                  <div className="bg-slate-900/60 border border-slate-800/80 p-2 rounded-xl">
+                    <span className="block text-emerald-400 font-bold mb-0.5">🤝 İş Birliği</span>
+                    Topluluk & sponsorluk
+                  </div>
+                </div>
               </>
             )}
 
