@@ -8,6 +8,7 @@ interface TradeModalProps {
   players: Player[];
   board: BoardTile[];
   initialOfferedTile?: BoardTile;
+  initialTargetPlayerId?: string;
   onClose: () => void;
   onExecuteTrade: (offer: TradeOffer) => void;
 }
@@ -17,6 +18,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
   players,
   board,
   initialOfferedTile,
+  initialTargetPlayerId,
   onClose,
   onExecuteTrade,
 }) => {
@@ -24,11 +26,13 @@ export const TradeModal: React.FC<TradeModalProps> = ({
   const otherPlayers = players.filter((p) => p.id !== currentPlayer.id && p.inGame);
   
   const isInitialTileMine = initialOfferedTile ? initialOfferedTile.ownerId === currentPlayer.id : false;
-  const initialTargetPlayerId = (initialOfferedTile && !isInitialTileMine && initialOfferedTile.ownerId)
-    ? initialOfferedTile.ownerId
-    : (otherPlayers[0]?.id || '');
+  const defaultTargetId = initialTargetPlayerId || (
+    initialOfferedTile && !isInitialTileMine && initialOfferedTile.ownerId
+      ? initialOfferedTile.ownerId
+      : (otherPlayers[0]?.id || '')
+  );
 
-  const [selectedTargetPlayerId, setSelectedTargetPlayerId] = useState<string>(initialTargetPlayerId);
+  const [selectedTargetPlayerId, setSelectedTargetPlayerId] = useState<string>(defaultTargetId);
   const [selectedMyTileIds, setSelectedMyTileIds] = useState<number[]>(
     initialOfferedTile && isInitialTileMine ? [initialOfferedTile.id] : []
   );
@@ -71,7 +75,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
       offeredTileIds: selectedMyTileIds,
       offeredMoney: Math.max(0, Math.min(offeredMoney, currentPlayer.money)),
       requestedTileIds: selectedTargetTileIds,
-      requestedMoney: Math.max(0, Math.min(requestedMoney, targetPlayer?.money || 0)),
+      requestedMoney: Math.max(0, requestedMoney),
     };
 
     onExecuteTrade(offer);
@@ -265,13 +269,14 @@ export const TradeModal: React.FC<TradeModalProps> = ({
               <div className="pt-2 border-t border-slate-800/80">
                 <label className="text-[11px] font-bold text-slate-300 flex items-center justify-between mb-1">
                   <span>{t('theirRequestedMoney')}</span>
-                  <span className="text-amber-300 font-bold">{formatMoney(targetPlayer?.money || 0)}</span>
+                  <span className="text-amber-300 font-bold">
+                    {targetPlayer ? `(Kasa: ${formatMoney(targetPlayer.money)})` : ''}
+                  </span>
                 </label>
                 <div className="relative">
                   <input
                     type="number"
                     min="0"
-                    max={targetPlayer?.money || 0}
                     step="10"
                     value={requestedMoney || ''}
                     onChange={(e) => setRequestedMoney(Number(e.target.value))}

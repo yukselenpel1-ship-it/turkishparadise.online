@@ -498,22 +498,44 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
       const targetOwner = newState.players.find(p => p.id === missingTile.ownerId && p.inGame);
       if (!targetOwner) continue;
 
-      // Find a spare property that bot owns which is NOT part of a bot set
+      // Find spare properties that bot owns which are NOT part of a bot monopoly and have no houses
       const spareProperties = newState.board.filter(
         t => t.ownerId === bot.id &&
              t.colorGroup !== group &&
-             !hasColorGroupMonopoly(newState.board, t.colorGroup, bot.id)
+             !hasColorGroupMonopoly(newState.board, t.colorGroup, bot.id) &&
+             t.houses === 0
       );
 
-      // Calculate a generous cash offer to entice the seller
-      const cashMultiplier = difficulty === 'hard' ? 1.6 : difficulty === 'medium' ? 1.4 : 1.2;
-      let cashOffer = Math.round(missingTile.price * cashMultiplier);
-      const maxAffordable = Math.max(0, Math.floor(bot.money * 0.75));
-      cashOffer = Math.min(cashOffer, maxAffordable);
+      // Target valuation to incentivize seller
+      const deedPrice = missingTile.price;
+      const targetMultiplier = difficulty === 'hard' ? 1.4 : difficulty === 'medium' ? 1.25 : 1.15;
+      const desiredTotalValue = Math.round(deedPrice * targetMultiplier);
 
-      const offeredTileIds: number[] = [];
-      if (spareProperties.length > 0 && Math.random() > 0.4) {
-        offeredTileIds.push(spareProperties[0].id);
+      const maxCashAvailable = Math.max(0, Math.floor(bot.money * 0.85));
+
+      let offeredTileIds: number[] = [];
+      let offeredTilesValue = 0;
+
+      // If bot doesn't have enough pure cash to reach desired value, include spare properties
+      if (maxCashAvailable < desiredTotalValue && spareProperties.length > 0) {
+        for (const prop of spareProperties) {
+          if (offeredTilesValue + maxCashAvailable < desiredTotalValue || offeredTilesValue < deedPrice * 0.5) {
+            offeredTileIds.push(prop.id);
+            offeredTilesValue += (prop.price || 60);
+            if (offeredTileIds.length >= 2) break; // Max 2 properties in trade bundle
+          }
+        }
+      }
+
+      // Calculate cash needed to top up the bundle
+      const remainingCashNeeded = Math.max(0, desiredTotalValue - offeredTilesValue);
+      const cashOffer = Math.min(remainingCashNeeded, maxCashAvailable);
+      const totalOfferedValue = offeredTilesValue + cashOffer;
+
+      // CRITICAL: Bot NEVER sends a lowball trade offer below deed price!
+      // Total value offered (Cash + Properties) MUST be at least 1.1x of the deed price
+      if (totalOfferedValue < Math.round(deedPrice * 1.1)) {
+        continue; // Bot cannot afford a fair offer for this city right now
       }
 
       const offer: TradeOffer = {

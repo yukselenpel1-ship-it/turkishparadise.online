@@ -132,6 +132,7 @@ export const App: React.FC = () => {
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const { t, formatMoney } = useLanguage();
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
+  const [tradeTargetPlayerId, setTradeTargetPlayerId] = useState<string | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
   const [mobileSheet, setMobileSheet] = useState<'players' | 'chat' | 'logs' | null>(null);
@@ -1391,11 +1392,13 @@ export const App: React.FC = () => {
     });
   };
 
-  // Handle Counter-Offer: opens trade modal
+  // Handle Counter-Offer: opens trade modal directly pre-targeted to the proposing player
   const handleCounterOfferIncomingTrade = () => {
     if (gameState.incomingTradeOffer) {
       const targetTileId = gameState.incomingTradeOffer.requestedTileIds[0];
       const targetTile = gameState.board.find((t) => t.id === targetTileId);
+      const proposingPlayerId = gameState.incomingTradeOffer.fromPlayerId;
+      setTradeTargetPlayerId(proposingPlayerId);
       setTradeSelectedTile(targetTile);
       updateAndBroadcastGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
       setIsTradeModalOpen(true);
@@ -1798,7 +1801,12 @@ export const App: React.FC = () => {
           players={gameState.players}
           board={gameState.board}
           initialOfferedTile={tradeSelectedTile}
-          onClose={() => setIsTradeModalOpen(false)}
+          initialTargetPlayerId={tradeTargetPlayerId}
+          onClose={() => {
+            setIsTradeModalOpen(false);
+            setTradeSelectedTile(undefined);
+            setTradeTargetPlayerId(undefined);
+          }}
           onExecuteTrade={handleExecuteTradeAction}
         />
       )}
