@@ -19,7 +19,7 @@ export type SyncMessage =
   | { type: 'REQUEST_SYNC'; senderId: string; roomId: string; playerId?: string }
   | { type: 'CHAT_MESSAGE'; senderId: string; roomId: string; message: ChatMessage }
   | { type: 'TRADE_OFFER'; senderId: string; roomId: string; offer: TradeOffer }
-  | { type: 'GAME_ACTION'; senderId: string; roomId: string; playerId: string; actionType: string; payload?: any };
+  | { type: 'GAME_ACTION'; senderId: string; roomId: string; playerId: string; actionType: string; payload?: any; actionId?: string };
 
 export type MessageCallback = (msg: SyncMessage) => void;
 
@@ -489,16 +489,19 @@ class MultiplayerSyncManager {
   /**
    * Send authoritative game action request to host
    */
-  public sendGameAction(roomId: string, playerId: string, actionType: string, payload?: any): void {
+  public sendGameAction(roomId: string, playerId: string, actionType: string, payload?: any): string {
+    const actionId = `${LOCAL_CLIENT_ID}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const msg: SyncMessage = {
       type: 'GAME_ACTION',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       playerId,
       actionType,
-      payload
+      payload,
+      actionId
     };
     this.send(msg);
+    return actionId;
   }
 
   /**

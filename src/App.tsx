@@ -38,6 +38,7 @@ import {
   saveLocalUser,
   getUserStats,
   syncRoomState,
+  relayDiceRoll,
   subscribeToRoom,
   recordGameMatch,
   recordGameWin,
@@ -1371,7 +1372,8 @@ export const App: React.FC = () => {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame || !isMeCurrent) return;
       if (liveState.roomId && liveMyId) {
-        syncManager.sendGameAction(liveState.roomId, liveMyId, 'ROLL_DICE');
+        const actionId = syncManager.sendGameAction(liveState.roomId, liveMyId, 'ROLL_DICE');
+        void relayDiceRoll(liveState.roomId, liveMyId, actionId);
       }
       return;
     }

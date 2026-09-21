@@ -373,6 +373,19 @@ export async function syncRoomState(roomId: string, gameState: GameState): Promi
   }
 }
 
+// The room state can arrive through Firebase even when the MQTT action relay is offline.
+// Mirror human roll requests there so the host can still process them.
+export async function relayDiceRoll(roomId: string, playerId: string, actionId: string): Promise<void> {
+  if (!isFirebaseConfigured || !database) return;
+  try {
+    await set(ref(database, `rooms/${roomId}/diceAction`), {
+      actionId, playerId, actionType: 'ROLL_DICE', createdAt: Date.now()
+    });
+  } catch (err) {
+    console.warn('[Firebase] Dice action relay error:', err);
+  }
+}
+
 /**
  * Subscribe to real-time room updates across devices worldwide
  */
@@ -386,6 +399,16 @@ export function subscribeToRoom(
   onGameAction?: (playerId: string, actionType: string, payload?: any) => void,
   isHost = false
 ): () => void {
+  const seenActions = new Set<string>();
+  const subscribedAt = Date.now();
+  const receiveAction = (playerId: string, actionType: string, payload?: any, actionId?: string) => {
+    if (actionId) {
+      if (seenActions.has(actionId)) return;
+      seenActions.add(actionId);
+      if (seenActions.size > 200) seenActions.clear();
+    }
+    onGameAction?.(playerId, actionType, payload);
+  };
   // 1. Global Sync Manager Subscription (WebRTC + MQTT + BroadcastChannel)
   const unsubscribeSyncManager = syncManager.joinRoom(
     roomId,
@@ -401,7 +424,7 @@ export function subscribeToRoom(
       } else if (msg.type === 'HOST_MIGRATED' && msg.newHostPlayerId && onHostMigrated) {
         onHostMigrated(msg.newHostPlayerId);
       } else if (msg.type === 'GAME_ACTION' && msg.playerId && msg.actionType && onGameAction) {
-        onGameAction(msg.playerId, msg.actionType, msg.payload);
+        receiveAction(msg.playerId, msg.actionType, msg.payload, msg.actionId);
       }
     },
     isHost
@@ -409,6 +432,7 @@ export function subscribeToRoom(
 
   // 2. Firebase Realtime DB Listener (if configured)
   let roomRef: any = null;
+  let diceActionRef: any = null;
   if (isFirebaseConfigured && database) {
     try {
       roomRef = ref(database, `rooms/${roomId}/state`);
@@ -418,6 +442,16 @@ export function subscribeToRoom(
           onUpdate(val);
         }
       });
+      if (isHost && onGameAction) {
+        diceActionRef = ref(database, `rooms/${roomId}/diceAction`);
+        onValue(diceActionRef, (snapshot) => {
+          const action = snapshot.val();
+          if (!action || !action.actionId || !action.playerId || action.actionType !== 'ROLL_DICE') return;
+          // Firebase immediately replays the last value on subscription; ignore old rolls.
+          if (typeof action.createdAt !== 'number' || action.createdAt < subscribedAt - 2000) return;
+          receiveAction(action.playerId, action.actionType, undefined, action.actionId);
+        });
+      }
     } catch (err) {
       console.warn('[Firebase] Realtime listener error:', err);
     }
@@ -429,6 +463,6 @@ export function subscribeToRoom(
     if (roomRef) {
       off(roomRef);
     }
+    if (diceActionRef) off(diceActionRef);
   };
 }
-
