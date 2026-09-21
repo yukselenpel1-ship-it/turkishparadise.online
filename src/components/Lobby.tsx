@@ -187,25 +187,27 @@ export const Lobby: React.FC<LobbyProps> = ({
   const me = players.find((p) => p.id === myPlayerId || (userAccount?.uid && p.userId === userAccount.uid));
   const isHost = Boolean(hostPlayerId ? hostPlayerId === myPlayerId : (me?.isHost || (players.length > 0 && players[0].id === myPlayerId)));
 
-  // Taken colors and avatars by other players/bots in the room
-  const takenColors = players.filter((p) => p.id !== myPlayerId).map((p) => p.color);
-  const takenAvatars = players.filter((p) => p.id !== myPlayerId).map((p) => p.avatar);
+  // Taken colors and avatars by other players/bots in the room (only when inside an active joined room)
+  const takenColors = hasJoined ? players.filter((p) => p.id !== myPlayerId).map((p) => p.color) : [];
+  const takenAvatars = hasJoined ? players.filter((p) => p.id !== myPlayerId).map((p) => p.avatar) : [];
 
-  // Auto-switch selectedColor if taken by another player/bot
+  // Auto-switch selectedColor if taken by another player/bot in room
   useEffect(() => {
+    if (!hasJoined) return;
     const freeColors = PLAYER_COLORS.filter((c) => !takenColors.includes(c));
     if (freeColors.length > 0 && takenColors.includes(selectedColor)) {
       setSelectedColor(freeColors[0]);
     }
-  }, [players, myPlayerId, selectedColor]);
+  }, [hasJoined, takenColors, selectedColor]);
 
-  // Auto-switch selectedAvatar if taken by another player/bot
+  // Auto-switch selectedAvatar if taken by another player/bot in room
   useEffect(() => {
+    if (!hasJoined) return;
     const freeAvatars = PLAYER_AVATARS.filter((a) => !takenAvatars.includes(a));
     if (freeAvatars.length > 0 && takenAvatars.includes(selectedAvatar)) {
       setSelectedAvatar(freeAvatars[0]);
     }
-  }, [players, myPlayerId, selectedAvatar]);
+  }, [hasJoined, takenAvatars, selectedAvatar]);
 
   const handleGoogleClick = async () => {
     try {
