@@ -708,18 +708,18 @@ export const App: React.FC = () => {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
           handlePayJailBailAction();
         } else if (actionType === 'BUILD_HOUSE' && payload?.tileId) {
-          handleBuildHouseAction(payload.tileId);
+          handleBuildHouseAction(payload.tileId, senderPlayerId);
         } else if (actionType === 'SELL_HOUSE' && payload?.tileId) {
-          handleSellHouseAction(payload.tileId);
+          handleSellHouseAction(payload.tileId, senderPlayerId);
         } else if (actionType === 'MORTGAGE' && payload?.tileId) {
-          handleToggleMortgageAction(payload.tileId);
+          handleToggleMortgageAction(payload.tileId, senderPlayerId);
         } else if (actionType === 'BANKRUPTCY') {
           handleDeclareBankruptcyAction(payload?.playerId || senderPlayerId);
         } else if (actionType === 'CONFIRM_CHANCE') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
           handleConfirmChanceCard();
         } else if (actionType === 'SELL_TO_BANK' && payload?.tileId) {
-          handleSellToBankAction(payload.tileId);
+          handleSellToBankAction(payload.tileId, senderPlayerId);
         }
       },
       isMeHost
@@ -1331,11 +1331,9 @@ export const App: React.FC = () => {
   };
 
   // Step-by-Step Animated Roll Dice Action
+  // Step-by-Step Animated Roll Dice Action
   const handleRollDiceAction = () => {
     if (isMoving || gameState.diceRolled || gameState.phase !== 'PLAYING') return;
-
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
 
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     if (!currentPlayer || !currentPlayer.inGame) return;
@@ -1343,13 +1341,10 @@ export const App: React.FC = () => {
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const isMeCurrent = currentPlayer.id === myPlayerId;
 
-    // Allow manual roll by current player OR auto roll for bot / AFK human on host
-    if (!isMeCurrent && !currentPlayer.isBot && !(currentPlayer.isAfk && isMeHost)) {
-      return;
-    }
-
     // Non-host player: forward action to authoritative host
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame || !isMeCurrent) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'ROLL_DICE');
       }
@@ -1464,11 +1459,10 @@ export const App: React.FC = () => {
 
   // End Turn Action
   const handleEndTurnAction = () => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'END_TURN');
       }
@@ -1479,14 +1473,13 @@ export const App: React.FC = () => {
 
   // Declare Bankruptcy Action
   const handleDeclareBankruptcyAction = (playerId?: string) => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const targetId = playerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId;
     if (!targetId) return;
 
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BANKRUPTCY', { playerId: targetId });
       }
@@ -1498,13 +1491,12 @@ export const App: React.FC = () => {
 
   // Buy Property Action
   const handleBuyPropertyAction = (actingPlayerId?: string) => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
 
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BUY_PROPERTY');
       }
@@ -1516,13 +1508,12 @@ export const App: React.FC = () => {
 
   // Pass Property Action (Skip buying)
   const handlePassPropertyAction = (actingPlayerId?: string) => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
 
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'PASS_PROPERTY');
       }
@@ -1532,27 +1523,26 @@ export const App: React.FC = () => {
   };
 
   // Sell Property to Bank for 2/3 price
-  const handleSellToBankAction = (tileId: number) => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
+  const handleSellToBankAction = (tileId: number, actingPlayerId?: string) => {
     const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const actorId = actingPlayerId || myPlayerId || undefined;
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'SELL_TO_BANK', { tileId });
       }
       return;
     }
-    updateAndBroadcastGameState((prev) => sellPropertyToBank(prev, tileId));
+    updateAndBroadcastGameState((prev) => sellPropertyToBank(prev, tileId, actorId));
   };
 
   // Pay 100 Bail to leave Kodes (Jail)
   const handlePayJailBailAction = () => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'PAY_JAIL');
       }
@@ -1563,12 +1553,12 @@ export const App: React.FC = () => {
   };
 
   // Build House Action
-  const handleBuildHouseAction = (tileId: number) => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
+  const handleBuildHouseAction = (tileId: number, actingPlayerId?: string) => {
     const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const actorId = actingPlayerId || myPlayerId || undefined;
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BUILD_HOUSE', { tileId });
       }
@@ -1576,7 +1566,7 @@ export const App: React.FC = () => {
     }
     soundManager.playBuyProperty();
     updateAndBroadcastGameState((prev) => {
-      const next = buildHouse(prev, tileId, myPlayerId || undefined);
+      const next = buildHouse(prev, tileId, actorId);
       if (selectedTile && selectedTile.id === tileId) {
         const updatedTile = next.board.find((t) => t.id === tileId);
         if (updatedTile) setSelectedTile(updatedTile);
@@ -1586,19 +1576,19 @@ export const App: React.FC = () => {
   };
 
   // Sell House Action
-  const handleSellHouseAction = (tileId: number) => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
+  const handleSellHouseAction = (tileId: number, actingPlayerId?: string) => {
     const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const actorId = actingPlayerId || myPlayerId || undefined;
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'SELL_HOUSE', { tileId });
       }
       return;
     }
     updateAndBroadcastGameState((prev) => {
-      const next = sellHouse(prev, tileId, myPlayerId || undefined);
+      const next = sellHouse(prev, tileId, actorId);
       if (selectedTile && selectedTile.id === tileId) {
         const updatedTile = next.board.find((t) => t.id === tileId);
         if (updatedTile) setSelectedTile(updatedTile);
@@ -1608,19 +1598,19 @@ export const App: React.FC = () => {
   };
 
   // Toggle Mortgage Action
-  const handleToggleMortgageAction = (tileId: number) => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
+  const handleToggleMortgageAction = (tileId: number, actingPlayerId?: string) => {
     const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const actorId = actingPlayerId || myPlayerId || undefined;
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'MORTGAGE', { tileId });
       }
       return;
     }
     updateAndBroadcastGameState((prev) => {
-      const next = toggleMortgage(prev, tileId, myPlayerId || undefined);
+      const next = toggleMortgage(prev, tileId, actorId);
       if (selectedTile && selectedTile.id === tileId) {
         const updatedTile = next.board.find((t) => t.id === tileId);
         if (updatedTile) setSelectedTile(updatedTile);
@@ -1631,11 +1621,10 @@ export const App: React.FC = () => {
 
   // Apply Chance Card
   const handleConfirmChanceCard = () => {
-    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
-    if (!myPlayer || !myPlayer.inGame) return;
-
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
+      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      if (!myPlayer || !myPlayer.inGame) return;
       if (gameState.roomId && myPlayerId) {
         syncManager.sendGameAction(gameState.roomId, myPlayerId, 'CONFIRM_CHANCE');
       }
