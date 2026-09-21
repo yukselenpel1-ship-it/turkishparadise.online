@@ -735,14 +735,23 @@ export const App: React.FC = () => {
           const tile = gameState.board[currentPlayer.position];
           let shouldBuy = false;
           if (tile && tile.price) {
-            if (difficulty === 'hard') shouldBuy = currentPlayer.money >= tile.price;
-            else if (difficulty === 'medium') shouldBuy = currentPlayer.money >= tile.price + 80;
-            else shouldBuy = currentPlayer.money >= tile.price + 120 && Math.random() > 0.3;
+            const hasSameColor = tile.colorGroup ? gameState.board.some(t => t.id !== tile.id && t.colorGroup === tile.colorGroup && t.ownerId === currentPlayer.id) : false;
+
+            if (difficulty === 'hard') {
+              // Hard Bot: Aggressive buyer, buys if it can afford the price
+              shouldBuy = currentPlayer.money >= tile.price;
+            } else if (difficulty === 'medium') {
+              // Medium Bot: Smart investor, buys if money >= price, high buy rate
+              shouldBuy = currentPlayer.money >= tile.price && (hasSameColor || currentPlayer.money >= tile.price + 30 || Math.random() > 0.1);
+            } else {
+              // Easy Bot: Also buys properties actively (~85% buy rate), only passes if very low on cash
+              shouldBuy = currentPlayer.money >= tile.price && (hasSameColor ? Math.random() > 0.05 : (currentPlayer.money >= tile.price + 20 || Math.random() > 0.15));
+            }
           }
           if (shouldBuy) {
-            handleBuyPropertyAction();
+            handleBuyPropertyAction(currentPlayer.id);
           } else {
-            handlePassPropertyAction();
+            handlePassPropertyAction(currentPlayer.id);
           }
         }, 1200 + afkDelay);
         return () => clearTimeout(timer);
@@ -1206,12 +1215,18 @@ export const App: React.FC = () => {
   // Buy Property Action
   const handleBuyPropertyAction = (actingPlayerId?: string) => {
     soundManager.playBuyProperty();
-    updateAndBroadcastGameState((prev) => buyProperty(prev, actingPlayerId || myPlayerId || undefined));
+    updateAndBroadcastGameState((prev) => {
+      const activeActorId = actingPlayerId || prev.players[prev.currentTurnIndex]?.id || myPlayerId || undefined;
+      return buyProperty(prev, activeActorId);
+    });
   };
 
   // Pass Property Action (Skip buying)
   const handlePassPropertyAction = (actingPlayerId?: string) => {
-    updateAndBroadcastGameState((prev) => passProperty(prev, actingPlayerId || myPlayerId || undefined));
+    updateAndBroadcastGameState((prev) => {
+      const activeActorId = actingPlayerId || prev.players[prev.currentTurnIndex]?.id || myPlayerId || undefined;
+      return passProperty(prev, activeActorId);
+    });
   };
 
   // Sell Property to Bank for 2/3 price

@@ -933,6 +933,7 @@ export function buyProperty(state: GameState, playerId?: string): GameState {
   }
 
   newState.pendingAction = 'NONE';
+  newState.actionMessage = undefined;
 
   // If double roll active, allow rolling again
   if ((newState.doublesCount || 0) > 0 && !player.isJailed) {
