@@ -1163,7 +1163,7 @@ export function declareBankruptcy(state: GameState, playerId: string): GameState
   if (!player || !player.inGame) return newState;
 
   player.inGame = false;
-  addLog(newState, `💀 ${player.name} iflas etti ve oyundan elendi!`, 'danger');
+  addLog(newState, `💀 ${player.name} iflas etti ve izleyici moduna geçti.`, 'danger');
 
   // Return all their properties to bank (unowned, clear houses & mortgage)
   newState.board.forEach(t => {
@@ -1184,6 +1184,64 @@ export function declareBankruptcy(state: GameState, playerId: string): GameState
     newState.winner = activePlayers[0] || null;
     if (activePlayers[0]) {
       addLog(newState, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+    }
+    return newState;
+  }
+
+  // If the bankrupt player was currently having their turn, advance immediately to next active player
+  if (newState.players[newState.currentTurnIndex]?.id === playerId) {
+    return nextTurn(newState);
+  }
+
+  return newState;
+}
+
+// Auto-liquidate assets (houses, properties) for AFK / bot in debt settlement or force bankruptcy
+export function autoLiquidateDebtOrBankrupt(state: GameState, playerId: string): GameState {
+  let newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const player = newState.players.find(p => p.id === playerId);
+  if (!player || !player.inGame) return newState;
+
+  if (player.money >= 0) {
+    newState.pendingAction = 'NONE';
+    newState.actionMessage = undefined;
+    return newState;
+  }
+
+  addLog(newState, `🤖 ${player.name} AFK olduğu için borçları bot tarafından otomatik tasfiye ediliyor...`, 'warning');
+
+  // 1. First sell houses on owned properties
+  const ownedHouses = newState.board.filter(t => t.ownerId === player.id && t.houses > 0);
+  for (const tile of ownedHouses) {
+    while (tile.houses > 0) {
+      newState = sellHouse(newState, tile.id, player.id);
+      const currP = newState.players.find(p => p.id === playerId);
+      if (currP && currP.money >= 0) break;
+    }
+    const currP = newState.players.find(p => p.id === playerId);
+    if (currP && currP.money >= 0) break;
+  }
+
+  // 2. If still in debt, sell properties to bank
+  let currP = newState.players.find(p => p.id === playerId);
+  if (currP && currP.money < 0) {
+    const ownedProperties = newState.board.filter(t => t.ownerId === player.id);
+    for (const prop of ownedProperties) {
+      newState = sellPropertyToBank(newState, prop.id, player.id);
+      currP = newState.players.find(p => p.id === playerId);
+      if (currP && currP.money >= 0) break;
+    }
+  }
+
+  // 3. If still in debt (all assets sold), declare bankruptcy!
+  currP = newState.players.find(p => p.id === playerId);
+  if (currP && currP.money < 0) {
+    newState = declareBankruptcy(newState, playerId);
+  } else {
+    newState.pendingAction = 'NONE';
+    newState.actionMessage = undefined;
+    if (currP) {
+      addLog(newState, `✨ ${currP.name} mülk satışlarıyla borcunu kapattı (${currP.money}₺ bakiye)!`, 'success');
     }
   }
 

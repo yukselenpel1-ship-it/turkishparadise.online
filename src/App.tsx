@@ -26,7 +26,8 @@ import {
   addTransaction,
   isPlayerHost,
   declareBankruptcy,
-  evaluateTradeOfferByBot
+  evaluateTradeOfferByBot,
+  autoLiquidateDebtOrBankrupt
 } from './engine/gameEngine';
 import {
   loginAsGuest,
@@ -737,6 +738,18 @@ export const App: React.FC = () => {
 
     // Step B: Rolled and not moving -> evaluate landing action
     if (gameState.diceRolled && !isMoving) {
+      // 0. Pending Debt Settlement Auto-Recovery for Bot or AFK Human
+      if (gameState.pendingAction === 'DEBT_SETTLEMENT' || (currentPlayer && currentPlayer.money < 0)) {
+        const timer = setTimeout(() => {
+          updateAndBroadcastGameState((prev) => {
+            const p = prev.players[prev.currentTurnIndex];
+            if (!p) return prev;
+            return autoLiquidateDebtOrBankrupt(prev, p.id);
+          });
+        }, 1500 + afkDelay);
+        return () => clearTimeout(timer);
+      }
+
       // 1. Pending Property Decision
       if (gameState.pendingAction === 'BUY_PROPERTY') {
         const timer = setTimeout(() => {

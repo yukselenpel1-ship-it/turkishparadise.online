@@ -70,9 +70,14 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                       </span>
                     )}
                     {p.isJailed && <Lock className="w-3 h-3 text-red-400 shrink-0" />}
+                    {!p.inGame && (
+                      <span className="text-[8px] bg-rose-500/20 text-rose-300 font-black px-1 rounded border border-rose-500/40 shrink-0">
+                        {t('spectatorBadge')}
+                      </span>
+                    )}
                   </div>
                   <div className="text-[9px] text-slate-400 truncate mt-0.5">
-                    📍 {currentTileName}
+                    {p.inGame ? `📍 ${currentTileName}` : `💀 ${t('bankruptBadge')}`}
                   </div>
                 </div>
               </div>
@@ -80,7 +85,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({
               <div className="text-right shrink-0 pl-2">
                 <div className="font-black text-xs text-amber-300 flex items-center justify-end gap-0.5">
                   <Coins className="w-3 h-3 text-amber-400" />
-                  {formatMoney(p.money)}
+                  {p.inGame ? formatMoney(p.money) : '0₺'}
                 </div>
                 <div className="text-[9px] text-slate-400 flex items-center justify-end gap-0.5 mt-0.5">
                   <Home className="w-2.5 h-2.5 text-sky-400" />

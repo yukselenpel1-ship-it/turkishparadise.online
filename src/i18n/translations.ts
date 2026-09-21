@@ -239,6 +239,12 @@ export interface TranslationDictionary {
   tradeForCashBtn: string;
   surrenderBankruptcyBtn: string;
 
+  // Spectator Mode
+  spectatorBadge: string;
+  bankruptBadge: string;
+  spectatorBanner: string;
+  spectatorMode: string;
+
   // Common
   currencySymbol: string;
   loginBtn: string;
@@ -490,6 +496,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     tradeForCashBtn: 'Nakit İçin Takas Yap 🤝',
     surrenderBankruptcyBtn: 'İflasımı Açıkla (Çekil) 💀',
 
+    // Spectator Mode
+    spectatorBadge: 'İzleyici 👁️',
+    bankruptBadge: 'İflas (İzleyici)',
+    spectatorBanner: '👁️ İflas ettiniz ancak oyunu odada kalarak canlı izlemeye ve sohbet etmeye devam edebilirsiniz.',
+    spectatorMode: 'İzleyici Modu',
+
     // Common
     currencySymbol: '₺',
     loginBtn: 'Giriş Yap',
@@ -738,6 +750,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     managePropertiesBtn: 'Sell Assets / Mortgage 🏠',
     tradeForCashBtn: 'Trade for Cash 🤝',
     surrenderBankruptcyBtn: 'Declare Bankruptcy (Forfeit) 💀',
+
+    // Spectator Mode
+    spectatorBadge: 'Spectator 👁️',
+    bankruptBadge: 'Bankrupt (Watching)',
+    spectatorBanner: '👁️ You are bankrupt, but you can continue watching the game live and chatting in the room.',
+    spectatorMode: 'Spectator Mode',
 
     // Common
     currencySymbol: '$',

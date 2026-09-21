@@ -3,7 +3,7 @@ import { BoardTile, Player } from '../types/game';
 import { Tile } from './Tile';
 import { Dice } from './Dice';
 import { soundManager } from '../services/soundEffects';
-import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt, Volume2, VolumeX, AlertTriangle, Skull } from 'lucide-react';
+import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt, Volume2, VolumeX, AlertTriangle, Skull, Eye } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 
 interface BoardProps {
@@ -108,6 +108,8 @@ export const Board: React.FC<BoardProps> = ({
   const isJailed = currentTurnPlayer?.isJailed;
   const isAfk = Boolean(currentTurnPlayer?.isAfk);
   const activeMovingPlayerId = isMoving ? currentTurnPlayer?.id : null;
+  const myPlayer = players.find((p) => p.id === myPlayerId);
+  const isSpectator = Boolean(myPlayer && !myPlayer.inGame);
 
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
 
@@ -185,6 +187,19 @@ export const Board: React.FC<BoardProps> = ({
           {/* Center Stage: Frosted Glass Dice & Action Controls */}
           <div className="w-full max-w-sm bg-slate-950/85 backdrop-blur-md border border-amber-500/30 rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 shadow-2xl relative z-20 my-auto flex flex-col items-center justify-center space-y-1.5 sm:space-y-2">
             
+            {/* Spectator Mode Notice for Bankrupt Player */}
+            {isSpectator && (
+              <div className="w-full bg-slate-900/95 border border-sky-500/50 rounded-xl sm:rounded-2xl p-2 text-center space-y-1 shadow-2xl backdrop-blur-md animate-fade-in">
+                <div className="flex items-center justify-center gap-1.5 text-sky-300 font-extrabold text-xs sm:text-sm">
+                  <Eye className="w-4 h-4 text-sky-400 animate-pulse" />
+                  <span>{t('spectatorMode')}</span>
+                </div>
+                <p className="text-[10px] sm:text-xs text-slate-300 font-medium leading-tight">
+                  {t('spectatorBanner')}
+                </p>
+              </div>
+            )}
+
             {/* Jailed Bail Option */}
             {isJailed && isMyTurn && !diceRolled && (
               <div className="w-full bg-rose-950/90 border border-rose-600 rounded-xl sm:rounded-2xl p-1.5 sm:p-2 text-center space-y-1 shadow-xl backdrop-blur-md animate-fade-in">
