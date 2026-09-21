@@ -15,6 +15,7 @@ import {
   Search,
   Filter
 } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface TransactionsModalProps {
   transactions: FinancialTransaction[];
@@ -23,29 +24,30 @@ interface TransactionsModalProps {
   onClose: () => void;
 }
 
-const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  buy: { label: 'Mülk Alımı', icon: <Building2 className="w-3.5 h-3.5" />, color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
-  rent_in: { label: 'Kira Geliri', icon: <TrendingUp className="w-3.5 h-3.5" />, color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
-  rent_out: { label: 'Kira Gideri', icon: <TrendingDown className="w-3.5 h-3.5" />, color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
-  salary: { label: 'Tur Maaşı', icon: <Coins className="w-3.5 h-3.5" />, color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
-  bank_sell: { label: 'Banka Satışı', icon: <Landmark className="w-3.5 h-3.5" />, color: 'bg-sky-500/20 text-sky-300 border-sky-500/30' },
-  trade: { label: 'Takas', icon: <ArrowLeftRight className="w-3.5 h-3.5" />, color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-  tax: { label: 'Vergi', icon: <Receipt className="w-3.5 h-3.5" />, color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
-  bail: { label: 'Kefalet', icon: <KeyRound className="w-3.5 h-3.5" />, color: 'bg-red-500/20 text-red-300 border-red-500/30' },
-  chance: { label: 'Şans / Kamu', icon: <Sparkles className="w-3.5 h-3.5" />, color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
-  build_house: { label: 'Ev / Otel', icon: <Hammer className="w-3.5 h-3.5" />, color: 'bg-teal-500/20 text-teal-300 border-teal-500/30' },
-  mortgage: { label: 'İpotek', icon: <Landmark className="w-3.5 h-3.5" />, color: 'bg-slate-500/20 text-slate-300 border-slate-500/30' },
-};
-
 export const TransactionsModal: React.FC<TransactionsModalProps> = ({
   transactions,
   currentPlayer,
   players,
   onClose
 }) => {
+  const { t, formatMoney, language } = useLanguage();
   const [filterMode, setFilterMode] = useState<'all' | 'mine' | 'income' | 'expense'>('all');
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+    buy: { label: t('categoryBuy'), icon: <Building2 className="w-3.5 h-3.5" />, color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+    rent_in: { label: t('categoryRentIn'), icon: <TrendingUp className="w-3.5 h-3.5" />, color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+    rent_out: { label: t('categoryRentOut'), icon: <TrendingDown className="w-3.5 h-3.5" />, color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
+    salary: { label: t('categorySalary'), icon: <Coins className="w-3.5 h-3.5" />, color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' },
+    bank_sell: { label: t('categoryBankSell'), icon: <Landmark className="w-3.5 h-3.5" />, color: 'bg-sky-500/20 text-sky-300 border-sky-500/30' },
+    trade: { label: t('categoryTrade'), icon: <ArrowLeftRight className="w-3.5 h-3.5" />, color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+    tax: { label: t('categoryTax'), icon: <Receipt className="w-3.5 h-3.5" />, color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
+    bail: { label: t('categoryBail'), icon: <KeyRound className="w-3.5 h-3.5" />, color: 'bg-red-500/20 text-red-300 border-red-500/30' },
+    chance: { label: t('categoryChance'), icon: <Sparkles className="w-3.5 h-3.5" />, color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+    build_house: { label: t('categoryBuildHouse'), icon: <Hammer className="w-3.5 h-3.5" />, color: 'bg-teal-500/20 text-teal-300 border-teal-500/30' },
+    mortgage: { label: t('categoryMortgage'), icon: <Landmark className="w-3.5 h-3.5" />, color: 'bg-slate-500/20 text-slate-300 border-slate-500/30' },
+  };
 
   const filteredTransactions = transactions.filter((tx) => {
     // Player filter
@@ -93,10 +95,10 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                Hesap & Para Hareketleri
+                {t('ledgerTitle')}
               </h2>
               <p className="text-[11px] text-slate-400 font-semibold">
-                Kira, alım, satış, takas ve maaş finansal kayıtları
+                {t('ledgerSubtitle')}
               </p>
             </div>
           </div>
@@ -122,7 +124,7 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
               }`}
             >
-              Tüm Hareketler ({transactions.length})
+              {t('allTransactions')} ({transactions.length})
             </button>
             <button
               onClick={() => setFilterMode('mine')}
@@ -132,7 +134,7 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
               }`}
             >
-              Sadece Benim 👤
+              {t('myTransactionsOnly')}
             </button>
             <button
               onClick={() => setFilterMode('income')}
@@ -143,7 +145,7 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
               }`}
             >
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>Gelirler (+)</span>
+              <span>{t('incomesOnly')}</span>
             </button>
             <button
               onClick={() => setFilterMode('expense')}
@@ -154,7 +156,7 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
               }`}
             >
               <TrendingDown className="w-3.5 h-3.5" />
-              <span>Giderler (-)</span>
+              <span>{t('expensesOnly')}</span>
             </button>
           </div>
 
@@ -164,7 +166,7 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Açıklama veya kategori ara..."
+                placeholder={t('searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none focus:border-amber-400"
@@ -178,10 +180,10 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
                 onChange={(e) => setSelectedPlayerId(e.target.value)}
                 className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 outline-none font-bold cursor-pointer"
               >
-                <option value="all">Tüm Oyuncular</option>
+                <option value="all">{t('allPlayersOption')}</option>
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.avatar} {p.name} {p.id === currentPlayer.id ? '(Siz)' : ''}
+                    {p.avatar} {p.name} {p.id === currentPlayer.id ? `(${t('youBadge')})` : ''}
                   </option>
                 ))}
               </select>
@@ -195,12 +197,12 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
           {filteredTransactions.length === 0 ? (
             <div className="h-48 flex flex-col items-center justify-center text-center text-slate-500 space-y-2">
               <Receipt className="w-8 h-8 text-slate-600 animate-pulse" />
-              <p className="text-xs font-semibold">Henüz para hareketi bulunamadı.</p>
+              <p className="text-xs font-semibold">{t('noTransactionsFound')}</p>
             </div>
           ) : (
             filteredTransactions.map((tx) => {
               const cat = CATEGORY_LABELS[tx.category] || {
-                label: 'İşlem',
+                label: language === 'en' ? 'Transaction' : 'İşlem',
                 icon: <Coins className="w-3.5 h-3.5" />,
                 color: 'bg-slate-800 text-slate-300 border-slate-700'
               };
@@ -251,10 +253,10 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
                         isIncome ? 'text-emerald-400' : 'text-rose-400'
                       }`}
                     >
-                      {isIncome ? `+₺${tx.amount}` : `-₺${tx.amount}`}
+                      {isIncome ? `+${formatMoney(tx.amount)}` : `-${formatMoney(tx.amount)}`}
                     </div>
                     <div className="text-[9px] text-slate-400 font-mono font-semibold">
-                      Bakiye: ₺{tx.balanceAfter}
+                      {language === 'en' ? 'Balance:' : 'Bakiye:'} {formatMoney(tx.balanceAfter)}
                     </div>
                   </div>
                 </div>
@@ -266,13 +268,13 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
         {/* Modal Footer */}
         <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <span className="font-semibold">
-            Toplam Kayıt: <strong className="text-white">{filteredTransactions.length}</strong>
+            {t('totalRecords')}: <strong className="text-white">{filteredTransactions.length}</strong>
           </span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition cursor-pointer"
           >
-            Kapat
+            {t('closeBtn')}
           </button>
         </div>
 

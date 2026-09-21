@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BoardTile, Player, TradeOffer } from '../types/game';
-import { X, ArrowLeftRight, Coins, Building2, Check, AlertCircle } from 'lucide-react';
+import { X, ArrowLeftRight, Building2, Check } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface TradeModalProps {
   currentPlayer: Player;
@@ -19,6 +20,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
   onClose,
   onExecuteTrade,
 }) => {
+  const { t, formatMoney, translateTile, language } = useLanguage();
   const otherPlayers = players.filter((p) => p.id !== currentPlayer.id && p.inGame);
   
   const isInitialTileMine = initialOfferedTile ? initialOfferedTile.ownerId === currentPlayer.id : false;
@@ -84,7 +86,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
         <div className="p-4 px-6 flex items-center justify-between border-b border-slate-800 bg-slate-900/90 shrink-0">
           <div className="flex items-center gap-2 text-amber-400 font-extrabold text-lg">
             <ArrowLeftRight className="w-5 h-5" />
-            <span>Mülk & Para Takas Masası</span>
+            <span>{t('tradeTitle')}</span>
           </div>
           <button
             onClick={onClose}
@@ -100,7 +102,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
           {/* Step 1: Select Target Player */}
           <div className="space-y-2">
             <label className="text-xs font-black uppercase tracking-wider text-slate-300 block">
-              1. Takas Yapılacak Oyuncuyu Seçin
+              1. {t('tradeWithLabel')}
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {otherPlayers.map((p) => {
@@ -125,11 +127,11 @@ export const TradeModal: React.FC<TradeModalProps> = ({
                       <span className="text-2xl">{p.avatar}</span>
                       <div>
                         <div className="font-bold text-xs text-white">{p.name}</div>
-                        <div className="text-[10px] text-amber-300 font-extrabold">₺{p.money}</div>
+                        <div className="text-[10px] text-amber-300 font-extrabold">{formatMoney(p.money)}</div>
                       </div>
                     </div>
                     <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded-full text-slate-400 border border-slate-800">
-                      {propCount} Mülk
+                      {t('propertyCount', { count: propCount })}
                     </span>
                   </button>
                 );
@@ -144,10 +146,10 @@ export const TradeModal: React.FC<TradeModalProps> = ({
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                 <span className="text-xs font-black uppercase tracking-wide text-emerald-400 flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4" /> Sizin Vereceğiniz Mülkler
+                  <Building2 className="w-4 h-4" /> {t('myOfferedProperties')}
                 </span>
                 <span className="text-[10px] text-slate-400 font-bold">
-                  {selectedMyTileIds.length} Seçili
+                  {selectedMyTileIds.length} {language === 'en' ? 'Selected' : 'Seçili'}
                 </span>
               </div>
 
@@ -155,11 +157,12 @@ export const TradeModal: React.FC<TradeModalProps> = ({
               <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 min-h-[100px]">
                 {myProperties.length === 0 ? (
                   <div className="text-center py-6 text-xs text-slate-500 font-semibold">
-                    Henüz sahip olduğunuz mülk yok.
+                    {t('noPropertiesToTrade')}
                   </div>
                 ) : (
                   myProperties.map((tile) => {
                     const isSelected = selectedMyTileIds.includes(tile.id);
+                    const translated = translateTile(tile);
 
                     return (
                       <div
@@ -179,9 +182,9 @@ export const TradeModal: React.FC<TradeModalProps> = ({
                           >
                             {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                           </div>
-                          <span>{tile.name}</span>
+                          <span>{translated.name}</span>
                         </div>
-                        <span className="text-amber-300 font-bold">₺{tile.price}</span>
+                        <span className="text-amber-300 font-bold">{tile.price ? formatMoney(tile.price) : ''}</span>
                       </div>
                     );
                   })
@@ -191,13 +194,10 @@ export const TradeModal: React.FC<TradeModalProps> = ({
               {/* Extra Cash to Offer */}
               <div className="pt-2 border-t border-slate-800/80">
                 <label className="text-[11px] font-bold text-slate-300 flex items-center justify-between mb-1">
-                  <span>Ekstra Teklif Edilecek Para</span>
-                  <span className="text-emerald-400 font-bold">Bakiye: ₺{currentPlayer.money}</span>
+                  <span>{t('myOfferedMoney')}</span>
+                  <span className="text-emerald-400 font-bold">{formatMoney(currentPlayer.money)}</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-amber-400 font-black text-xs">
-                    ₺
-                  </span>
                   <input
                     type="number"
                     min="0"
@@ -206,7 +206,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
                     value={offeredMoney || ''}
                     onChange={(e) => setOfferedMoney(Number(e.target.value))}
                     placeholder="0"
-                    className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white rounded-xl pl-8 pr-3 py-2 text-xs font-bold outline-none"
+                    className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white rounded-xl px-3 py-2 text-xs font-bold outline-none"
                   />
                 </div>
               </div>
@@ -216,10 +216,10 @@ export const TradeModal: React.FC<TradeModalProps> = ({
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                 <span className="text-xs font-black uppercase tracking-wide text-amber-400 flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4" /> Karşıdan İstediğiniz Mülkler
+                  <Building2 className="w-4 h-4" /> {t('theirRequestedProperties')}
                 </span>
                 <span className="text-[10px] text-slate-400 font-bold">
-                  {selectedTargetTileIds.length} Seçili
+                  {selectedTargetTileIds.length} {language === 'en' ? 'Selected' : 'Seçili'}
                 </span>
               </div>
 
@@ -227,11 +227,12 @@ export const TradeModal: React.FC<TradeModalProps> = ({
               <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 min-h-[100px]">
                 {targetProperties.length === 0 ? (
                   <div className="text-center py-6 text-xs text-slate-500 font-semibold">
-                    {targetPlayer?.name || 'Seçilen oyuncunun'} henüz mülkü yok.
+                    {t('noPropertiesToTrade')}
                   </div>
                 ) : (
                   targetProperties.map((tile) => {
                     const isSelected = selectedTargetTileIds.includes(tile.id);
+                    const translated = translateTile(tile);
 
                     return (
                       <div
@@ -251,9 +252,9 @@ export const TradeModal: React.FC<TradeModalProps> = ({
                           >
                             {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                           </div>
-                          <span>{tile.name}</span>
+                          <span>{translated.name}</span>
                         </div>
-                        <span className="text-amber-300 font-bold">₺{tile.price}</span>
+                        <span className="text-amber-300 font-bold">{tile.price ? formatMoney(tile.price) : ''}</span>
                       </div>
                     );
                   })
@@ -263,13 +264,10 @@ export const TradeModal: React.FC<TradeModalProps> = ({
               {/* Extra Cash to Request */}
               <div className="pt-2 border-t border-slate-800/80">
                 <label className="text-[11px] font-bold text-slate-300 flex items-center justify-between mb-1">
-                  <span>Karşıdan İstenecek Para</span>
-                  <span className="text-amber-300 font-bold">Bakiyesi: ₺{targetPlayer?.money || 0}</span>
+                  <span>{t('theirRequestedMoney')}</span>
+                  <span className="text-amber-300 font-bold">{formatMoney(targetPlayer?.money || 0)}</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-amber-400 font-black text-xs">
-                    ₺
-                  </span>
                   <input
                     type="number"
                     min="0"
@@ -278,7 +276,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
                     value={requestedMoney || ''}
                     onChange={(e) => setRequestedMoney(Number(e.target.value))}
                     placeholder="0"
-                    className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white rounded-xl pl-8 pr-3 py-2 text-xs font-bold outline-none"
+                    className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white rounded-xl px-3 py-2 text-xs font-bold outline-none"
                   />
                 </div>
               </div>
@@ -300,7 +298,7 @@ export const TradeModal: React.FC<TradeModalProps> = ({
               className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 disabled:opacity-40 text-slate-950 font-black py-3.5 rounded-2xl shadow-xl transition flex items-center justify-center gap-2 text-sm tracking-wide uppercase cursor-pointer disabled:cursor-not-allowed"
             >
               <ArrowLeftRight className="w-4 h-4" />
-              <span>Takas Teklifini Gönder</span>
+              <span>{t('sendOfferBtn')}</span>
             </button>
           </div>
 

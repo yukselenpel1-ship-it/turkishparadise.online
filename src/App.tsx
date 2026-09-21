@@ -59,6 +59,7 @@ import { TransactionsModal } from './components/TransactionsModal';
 import { IncomingTradeModal } from './components/IncomingTradeModal';
 import { ProfileModal, ProfileTab } from './components/ProfileModal';
 import { DiceLogo } from './components/DiceLogo';
+import { useLanguage, LanguageSwitcher } from './i18n/LanguageContext';
 import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins } from 'lucide-react';
 
 const SESSION_PLAYER_ID_KEY = 'tp_active_player_id';
@@ -127,6 +128,7 @@ export const App: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileInitialTab, setProfileInitialTab] = useState<ProfileTab>('stats');
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
+  const { t, formatMoney } = useLanguage();
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
@@ -1393,10 +1395,10 @@ export const App: React.FC = () => {
               <DiceLogo size="sm" />
               <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0">
                 <Wifi className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 animate-pulse" />
-                <span className="hidden xs:inline">Canlı</span>
+                <span className="hidden xs:inline">{t('liveBadge')}</span>
               </span>
               <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono bg-slate-800/80 px-1.5 sm:px-2 py-0.5 rounded-full border border-slate-700 hidden sm:inline-block">
-                Oda: {gameState.roomId || gameState.settings?.roomCode}
+                {t('roomCodeDisplay', { code: gameState.roomId || gameState.settings?.roomCode || '' })}
               </span>
             </div>
 
@@ -1405,7 +1407,7 @@ export const App: React.FC = () => {
               {me && (
                 <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl text-[10.5px] sm:text-xs font-black text-amber-300 shrink-0 shadow-sm">
                   <Coins className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
-                  <span>₺{me.money.toLocaleString('tr-TR')}</span>
+                  <span>{formatMoney(me.money)}</span>
                 </div>
               )}
 
@@ -1420,7 +1422,7 @@ export const App: React.FC = () => {
                       ? 'border-amber-400 text-amber-300 ring-1 ring-amber-400/50'
                       : 'border-amber-500/40 text-white'
                   }`}
-                  title={pendingRequestsCount > 0 ? `${pendingRequestsCount} yeni arkadaşlık isteği!` : "Profil & İstatistikleri Gör"}
+                  title={pendingRequestsCount > 0 ? t('newFriendRequestsAlert', { count: pendingRequestsCount }) : t('profileAndStats')}
                 >
                   {userAccount.photoURL ? (
                     <img src={userAccount.photoURL} alt="" className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full object-cover shrink-0" />
@@ -1444,7 +1446,7 @@ export const App: React.FC = () => {
                 <button
                   onClick={handleGoogleLogin}
                   className="flex items-center gap-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg sm:rounded-xl px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[10.5px] sm:text-xs font-black text-slate-800 transition cursor-pointer shadow shrink-0 active:scale-95"
-                  title="Google ile Giriş Yap"
+                  title={t('googleLogin')}
                 >
                   <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -1452,9 +1454,12 @@ export const App: React.FC = () => {
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                   </svg>
-                  <span className="hidden xs:inline">Giriş Yap</span>
+                  <span className="hidden xs:inline">{t('loginBtn')}</span>
                 </button>
               )}
+
+              {/* In-Game Language Selector */}
+              <LanguageSwitcher />
 
               <button
                 onClick={() => soundManager.toggle()}
@@ -1463,7 +1468,7 @@ export const App: React.FC = () => {
                     ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
                     : 'bg-slate-850 border-slate-750 text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
-                title={soundEnabled ? "Ses Efektlerini Kapat" : "Ses Efektlerini Aç"}
+                title={soundEnabled ? t('soundOff') : t('soundOn')}
               >
                 {soundEnabled ? (
                   <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0 animate-pulse" />
@@ -1471,17 +1476,17 @@ export const App: React.FC = () => {
                   <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0" />
                 )}
                 <span className="text-[11px] font-bold hidden md:inline">
-                  {soundEnabled ? 'Ses' : 'Sessiz'}
+                  {soundEnabled ? t('soundOn') : t('soundOff')}
                 </span>
               </button>
 
               <button
                 onClick={handleRestart}
                 className="flex items-center gap-1 text-[10.5px] sm:text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl border border-rose-500/30 transition cursor-pointer active:scale-95 shrink-0"
-                title="Oyunu Yeniden Başlat / Lobiye Dön"
+                title={t('restartTooltip')}
               >
                 <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Yeniden</span>
+                <span className="hidden sm:inline">{t('restartGame')}</span>
               </button>
             </div>
           </header>
@@ -1552,7 +1557,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Users className="w-4 h-4" />
-              <span>Oyuncular ({gameState.players.length})</span>
+              <span>{t('mobilePlayersTab', { count: gameState.players.length })}</span>
             </button>
 
             <button
@@ -1562,7 +1567,7 @@ export const App: React.FC = () => {
               }`}
             >
               <MessageSquare className="w-4 h-4" />
-              <span>Sohbet</span>
+              <span>{t('mobileChatTab')}</span>
               {unreadChatCount > 0 && (
                 <span className="absolute -top-1 right-1.5 bg-rose-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.2 animate-bounce shadow">
                   {unreadChatCount}
@@ -1577,7 +1582,7 @@ export const App: React.FC = () => {
               }`}
             >
               <ScrollText className="w-4 h-4" />
-              <span>Kayıtlar</span>
+              <span>{t('mobileLogsTab')}</span>
             </button>
           </div>
         </>
@@ -1594,9 +1599,9 @@ export const App: React.FC = () => {
             <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-3 shrink-0" />
             <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3 shrink-0">
               <span className="text-sm font-black text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
-                {mobileSheet === 'players' && <><Users className="w-4 h-4" /> Oyuncu Durumu</>}
-                {mobileSheet === 'chat' && <><MessageSquare className="w-4 h-4" /> Oyun Sohbeti</>}
-                {mobileSheet === 'logs' && <><ScrollText className="w-4 h-4" /> Bildirimler & Kayıtlar</>}
+                {mobileSheet === 'players' && <><Users className="w-4 h-4" /> {t('mobilePlayerStatus')}</>}
+                {mobileSheet === 'chat' && <><MessageSquare className="w-4 h-4" /> {t('mobileGameChat')}</>}
+                {mobileSheet === 'logs' && <><ScrollText className="w-4 h-4" /> {t('mobileLogsAlerts')}</>}
               </span>
               <button
                 onClick={() => setMobileSheet(null)}

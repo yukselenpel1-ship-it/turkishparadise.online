@@ -1,6 +1,7 @@
 import React from 'react';
 import { BoardTile, Player, TradeOffer } from '../types/game';
-import { ArrowLeftRight, Check, X, Building2, Coins, MessageSquare } from 'lucide-react';
+import { ArrowLeftRight, Check, X, Building2, Coins } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface IncomingTradeModalProps {
   incomingOffer: TradeOffer & { fromPlayerName: string; fromPlayerAvatar: string };
@@ -14,14 +15,12 @@ interface IncomingTradeModalProps {
 
 export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
   incomingOffer,
-  currentPlayer,
-  players,
   board,
   onAccept,
   onDecline,
   onCounterOffer,
 }) => {
-  const fromPlayer = players.find((p) => p.id === incomingOffer.fromPlayerId);
+  const { t, formatMoney, translateTile, language } = useLanguage();
 
   const offeredTiles = incomingOffer.offeredTileIds
     .map((id) => board.find((t) => t.id === id))
@@ -48,10 +47,10 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-base text-white">{incomingOffer.fromPlayerName}</span>
                 <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold border border-amber-500/30">
-                  Takas Teklifi
+                  {t('incomingTradeTitle')}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Size bir mülk takas anlaşması öneriyor</p>
+              <p className="text-xs text-slate-400">{t('incomingTradeSubtitle')}</p>
             </div>
           </div>
           <button
@@ -65,70 +64,76 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
         {/* Trade Comparison Cards */}
         <div className="grid grid-cols-2 gap-3 pt-1">
           
-          {/* What Bot Offers to You (Alacağınız) */}
+          {/* What Partner Offers to You (Alacağınız) */}
           <div className="bg-[#070b14] border border-emerald-500/30 rounded-2xl p-3.5 space-y-2">
             <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5">
               <span className="text-xs font-black text-emerald-400 flex items-center gap-1">
-                <Coins className="w-3.5 h-3.5" /> Size Verilenler
+                <Coins className="w-3.5 h-3.5" /> {language === 'en' ? 'Offered to You' : 'Size Verilenler'}
               </span>
             </div>
 
             {/* Cash Offered */}
             {incomingOffer.offeredMoney > 0 && (
               <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-2 text-xs">
-                <span className="text-slate-300 font-semibold">Nakit Para:</span>
-                <span className="text-emerald-300 font-black text-sm">+{incomingOffer.offeredMoney} ₺</span>
+                <span className="text-slate-300 font-semibold">{language === 'en' ? 'Cash:' : 'Nakit Para:'}</span>
+                <span className="text-emerald-300 font-black text-sm">+{formatMoney(incomingOffer.offeredMoney)}</span>
               </div>
             )}
 
             {/* Tiles Offered */}
             <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5">
               {offeredTiles.length === 0 && incomingOffer.offeredMoney === 0 ? (
-                <span className="text-[11px] text-slate-500">Mülk yok</span>
+                <span className="text-[11px] text-slate-500">{language === 'en' ? 'No properties' : 'Mülk yok'}</span>
               ) : (
-                offeredTiles.map((tile) => (
-                  <div
-                    key={tile.id}
-                    className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl p-2 text-xs"
-                  >
-                    <span className="font-bold text-white truncate">{tile.name}</span>
-                    <span className="text-[10px] text-amber-300 font-semibold">{tile.price} ₺</span>
-                  </div>
-                ))
+                offeredTiles.map((tile) => {
+                  const translated = translateTile(tile);
+                  return (
+                    <div
+                      key={tile.id}
+                      className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl p-2 text-xs"
+                    >
+                      <span className="font-bold text-white truncate">{translated.name}</span>
+                      <span className="text-[10px] text-amber-300 font-semibold">{tile.price ? formatMoney(tile.price) : ''}</span>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
 
-          {/* What Bot Requests From You (Vereceğiniz) */}
+          {/* What Partner Requests From You (Vereceğiniz) */}
           <div className="bg-[#070b14] border border-rose-500/30 rounded-2xl p-3.5 space-y-2">
             <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5">
               <span className="text-xs font-black text-rose-400 flex items-center gap-1">
-                <Building2 className="w-3.5 h-3.5" /> Sizden İstenenler
+                <Building2 className="w-3.5 h-3.5" /> {language === 'en' ? 'Requested from You' : 'Sizden İstenenler'}
               </span>
             </div>
 
             {/* Cash Requested */}
             {incomingOffer.requestedMoney > 0 && (
               <div className="flex items-center justify-between bg-rose-950/40 border border-rose-500/40 rounded-xl p-2 text-xs">
-                <span className="text-slate-300 font-semibold">Nakit Para:</span>
-                <span className="text-rose-300 font-black text-sm">-{incomingOffer.requestedMoney} ₺</span>
+                <span className="text-slate-300 font-semibold">{language === 'en' ? 'Cash:' : 'Nakit Para:'}</span>
+                <span className="text-rose-300 font-black text-sm">-{formatMoney(incomingOffer.requestedMoney)}</span>
               </div>
             )}
 
             {/* Tiles Requested */}
             <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5">
               {requestedTiles.length === 0 && incomingOffer.requestedMoney === 0 ? (
-                <span className="text-[11px] text-slate-500">Mülk istenmiyor</span>
+                <span className="text-[11px] text-slate-500">{language === 'en' ? 'No properties' : 'Mülk istenmiyor'}</span>
               ) : (
-                requestedTiles.map((tile) => (
-                  <div
-                    key={tile.id}
-                    className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl p-2 text-xs"
-                  >
-                    <span className="font-bold text-white truncate">{tile.name}</span>
-                    <span className="text-[10px] text-amber-300 font-semibold">{tile.price} ₺</span>
-                  </div>
-                ))
+                requestedTiles.map((tile) => {
+                  const translated = translateTile(tile);
+                  return (
+                    <div
+                      key={tile.id}
+                      className="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl p-2 text-xs"
+                    >
+                      <span className="font-bold text-white truncate">{translated.name}</span>
+                      <span className="text-[10px] text-amber-300 font-semibold">{tile.price ? formatMoney(tile.price) : ''}</span>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -143,7 +148,7 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
             className="flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black py-3 rounded-xl shadow-lg transition transform active:scale-95 text-xs tracking-wide cursor-pointer"
           >
             <Check className="w-4 h-4" />
-            <span>Kabul Et 🤝</span>
+            <span>{t('acceptTradeBtn')} 🤝</span>
           </button>
 
           <button
@@ -152,7 +157,7 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
             className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 font-bold py-3 rounded-xl transition text-xs cursor-pointer"
           >
             <ArrowLeftRight className="w-3.5 h-3.5" />
-            <span>Pazarlık Et</span>
+            <span>{language === 'en' ? 'Negotiate' : 'Pazarlık Et'}</span>
           </button>
 
           <button
@@ -161,7 +166,7 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
             className="flex items-center justify-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 font-bold py-3 rounded-xl transition text-xs cursor-pointer"
           >
             <X className="w-4 h-4" />
-            <span>Reddet ❌</span>
+            <span>{t('declineTradeBtn')} ❌</span>
           </button>
         </div>
 

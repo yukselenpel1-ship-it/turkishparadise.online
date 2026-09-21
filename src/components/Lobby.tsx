@@ -5,6 +5,7 @@ import { soundManager } from '../services/soundEffects';
 import { ProfileModal, ProfileTab } from './ProfileModal';
 import { subscribeToFriendRequests } from '../services/friendService';
 import { DiceLogo } from './DiceLogo';
+import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 import {
   User,
   Gamepad2,
@@ -76,6 +77,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   onStartGame,
   onLeaveLobby,
 }) => {
+  const { language, t, formatMoney } = useLanguage();
   const [mode, setMode] = useState<'main' | 'guest' | 'friend'>('main');
   const [name, setName] = useState('');
   const [guestName, setGuestName] = useState(() => `Misafir_${Math.floor(1000 + Math.random() * 9000)}`);
@@ -238,32 +240,32 @@ export const Lobby: React.FC<LobbyProps> = ({
             onClick={() => setActiveModal(null)}
             className={`${activeModal === null ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
-            Ana Sayfa
+            {t('home')}
           </button>
           <button
             onClick={() => setActiveModal('rules')}
             className={`${activeModal === 'rules' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
-            Nasıl Oynanır?
+            {t('howToPlay')}
           </button>
           <button
             onClick={() => setActiveModal('features')}
             className={`${activeModal === 'features' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
-            Özellikler
+            {t('features')}
           </button>
           <button
             onClick={() => setActiveModal('community')}
             className={`${activeModal === 'community' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-white'} pb-1 cursor-pointer transition`}
           >
-            Topluluk
+            {t('community')}
           </button>
           <button
             onClick={() => setActiveModal('contact')}
             className={`${activeModal === 'contact' ? 'text-amber-400 font-bold border-b-2 border-amber-400' : 'hover:text-amber-300 text-amber-400/90'} pb-1 cursor-pointer transition flex items-center gap-1.5`}
           >
             <Mail className="w-3.5 h-3.5 text-amber-400" />
-            İletişim
+            {t('contact')}
           </button>
         </nav>
 
@@ -282,10 +284,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                     ? 'border-amber-400 text-amber-300 ring-1 ring-amber-400/50'
                     : 'border-amber-500/30 hover:border-amber-400 text-amber-300 hover:text-white'
                 }`}
-                title={pendingRequestsCount > 0 ? `${pendingRequestsCount} yeni arkadaşlık isteğiniz var!` : "Arkadaşlarım ve Özel Arkadaş ID'm"}
+                title={pendingRequestsCount > 0 ? t('newFriendRequestsAlert', { count: pendingRequestsCount }) : t('tabFriends')}
               >
                 <Users className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Arkadaşlar</span>
+                <span className="hidden sm:inline">{t('tabFriends')}</span>
                 {pendingRequestsCount > 0 ? (
                   <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none animate-bounce shadow">
                     {pendingRequestsCount}
@@ -304,7 +306,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                   setIsProfileModalOpen(true);
                 }}
                 className="flex items-center gap-1.5 sm:gap-2.5 bg-slate-900/90 hover:bg-slate-800/90 border border-amber-500/30 hover:border-amber-400 rounded-xl sm:rounded-2xl p-1 sm:py-1.5 sm:px-3.5 shadow-lg transition cursor-pointer group shrink-0"
-                title="Profil ve İstatistikleri Görüntüle"
+                title={t('profileAndStats')}
               >
                 {userAccount.photoURL ? (
                   <img
@@ -330,7 +332,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                       <>
                         <Trophy className="w-3 h-3 text-amber-400" />
                         <span className="text-[10px] text-amber-400 font-bold">
-                          {userAccount.stats?.gamesWon || 0} Zafer
+                          {userAccount.stats?.gamesWon || 0} {language === 'en' ? 'Wins' : 'Zafer'}
                         </span>
                       </>
                     )}
@@ -366,11 +368,12 @@ export const Lobby: React.FC<LobbyProps> = ({
                   />
                 </svg>
               )}
-              <span className="hidden xs:inline">Google ile Giriş</span>
-              <span className="xs:hidden inline">Giriş Yap</span>
+              <span className="hidden xs:inline">{t('googleLogin')}</span>
+              <span className="xs:hidden inline">{language === 'en' ? 'Sign In' : 'Giriş Yap'}</span>
             </button>
           )}
 
+          {/* Sound Toggle */}
           <button
             onClick={() => soundManager.toggle()}
             className={`flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border transition cursor-pointer shrink-0 shadow ${
@@ -378,7 +381,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
                 : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
             }`}
-            title={soundEnabled ? "Ses Efektlerini Kapat" : "Ses Efektlerini Aç"}
+            title={soundEnabled ? t('soundOff') : t('soundOn')}
           >
             {soundEnabled ? (
               <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0 animate-pulse" />
@@ -386,19 +389,12 @@ export const Lobby: React.FC<LobbyProps> = ({
               <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />
             )}
             <span className="text-xs font-bold hidden md:inline">
-              {soundEnabled ? 'Ses Açık' : 'Sessiz'}
+              {soundEnabled ? t('soundOn') : t('soundOff')}
             </span>
           </button>
 
-          <button className="hidden sm:flex p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer shrink-0" title="Tema">
-            <Sun className="w-4 h-4 text-amber-400" />
-          </button>
-
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-bold text-slate-200 cursor-pointer shrink-0">
-            <span>🇹🇷</span>
-            <span>TR</span>
-            <span className="text-[10px] text-slate-400">⌵</span>
-          </div>
+          {/* TR / EN Dynamic Language Switcher */}
+          <LanguageSwitcher />
         </div>
 
       </header>
@@ -417,14 +413,14 @@ export const Lobby: React.FC<LobbyProps> = ({
             <div className="space-y-2">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold mb-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Çevrimiçi Çok Oyunculu & Arkadaş Odaları</span>
+                <span>{t('heroBadge')}</span>
               </div>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-tight">
-                Türkiye <br className="hidden sm:inline" />
-                Senin <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent">Oyun Alanın</span>
+                {t('heroTitle1')} <br className="hidden sm:inline" />
+                {t('heroTitle2')} <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent">{t('heroTitleHighlight')}</span>
               </h1>
               <p className="text-slate-300 text-xs sm:text-base font-medium max-w-md mx-auto lg:mx-0 pt-1 sm:pt-2 leading-relaxed">
-                Şehirleri al, yatırımlarını büyüt, rakiplerini geride bırak. Strateji, ticaret ve eğlence bir arada!
+                {t('heroDescription')}
               </p>
             </div>
 
@@ -434,35 +430,35 @@ export const Lobby: React.FC<LobbyProps> = ({
                 <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                   <TrendingUp className="w-4 h-4" />
                 </div>
-                <span className="text-sm font-bold text-slate-200">Strateji Kur</span>
+                <span className="text-sm font-bold text-slate-200">{t('strategyBadge')}</span>
               </div>
 
               <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                   <Handshake className="w-4 h-4" />
                 </div>
-                <span className="text-sm font-bold text-slate-200">Şehirleri Fethet</span>
+                <span className="text-sm font-bold text-slate-200">{t('conquerBadge')}</span>
               </div>
 
               <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                   <Coins className="w-4 h-4" />
                 </div>
-                <span className="text-sm font-bold text-slate-200">Yatırımını Büyüt</span>
+                <span className="text-sm font-bold text-slate-200">{t('investBadge')}</span>
               </div>
 
               <div className="flex items-center gap-3 bg-[#0a1124]/60 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                   <Users className="w-4 h-4" />
                 </div>
-                <span className="text-sm font-bold text-slate-200">Arkadaşlarınla Oyna</span>
+                <span className="text-sm font-bold text-slate-200">{t('friendsBadge')}</span>
               </div>
             </div>
 
             {/* Cursive Quote Bottom Left (Desktop view) */}
             <div className="hidden lg:block pt-2">
               <p className="font-['Caveat',cursive] text-2xl sm:text-3xl text-amber-200/90 tracking-wide drop-shadow">
-                "Bu topraklarda her şehir bir hikaye..."
+                {t('quoteBottomLeft')}
               </p>
             </div>
 
@@ -475,9 +471,8 @@ export const Lobby: React.FC<LobbyProps> = ({
           {/* Cursive Quote Top Right */}
           {!hasJoined && (
             <div className="hidden lg:block absolute -top-8 right-6 pointer-events-none">
-              <p className="font-['Caveat',cursive] text-2xl text-amber-200/90 tracking-wide drop-shadow text-right">
-                Daha fazla şehir, <br />
-                daha fazla fırsat.
+              <p className="font-['Caveat',cursive] text-2xl text-amber-200/90 tracking-wide drop-shadow text-right whitespace-pre-line">
+                {t('quoteTopRight')}
               </p>
             </div>
           )}
@@ -499,12 +494,12 @@ export const Lobby: React.FC<LobbyProps> = ({
                     <h2 className="font-['Cinzel',serif] font-black text-sm sm:text-base text-white leading-none">
                       TURKISH <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">PARADISE</span>
                     </h2>
-                    <p className="text-[10px] text-amber-400 font-bold mt-0.5">Oyun Bekleme Odası</p>
+                    <p className="text-[10px] text-amber-400 font-bold mt-0.5">{t('roomLobbyTitle')}</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 bg-[#070b14] border border-amber-500/40 px-2.5 py-1 rounded-xl shadow-inner">
-                  <span className="text-[9px] uppercase font-black text-slate-400">Oda:</span>
+                  <span className="text-[9px] uppercase font-black text-slate-400">{t('roomCodeLabel')}:</span>
                   <span className="text-xs font-black font-mono text-amber-400">
                     {settings.roomCode || roomCode}
                   </span>
@@ -527,7 +522,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                 <div className="flex items-center gap-2 mt-1 w-full justify-center">
                   <div className="h-[1px] w-8 bg-gradient-to-r from-transparent to-amber-400/60" />
                   <p className="font-['Caveat',cursive] text-sm sm:text-base text-amber-300/90 font-medium italic">
-                    Büyük Düşün, Tüm Türkiye Senin Olsun!
+                    {language === 'en' ? 'Think Big, Own All of Turkey!' : 'Büyük Düşün, Tüm Türkiye Senin Olsun!'}
                   </p>
                   <div className="h-[1px] w-8 bg-gradient-to-l from-transparent to-amber-400/60" />
                 </div>
@@ -542,10 +537,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                 <div className="bg-[#070b14] border border-amber-500/30 rounded-2xl p-3 text-left space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Share2 className="w-3.5 h-3.5" /> Arkadaşlarını Davet Et
+                      <Share2 className="w-3.5 h-3.5" /> {t('inviteFriendToRoom')}
                     </span>
                     <span className="text-[10px] text-slate-400 font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                      Oda Kodu: <strong className="text-white">{settings.roomCode || roomCode}</strong>
+                      {t('roomCodeLabel')}: <strong className="text-white">{settings.roomCode || roomCode}</strong>
                     </span>
                   </div>
 
@@ -556,7 +551,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                       className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white transition text-xs font-bold cursor-pointer"
                     >
                       {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
-                      <span>{copiedCode ? 'Kod Kopyalandı!' : 'Kodu Kopyala'}</span>
+                      <span>{copiedCode ? t('copied') : t('copyRoomCode')}</span>
                     </button>
 
                     <button
@@ -565,7 +560,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                       className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white transition text-xs font-bold cursor-pointer"
                     >
                       {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5 text-sky-400" />}
-                      <span>{copiedLink ? 'Link Kopyalandı!' : 'Davet Linki'}</span>
+                      <span>{copiedLink ? t('copied') : t('copyRoomLink')}</span>
                     </button>
                   </div>
                 </div>
@@ -575,10 +570,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="bg-[#070b14]/90 border border-slate-800 rounded-2xl p-3 text-left space-y-2.5">
                     <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5">
                       <span className="text-xs font-black text-amber-400 flex items-center gap-1.5">
-                        <Sliders className="w-3.5 h-3.5" /> Oyun Seçenekleri & Kuralları
+                        <Sliders className="w-3.5 h-3.5" /> {t('roomSettingsTitle')}
                       </span>
                       <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
-                        Oda Sahibi
+                        {t('hostBadge')}
                       </span>
                     </div>
 
@@ -586,69 +581,52 @@ export const Lobby: React.FC<LobbyProps> = ({
                       {/* Starting Money */}
                       <div>
                         <label className="text-slate-400 font-bold text-[10px] block mb-1">
-                          Başlangıç Parası
+                          {t('startMoneyLabel')}
                         </label>
                         <select
                           value={settings.startingMoney}
                           onChange={(e) => onUpdateSettings({ ...settings, startingMoney: Number(e.target.value) })}
                           className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
                         >
-                          <option value={1000}>1.000 ₺ (Hızlı)</option>
-                          <option value={1500}>1.500 ₺ (Standart)</option>
-                          <option value={2000}>2.000 ₺ (Zengin)</option>
-                          <option value={2500}>2.500 ₺ (Mega)</option>
-                          <option value={3000}>3.000 ₺ (Ultra)</option>
+                          <option value={1000}>{formatMoney(1000)} ({language === 'en' ? 'Fast' : 'Hızlı'})</option>
+                          <option value={1500}>{formatMoney(1500)} ({language === 'en' ? 'Standard' : 'Standart'})</option>
+                          <option value={2000}>{formatMoney(2000)} ({language === 'en' ? 'Rich' : 'Zengin'})</option>
+                          <option value={2500}>{formatMoney(2500)} ({language === 'en' ? 'Mega' : 'Mega'})</option>
+                          <option value={3000}>{formatMoney(3000)} ({language === 'en' ? 'Ultra' : 'Ultra'})</option>
                         </select>
                       </div>
 
-                      {/* Pass GO Salary */}
+                      {/* Max Houses / Buy Limit */}
                       <div>
                         <label className="text-slate-400 font-bold text-[10px] block mb-1">
-                          Tur Maaşı
-                        </label>
-                        <select
-                          value={settings.passGoSalary}
-                          onChange={(e) => onUpdateSettings({ ...settings, passGoSalary: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
-                        >
-                          <option value={100}>100 ₺</option>
-                          <option value={200}>200 ₺ (Standart)</option>
-                          <option value={300}>300 ₺</option>
-                          <option value={400}>400 ₺</option>
-                        </select>
-                      </div>
-
-                      {/* First Lap Buy Limit */}
-                      <div>
-                        <label className="text-slate-400 font-bold text-[10px] block mb-1">
-                          İlk Tur Alım
+                          {t('maxHousesLabel')}
                         </label>
                         <select
                           value={settings.firstLapBuyLimit}
                           onChange={(e) => onUpdateSettings({ ...settings, firstLapBuyLimit: Number(e.target.value) })}
-                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-amber-300 font-bold outline-none cursor-pointer"
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
                         >
-                          <option value={0}>Sınırsız (Klasik)</option>
-                          <option value={1}>1 Adet Yer</option>
-                          <option value={2}>2 Adet Yer</option>
-                          <option value={3}>3 Adet Yer</option>
-                          <option value={4}>4 Adet Yer</option>
+                          <option value={0}>{t('unlimitedHouses')}</option>
+                          <option value={1}>{t('housesCount', { count: 1 })}</option>
+                          <option value={2}>{t('housesCount', { count: 2 })}</option>
+                          <option value={3}>{t('housesCount', { count: 3 })}</option>
+                          <option value={4}>{t('housesCount', { count: 4 })}</option>
                         </select>
                       </div>
 
                       {/* Bot Difficulty */}
                       <div>
                         <label className="text-slate-400 font-bold text-[10px] block mb-1">
-                          Bot Zorluğu
+                          {t('botDifficultyLabel')}
                         </label>
                         <select
                           value={settings.botDifficulty}
                           onChange={(e) => onUpdateSettings({ ...settings, botDifficulty: e.target.value as BotDifficulty })}
                           className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
                         >
-                          <option value="easy">🟢 Kolay Bot</option>
-                          <option value="medium">🟡 Orta Bot</option>
-                          <option value="hard">🔴 Zor Bot</option>
+                          <option value="easy">{t('botEasy')}</option>
+                          <option value="medium">{t('botMedium')}</option>
+                          <option value="hard">{t('botHard')}</option>
                         </select>
                       </div>
                     </div>
@@ -660,7 +638,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                     <div className="flex items-center gap-1.5 text-slate-300 font-bold text-xs">
                       <Users className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Oyuncular ({players.length}/6)</span>
+                      <span>{t('playersListTitle')} ({players.length}/6)</span>
                     </div>
 
                     {/* Bot Add Buttons with difficulty (Host Only) */}
@@ -672,7 +650,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                           className="bg-emerald-500/10 hover:bg-emerald-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-emerald-500/30 text-emerald-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
                           title="Kolay Bot Ekle"
                         >
-                          + Kolay
+                          {t('addEasyBot')}
                         </button>
                         <button
                           onClick={() => onAddBot('medium')}
@@ -680,7 +658,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                           className="bg-amber-500/10 hover:bg-amber-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-amber-500/30 text-amber-300 transition disabled:opacity-40 cursor-pointer active:scale-95"
                           title="Orta Bot Ekle"
                         >
-                          + Orta
+                          {t('addMediumBot')}
                         </button>
                         <button
                           onClick={() => onAddBot('hard')}
@@ -688,7 +666,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                           className="bg-rose-500/10 hover:bg-rose-500/20 text-[10px] font-bold px-1.5 sm:px-2 py-1 rounded-lg border border-rose-500/30 text-rose-400 transition disabled:opacity-40 cursor-pointer active:scale-95"
                           title="Zor Bot Ekle"
                         >
-                          + Zor
+                          {t('addHardBot')}
                         </button>
                       </div>
                     )}
@@ -696,7 +674,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                   {/* Player Items */}
                   <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
-                    {players.map((p, index) => (
+                    {players.map((p) => (
                       <div
                         key={p.id}
                         className="flex items-center justify-between bg-[#070b14] border border-slate-800/80 hover:border-slate-700 rounded-xl p-2 sm:p-2.5 gap-2 transition"
@@ -713,12 +691,12 @@ export const Lobby: React.FC<LobbyProps> = ({
                             <span className="truncate">{p.name}</span>
                             {p.id === myPlayerId && (
                               <span className="text-[8px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded shrink-0">
-                                SİZ
+                                {t('youBadge')}
                               </span>
                             )}
                             {p.isBot && (
                               <span className="text-[8px] bg-slate-800 text-slate-300 font-bold px-1.5 py-0.5 rounded border border-slate-700 shrink-0">
-                                {p.botDifficulty === 'hard' ? '🔴 ZOR' : p.botDifficulty === 'easy' ? '🟢 KOLAY' : '🟡 ORTA'}
+                                {p.botDifficulty === 'hard' ? '🔴 HARD' : p.botDifficulty === 'easy' ? '🟢 EASY' : '🟡 MED'}
                               </span>
                             )}
                           </span>
@@ -727,7 +705,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                         <div className="flex items-center gap-1.5 shrink-0">
                           {p.isHost && (
                             <span className="flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
-                              <Shield className="w-3 h-3" /> Kurucu
+                              <Shield className="w-3 h-3" /> {t('hostBadge')}
                             </span>
                           )}
 
@@ -737,10 +715,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                               type="button"
                               onClick={() => onRemovePlayer?.(p.id)}
                               className="flex items-center gap-1 bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-lg px-2 py-1 text-[10px] font-bold transition cursor-pointer active:scale-95"
-                              title={p.isBot ? "Botu Odadan Sil" : "Oyuncuyu Odadan Çıkar"}
+                              title={p.isBot ? t('removeBot') : t('kickPlayer')}
                             >
-                              <Trash2 className="w-3 h-3" />
-                              <span>{p.isBot ? 'Sil' : 'Çıkar'}</span>
+                              {p.isBot ? <Trash2 className="w-3 h-3" /> : <UserMinus className="w-3 h-3" />}
+                              <span className="hidden sm:inline">{p.isBot ? t('removeBot') : t('kickPlayer')}</span>
                             </button>
                           )}
                         </div>
@@ -749,62 +727,76 @@ export const Lobby: React.FC<LobbyProps> = ({
                   </div>
                 </div>
 
-                {/* 4. Host Start Button */}
-                {isHost ? (
-                  <button
-                    onClick={onStartGame}
-                    disabled={players.length < 2}
-                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-slate-950 font-black py-3 sm:py-3.5 rounded-xl shadow-lg transition transform active:scale-95 text-sm cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    {players.length < 2 ? 'En Az 2 Oyuncu Gerekir' : 'Oyunu Başlat! 🚀'}
-                  </button>
-                ) : (
-                  <div className="text-center py-2.5 bg-[#070b14] rounded-xl text-slate-400 text-xs font-semibold animate-pulse border border-slate-800">
-                    Oda kurucusunun oyunu başlatması bekleniyor...
-                  </div>
-                )}
+                {/* 4. Action Buttons (Start Game / Leave Room) */}
+                <div className="pt-2 space-y-2">
+                  {isHost ? (
+                    <button
+                      type="button"
+                      onClick={onStartGame}
+                      disabled={players.length < 2}
+                      className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-600 text-slate-950 font-black py-3.5 rounded-xl shadow-xl shadow-amber-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Play className="w-5 h-5 fill-current" />
+                      <span>{t('startGame')}</span>
+                    </button>
+                  ) : (
+                    <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl text-center space-y-1">
+                      <div className="flex items-center justify-center gap-2 text-amber-400 text-xs font-bold">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>{t('waitingForHost')}</span>
+                      </div>
+                    </div>
+                  )}
 
-                {/* 5. Leave / Back to Main Button */}
-                {onLeaveLobby && (
-                  <button
-                    type="button"
-                    onClick={onLeaveLobby}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-rose-400 transition text-xs font-bold cursor-pointer"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Lobiden Ayrıl / Geri Dön</span>
-                  </button>
-                )}
+                  {isHost && players.length < 2 && (
+                    <p className="text-[11px] text-amber-400/80 font-semibold text-center">
+                      {t('minPlayersRequired')}
+                    </p>
+                  )}
+
+                  {onLeaveLobby && (
+                    <button
+                      type="button"
+                      onClick={onLeaveLobby}
+                      className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white font-bold py-2 rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                      <span>{t('leaveLobby')}</span>
+                    </button>
+                  )}
+                </div>
+
               </div>
             ) : mode === 'guest' ? (
-              /* Guest Play Mode Screen with Back Button */
-              <form onSubmit={handleGuestSubmit} className="space-y-5 animate-fade-in">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              /* Guest Play Mode Form */
+              <form onSubmit={handleGuestSubmit} className="space-y-4 animate-fade-in">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <button
                     type="button"
                     onClick={() => setMode('main')}
-                    className="flex items-center gap-1 text-slate-400 hover:text-amber-400 transition text-xs font-bold cursor-pointer"
+                    className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-white transition cursor-pointer"
                   >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Geri Dön</span>
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>{t('backToMenu')}</span>
                   </button>
-                  <span className="text-xs font-extrabold text-amber-400 uppercase tracking-wider">
-                    Misafir Girişi
+                  <span className="text-xs font-black text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                    <Gamepad2 className="w-4 h-4" /> {t('guestLoginTitle')}
                   </span>
                 </div>
 
+                {/* Guest Name Input */}
                 <div className="space-y-1.5 text-left">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-300">
-                      Misafir Adınız
+                      {t('guestNameLabel')}
                     </label>
                     <button
                       type="button"
                       onClick={randomizeGuestName}
-                      className="text-[11px] text-amber-400 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                      className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-bold cursor-pointer"
                     >
-                      <RefreshCw className="w-3 h-3" /> Rastgele İsim
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{language === 'en' ? 'Randomize' : 'Rastgele Seç'}</span>
                     </button>
                   </div>
                   <div className="relative">
@@ -815,9 +807,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                       type="text"
                       value={guestName}
                       onChange={(e) => setGuestName(e.target.value)}
+                      placeholder="Misafir_XXXX"
                       maxLength={15}
                       required
-                      className="w-full bg-[#070b14] border border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 text-white rounded-xl pl-10 pr-4 py-3 text-sm font-semibold placeholder-slate-600 outline-none transition"
+                      className="w-full bg-[#070b14] border border-slate-800 focus:border-amber-400 text-white rounded-xl pl-10 pr-4 py-2.5 text-sm font-semibold placeholder-slate-600 outline-none transition"
                     />
                   </div>
                 </div>
@@ -826,10 +819,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                 <div className="space-y-1.5 text-left">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-300">
-                      Piyonunuzu Seçin
+                      {t('selectAvatarLabel')}
                     </label>
                     <span className="text-[10px] text-slate-400 font-semibold">
-                      {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} Müsait
+                      {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} {language === 'en' ? 'Available' : 'Müsait'}
                     </span>
                   </div>
                   <div className="grid grid-cols-6 gap-2">
@@ -843,19 +836,19 @@ export const Lobby: React.FC<LobbyProps> = ({
                           type="button"
                           disabled={isTaken}
                           onClick={() => setSelectedAvatar(avatar)}
-                          className={`text-xl p-2.5 rounded-xl border text-center transition transform relative ${
+                          className={`text-xl p-2 rounded-xl border text-center transition transform relative ${
                             isTaken
                               ? 'opacity-25 cursor-not-allowed grayscale border-slate-700 bg-slate-900/40'
                               : isSelected
                               ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-lg cursor-pointer active:scale-95'
                               : 'bg-[#070b14] border-slate-800 hover:border-slate-700 cursor-pointer active:scale-90'
                           }`}
-                          title={isTaken ? 'Bu piyon başka bir oyuncu tarafından alındı' : undefined}
+                          title={isTaken ? t('colorTaken') : undefined}
                         >
                           <span>{avatar}</span>
                           {isTaken && (
                             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] font-black text-white/80 bg-slate-950/90 px-1 rounded border border-slate-700">
-                              DOLU
+                              {t('colorTaken')}
                             </span>
                           )}
                         </button>
@@ -869,10 +862,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
                       <Palette className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Renginizi Seçin</span>
+                      <span>{t('selectColorLabel')}</span>
                     </label>
                     <span className="text-[10px] text-slate-400 font-semibold">
-                      {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} Müsait
+                      {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} {language === 'en' ? 'Available' : 'Müsait'}
                     </span>
                   </div>
                   <div className="grid grid-cols-6 gap-2">
@@ -897,10 +890,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                             backgroundColor: color,
                             boxShadow: isSelected && !isTaken ? `0 0 10px ${color}` : undefined
                           }}
-                          title={isTaken ? 'Bu renk başka bir oyuncu/bot tarafından alındı' : undefined}
+                          title={isTaken ? t('colorTaken') : undefined}
                         >
                           {isSelected && !isTaken && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                          {isTaken && <span className="text-[8px] font-black text-white/90">DOLU</span>}
+                          {isTaken && <span className="text-[8px] font-black text-white/90">{t('colorTaken')}</span>}
                         </button>
                       );
                     })}
@@ -912,63 +905,51 @@ export const Lobby: React.FC<LobbyProps> = ({
                   className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-xl shadow-amber-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Gamepad2 className="w-5 h-5" />
-                  <span>Misafir Olarak Başla</span>
+                  <span>{t('guestPlayBtn')}</span>
                 </button>
               </form>
             ) : mode === 'friend' ? (
-              /* Join Friend Screen with Back Button */
-              <form onSubmit={handleFriendSubmit} className="space-y-5 animate-fade-in">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              /* Join Friend Room Mode Form */
+              <form onSubmit={handleFriendSubmit} className="space-y-4 animate-fade-in">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <button
                     type="button"
                     onClick={() => setMode('main')}
-                    className="flex items-center gap-1 text-slate-400 hover:text-amber-400 transition text-xs font-bold cursor-pointer"
+                    className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-white transition cursor-pointer"
                   >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Geri Dön</span>
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>{t('backToMenu')}</span>
                   </button>
-                  <span className="text-xs font-extrabold text-sky-400 uppercase tracking-wider">
-                    Arkadaş Odasına Katıl
+                  <span className="text-xs font-black text-sky-400 uppercase tracking-wide flex items-center gap-1">
+                    <Users className="w-4 h-4" /> {t('joinFriendTitle')}
                   </span>
                 </div>
 
-                {isInviteLink && (
-                  <div className="bg-sky-500/15 border border-sky-500/40 rounded-2xl p-3 text-left flex items-center gap-2.5 shadow-lg shadow-sky-500/10">
-                    <span className="text-xl">🎉</span>
-                    <div className="text-xs">
-                      <p className="font-black text-sky-300">Arkadaş Daveti Algılandı!</p>
-                      <p className="text-slate-300 text-[11px] mt-0.5">
-                        <strong className="text-white font-mono">{roomCode}</strong> odasına davet edildiniz. Adınızı girip hemen katılın.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Room Code */}
+                {/* Target Room Code Input */}
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs font-bold text-slate-300">
-                    Oda Kodu
+                    {t('targetRoomCodeLabel')}
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                      <KeyRound className="w-4 h-4" />
+                      <KeyRound className="w-4 h-4 text-sky-400" />
                     </div>
                     <input
                       type="text"
                       value={roomCode}
                       onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                      placeholder="Örn: TR-1001"
+                      placeholder="TR-XXXX"
                       maxLength={10}
                       required
-                      className="w-full bg-[#070b14] border border-slate-800 focus:border-sky-400 focus:ring-1 focus:ring-sky-400 text-white font-mono rounded-xl pl-10 pr-4 py-3 text-sm font-semibold placeholder-slate-600 outline-none transition uppercase tracking-wider"
+                      className="w-full bg-[#070b14] border border-slate-800 focus:border-sky-400 text-sky-300 font-mono font-bold rounded-xl pl-10 pr-4 py-2.5 text-sm uppercase placeholder-slate-600 outline-none transition"
                     />
                   </div>
                 </div>
 
-                {/* Player Name */}
+                {/* Player Name Input */}
                 <div className="space-y-1.5 text-left">
                   <label className="text-xs font-bold text-slate-300">
-                    Oyuncu Adınız
+                    {t('usernameLabel')}
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -978,22 +959,22 @@ export const Lobby: React.FC<LobbyProps> = ({
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="Örn: Mehmet"
+                      placeholder={userAccount?.displayName || t('usernamePlaceholder')}
                       maxLength={15}
                       required
-                      className="w-full bg-[#070b14] border border-slate-800 focus:border-sky-400 focus:ring-1 focus:ring-sky-400 text-white rounded-xl pl-10 pr-4 py-3 text-sm font-semibold placeholder-slate-600 outline-none transition"
+                      className="w-full bg-[#070b14] border border-slate-800 focus:border-sky-400 text-white rounded-xl pl-10 pr-4 py-2.5 text-sm font-semibold placeholder-slate-600 outline-none transition"
                     />
                   </div>
                 </div>
 
-                {/* Avatar Picker */}
+                {/* Token / Avatar Picker */}
                 <div className="space-y-1.5 text-left">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-300">
-                      Piyonunuzu Seçin
+                      {t('selectAvatarLabel')}
                     </label>
                     <span className="text-[10px] text-slate-400 font-semibold">
-                      {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} Müsait
+                      {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} {language === 'en' ? 'Available' : 'Müsait'}
                     </span>
                   </div>
                   <div className="grid grid-cols-6 gap-2">
@@ -1014,12 +995,12 @@ export const Lobby: React.FC<LobbyProps> = ({
                               ? 'bg-sky-500/20 border-sky-400 ring-2 ring-sky-400/50 shadow-lg cursor-pointer active:scale-95'
                               : 'bg-[#070b14] border-slate-800 hover:border-slate-700 cursor-pointer active:scale-90'
                           }`}
-                          title={isTaken ? 'Bu piyon başka bir oyuncu tarafından alındı' : undefined}
+                          title={isTaken ? t('colorTaken') : undefined}
                         >
                           <span>{avatar}</span>
                           {isTaken && (
                             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] font-black text-white/80 bg-slate-950/90 px-1 rounded border border-slate-700">
-                              DOLU
+                              {t('colorTaken')}
                             </span>
                           )}
                         </button>
@@ -1033,10 +1014,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
                       <Palette className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Renginizi Seçin</span>
+                      <span>{t('selectColorLabel')}</span>
                     </label>
                     <span className="text-[10px] text-slate-400 font-semibold">
-                      {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} Müsait
+                      {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} {language === 'en' ? 'Available' : 'Müsait'}
                     </span>
                   </div>
                   <div className="grid grid-cols-6 gap-2">
@@ -1061,10 +1042,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                             backgroundColor: color,
                             boxShadow: isSelected && !isTaken ? `0 0 10px ${color}` : undefined
                           }}
-                          title={isTaken ? 'Bu renk başka bir oyuncu/bot tarafından alındı' : undefined}
+                          title={isTaken ? t('colorTaken') : undefined}
                         >
                           {isSelected && !isTaken && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                          {isTaken && <span className="text-[8px] font-black text-white/90">DOLU</span>}
+                          {isTaken && <span className="text-[8px] font-black text-white/90">{t('colorTaken')}</span>}
                         </button>
                       );
                     })}
@@ -1076,7 +1057,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                   className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-black py-3.5 rounded-xl shadow-xl shadow-sky-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Users className="w-5 h-5" />
-                  <span>Odaya Katıl 🚀</span>
+                  <span>{t('joinRoomBtn')} 🚀</span>
                 </button>
               </form>
             ) : (
@@ -1113,7 +1094,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                         />
                       </svg>
                     )}
-                    <span className="text-sm font-extrabold tracking-wide">Google ile Giriş Yap</span>
+                    <span className="text-sm font-extrabold tracking-wide">{t('googleLogin')}</span>
                   </button>
                 )}
 
@@ -1122,7 +1103,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="relative flex items-center justify-center my-2">
                     <div className="border-t border-slate-800 w-full" />
                     <span className="bg-[#0e1628] px-3 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                      veya
+                      {language === 'en' ? 'OR' : 'veya'}
                     </span>
                   </div>
                 )}
@@ -1133,7 +1114,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                   {/* Player Name Input */}
                   <div className="space-y-1.5 text-left">
                     <label className="text-xs font-bold text-slate-300">
-                      {userAccount ? 'Oyuncu Profiliniz' : 'Oyuncu Adınız'}
+                      {userAccount ? (language === 'en' ? 'Player Profile' : 'Oyuncu Profiliniz') : t('usernameLabel')}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -1143,7 +1124,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="Örn: Ahmet"
+                        placeholder={t('usernamePlaceholder')}
                         maxLength={15}
                         required
                         className="w-full bg-[#070b14] border border-slate-800 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 text-white rounded-xl pl-10 pr-4 py-3 text-sm font-semibold placeholder-slate-600 outline-none transition"
@@ -1155,10 +1136,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="space-y-1.5 text-left">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-300">
-                        Piyonunuzu Seçin
+                        {t('selectAvatarLabel')}
                       </label>
                       <span className="text-[10px] text-slate-400 font-semibold">
-                        {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} Müsait
+                        {PLAYER_AVATARS.filter(a => !takenAvatars.includes(a)).length} {language === 'en' ? 'Available' : 'Müsait'}
                       </span>
                     </div>
                     <div className="grid grid-cols-6 gap-2">
@@ -1179,12 +1160,12 @@ export const Lobby: React.FC<LobbyProps> = ({
                                 ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-lg cursor-pointer active:scale-95'
                                 : 'bg-[#070b14] border-slate-800 hover:border-slate-700 cursor-pointer active:scale-90'
                             }`}
-                            title={isTaken ? 'Bu piyon başka bir oyuncu tarafından alındı' : undefined}
+                            title={isTaken ? t('colorTaken') : undefined}
                           >
                             <span>{avatar}</span>
                             {isTaken && (
                               <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] font-black text-white/80 bg-slate-950/90 px-1 rounded border border-slate-700">
-                                DOLU
+                                {t('colorTaken')}
                               </span>
                             )}
                           </button>
@@ -1198,10 +1179,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
                         <Palette className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Renginizi Seçin</span>
+                        <span>{t('selectColorLabel')}</span>
                       </label>
                       <span className="text-[10px] text-slate-400 font-semibold">
-                        {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} Müsait
+                        {PLAYER_COLORS.filter(c => !takenColors.includes(c)).length} {language === 'en' ? 'Available' : 'Müsait'}
                       </span>
                     </div>
                     <div className="grid grid-cols-6 gap-2">
@@ -1218,7 +1199,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                             className={`h-8 rounded-xl border-2 flex items-center justify-center transition transform relative ${
                               isTaken
                                 ? 'opacity-25 cursor-not-allowed grayscale border-slate-700'
-                                : isSelected
+                              : isSelected
                                 ? 'ring-2 ring-white scale-105 border-white shadow-lg cursor-pointer'
                                 : 'border-transparent opacity-80 hover:opacity-100 cursor-pointer active:scale-90'
                             }`}
@@ -1226,10 +1207,10 @@ export const Lobby: React.FC<LobbyProps> = ({
                               backgroundColor: color,
                               boxShadow: isSelected && !isTaken ? `0 0 10px ${color}` : undefined
                             }}
-                            title={isTaken ? 'Bu renk başka bir oyuncu/bot tarafından alındı' : undefined}
+                            title={isTaken ? t('colorTaken') : undefined}
                           >
                             {isSelected && !isTaken && <Check className="w-3.5 h-3.5 text-white drop-shadow stroke-[3]" />}
-                            {isTaken && <span className="text-[8px] font-black text-white/90">DOLU</span>}
+                            {isTaken && <span className="text-[8px] font-black text-white/90">{t('colorTaken')}</span>}
                           </button>
                         );
                       })}
@@ -1241,7 +1222,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                     type="submit"
                     className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-xl shadow-amber-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <span>Oda Kur & Oyuna Gir</span>
+                    <span>{t('createAndJoinRoom')}</span>
                     <span className="text-lg">🎲</span>
                   </button>
 
@@ -1253,7 +1234,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                       className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition text-xs font-bold cursor-pointer"
                     >
                       <Gamepad2 className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Misafir Oyna</span>
+                      <span>{t('playAsGuest')}</span>
                     </button>
 
                     <button
@@ -1262,7 +1243,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                       className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#070b14] hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition text-xs font-bold cursor-pointer"
                     >
                       <Users className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Arkadaşına Katıl</span>
+                      <span>{t('joinFriend')}</span>
                     </button>
                   </div>
 
@@ -1270,7 +1251,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
                 {/* Footer Tagline */}
                 <div className="pt-2 text-[10px] font-semibold text-slate-500 tracking-wider uppercase text-center">
-                  TURKISH PARADISE • Strateji • Ticaret • Eğlence • Türkiye
+                  {t('tagline')}
                 </div>
 
               </div>
@@ -1286,33 +1267,33 @@ export const Lobby: React.FC<LobbyProps> = ({
                   <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                     <TrendingUp className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-xs font-bold text-slate-200">Strateji Kur</span>
+                  <span className="text-xs font-bold text-slate-200">{t('strategyBadge')}</span>
                 </div>
 
                 <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
                   <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                     <Handshake className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-xs font-bold text-slate-200">Şehirleri Fethet</span>
+                  <span className="text-xs font-bold text-slate-200">{t('conquerBadge')}</span>
                 </div>
 
                 <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
                   <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                     <Coins className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-xs font-bold text-slate-200">Yatırımını Büyüt</span>
+                  <span className="text-xs font-bold text-slate-200">{t('investBadge')}</span>
                 </div>
 
                 <div className="flex items-center gap-2.5 bg-[#0a1124]/70 p-2.5 rounded-2xl border border-slate-800/80 backdrop-blur-sm">
                   <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                     <Users className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-xs font-bold text-slate-200">Arkadaşlarınla Oyna</span>
+                  <span className="text-xs font-bold text-slate-200">{t('friendsBadge')}</span>
                 </div>
               </div>
 
               <p className="font-['Caveat',cursive] text-xl text-amber-200/90 text-center tracking-wide">
-                "Bu topraklarda her şehir bir hikaye..."
+                {t('quoteBottomLeft')}
               </p>
             </div>
           )}
@@ -1323,14 +1304,14 @@ export const Lobby: React.FC<LobbyProps> = ({
 
       {/* 3. Footer */}
       <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-semibold text-slate-500 relative z-20">
-        <span>© 2026 Turkish Paradise - Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.</span>
+        <span>© 2026 Turkish Paradise - {language === 'en' ? 'All Rights Reserved. Turkey-Themed Web Board Game.' : 'Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.'}</span>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setActiveModal('contact')}
             className="hover:text-amber-400 text-slate-400 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
           >
             <Mail className="w-3.5 h-3.5 text-amber-400" />
-            <span>İletişim: <span className="font-mono text-amber-300/90">turkishparadisegame@gmail.com</span></span>
+            <span>{t('contact')}: <span className="font-mono text-amber-300/90">turkishparadisegame@gmail.com</span></span>
           </button>
         </div>
       </footer>
@@ -1362,41 +1343,64 @@ export const Lobby: React.FC<LobbyProps> = ({
             {activeModal === 'rules' && (
               <>
                 <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
-                  <HelpCircle className="w-5 h-5" /> Nasıl Oynanır?
+                  <HelpCircle className="w-5 h-5" /> {t('rulesModalTitle')}
                 </h3>
-                <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
-                  <p>• <strong>Zar At:</strong> Sıranız geldiğinde çift zar atarak haritada ilerleyin.</p>
-                  <p>• <strong>Şehirleri Satın Al:</strong> Sahipsiz şehirlere gelerek satın alın ve portföyünüzü kurun.</p>
-                  <p>• <strong>Renk Serisi Kuralı:</strong> Bir renkteki tüm şehirlere sahip olmadan ev dikemezsiniz!</p>
-                  <p>• <strong>İskeleler:</strong> 4 iskeleyi toplayarak kira gelirinizi katlayın (50₺'den 200₺'ye).</p>
-                  <p>• <strong>Kodes:</strong> Kodese düşerseniz 100₺ kefalet ödeyerek veya çift zar atarak çıkabilirsiniz.</p>
-                </div>
+                {language === 'en' ? (
+                  <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p>• <strong>Roll Dice:</strong> When it's your turn, roll the 3D dice to advance across the board.</p>
+                    <p>• <strong>Buy Cities:</strong> Land on unowned properties and purchase them to expand your portfolio.</p>
+                    <p>• <strong>Color Series Monopoly:</strong> You must own all cities in a color group before you can build houses!</p>
+                    <p>• <strong>Ferry Stations:</strong> Own up to 4 stations to multiply your rent revenue (from $50 up to $200).</p>
+                    <p>• <strong>Jail:</strong> If you get sent to jail, pay $100 bail or roll doubles to escape.</p>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p>• <strong>Zar At:</strong> Sıranız geldiğinde çift zar atarak haritada ilerleyin.</p>
+                    <p>• <strong>Şehirleri Satın Al:</strong> Sahipsiz şehirlere gelerek satın alın ve portföyünüzü kurun.</p>
+                    <p>• <strong>Renk Serisi Kuralı:</strong> Bir renkteki tüm şehirlere sahip olmadan ev dikemezsiniz!</p>
+                    <p>• <strong>İskeleler:</strong> 4 iskeleyi toplayarak kira gelirinizi katlayın (50₺'den 200₺'ye).</p>
+                    <p>• <strong>Kodes:</strong> Kodese düşerseniz 100₺ kefalet ödeyerek veya çift zar atarak çıkabilirsiniz.</p>
+                  </div>
+                )}
               </>
             )}
 
             {activeModal === 'features' && (
               <>
                 <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" /> Turkish Paradise Özellikleri
+                  <Sparkles className="w-5 h-5" /> {t('featuresModalTitle')}
                 </h3>
-                <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
-                  <p>• 26 Türkiye Şehri & Gerçek Manzara Kartları</p>
-                  <p>• 4 Vapur İskelesi (Kadıköy, Kabataş, Beşiktaş, Üsküdar)</p>
-                  <p>• 15 Kartlık Şans ve Kamu Fonu Havuzu</p>
-                  <p>• Zeki Yapay Zeka Botları (Kolay, Orta, Zor)</p>
-                  <p>• Hesap Hareketleri & Finansal Raporlama</p>
-                  <p>• Canlı Sohbet & Oyuncu Takas Sistemi</p>
-                </div>
+                {language === 'en' ? (
+                  <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p>• 26 Authentic Turkish Cities & Landmark Cards</p>
+                    <p>• 4 Famous Bosphorus Ferry Stations (Kadikoy, Kabatas, Besiktas, Uskudar)</p>
+                    <p>• 15 Card Chance & Community Chest Deck</p>
+                    <p>• Smart AI Bot Opponents (Easy, Medium, Hard)</p>
+                    <p>• Real-time Financial Ledger & Transactions History</p>
+                    <p>• Live In-Game Chat & Property Trading System</p>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p>• 26 Türkiye Şehri & Gerçek Manzara Kartları</p>
+                    <p>• 4 Vapur İskelesi (Kadıköy, Kabataş, Beşiktaş, Üsküdar)</p>
+                    <p>• 15 Kartlık Şans ve Kamu Fonu Havuzu</p>
+                    <p>• Zeki Yapay Zeka Botları (Kolay, Orta, Zor)</p>
+                    <p>• Hesap Hareketleri & Finansal Raporlama</p>
+                    <p>• Canlı Sohbet & Oyuncu Takas Sistemi</p>
+                  </div>
+                )}
               </>
             )}
 
             {activeModal === 'community' && (
               <>
                 <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
-                  <Globe className="w-5 h-5" /> Topluluk
+                  <Globe className="w-5 h-5" /> {t('communityModalTitle')}
                 </h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Turkish Paradise oyuncu topluluğuna katılın, arkadaşlarınızla özel odalarda rekabet edin ve Türkiye'nin en büyük emlak kralı olun!
+                  {language === 'en'
+                    ? "Join the vibrant Turkish Paradise community, compete in custom rooms with friends, and rise to become Turkey's greatest real estate tycoon!"
+                    : "Turkish Paradise oyuncu topluluğuna katılın, arkadaşlarınızla özel odalarda rekabet edin ve Türkiye'nin en büyük emlak kralı olun!"}
                 </p>
               </>
             )}
@@ -1408,13 +1412,13 @@ export const Lobby: React.FC<LobbyProps> = ({
                     <Mail className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-white">İletişim & Geri Bildirim</h3>
-                    <p className="text-xs text-amber-400/90 font-medium">Bizimle iletişime geçin</p>
+                    <h3 className="text-lg font-black text-white">{t('contactTitle')}</h3>
+                    <p className="text-xs text-amber-400/90 font-medium">{t('contactSubtitle')}</p>
                   </div>
                 </div>
 
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Turkish Paradise ile ilgili her türlü <strong>soru, öneri, hata bildirimi (bug), yeni özellik isteği ve iş birliği</strong> için resmi e-posta adresimiz üzerinden bize doğrudan ulaşabilirsiniz.
+                  {t('contactDescription')}
                 </p>
 
                 <div className="bg-slate-900/90 border border-amber-500/30 rounded-2xl p-4 space-y-3 shadow-inner">
@@ -1424,7 +1428,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                         <Mail className="w-4 h-4" />
                       </div>
                       <div className="truncate">
-                        <span className="text-[10px] text-slate-400 block font-semibold">Resmi E-Posta Adresi</span>
+                        <span className="text-[10px] text-slate-400 block font-semibold">{t('officialEmailLabel')}</span>
                         <span className="text-xs sm:text-sm font-bold text-amber-300 font-mono select-all">turkishparadisegame@gmail.com</span>
                       </div>
                     </div>
@@ -1437,31 +1441,31 @@ export const Lobby: React.FC<LobbyProps> = ({
                       className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition flex items-center gap-1 shrink-0 cursor-pointer shadow-md"
                     >
                       {copiedEmail ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      {copiedEmail ? 'Kopyalandı' : 'Kopyala'}
+                      {copiedEmail ? t('copied') : t('copy')}
                     </button>
                   </div>
 
                   <a
-                    href="mailto:turkishparadisegame@gmail.com?subject=Turkish%20Paradise%20-%20%C4%B0leti%C5%9Fim%20%2F%20%C3%96neri"
+                    href="mailto:turkishparadisegame@gmail.com?subject=Turkish%20Paradise%20-%20Contact%20%2F%20Feedback"
                     className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5 text-amber-400" />
-                    E-Posta Uygulamasında Aç
+                    {t('openInEmailApp')}
                   </a>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] text-slate-400 font-medium">
                   <div className="bg-slate-900/60 border border-slate-800/80 p-2 rounded-xl">
-                    <span className="block text-amber-400 font-bold mb-0.5">💡 Öneriler</span>
-                    Yeni fikir & istekler
+                    <span className="block text-amber-400 font-bold mb-0.5">{t('suggestionsTag')}</span>
+                    {t('suggestionsDesc')}
                   </div>
                   <div className="bg-slate-900/60 border border-slate-800/80 p-2 rounded-xl">
-                    <span className="block text-rose-400 font-bold mb-0.5">🐛 Hata Bildirimi</span>
-                    Gördüğünüz bug'lar
+                    <span className="block text-rose-400 font-bold mb-0.5">{t('bugReportTag')}</span>
+                    {t('bugReportDesc')}
                   </div>
                   <div className="bg-slate-900/60 border border-slate-800/80 p-2 rounded-xl">
-                    <span className="block text-emerald-400 font-bold mb-0.5">🤝 İş Birliği</span>
-                    Topluluk & sponsorluk
+                    <span className="block text-emerald-400 font-bold mb-0.5">{t('collabTag')}</span>
+                    {t('collabDesc')}
                   </div>
                 </div>
               </>
@@ -1471,7 +1475,7 @@ export const Lobby: React.FC<LobbyProps> = ({
               onClick={() => setActiveModal(null)}
               className="w-full bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold py-2.5 rounded-xl transition text-xs mt-2 cursor-pointer"
             >
-              Kapat
+              {t('closeBtn')}
             </button>
           </div>
         </div>
@@ -1489,9 +1493,12 @@ export const Lobby: React.FC<LobbyProps> = ({
             setIsProfileModalOpen(false);
             if (onJoinRoom) {
               onJoinRoom(targetRoom);
+            } else {
+              setRoomCode(targetRoom);
+              setMode('friend');
             }
           }}
-          roomId={settings.roomCode || roomCode || 'TR-1001'}
+          roomId={roomCode}
           initialTab={profileInitialTab}
         />
       )}

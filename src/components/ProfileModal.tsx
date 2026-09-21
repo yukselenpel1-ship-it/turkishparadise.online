@@ -2,13 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { UserAccount, FriendUser, FriendRequest } from '../types/game';
 import {
   Trophy,
-  Award,
-  TrendingUp,
-  DollarSign,
   Mail,
   X,
   LogOut,
-  Sparkles,
   XCircle,
   History,
   Users,
@@ -17,14 +13,10 @@ import {
   UserPlus,
   Trash2,
   Share2,
-  Gamepad2,
   Loader2,
   ShieldCheck,
-  UserCheck,
-  UserX,
   LogIn,
   Radio,
-  ArrowRight,
   Inbox,
   Send,
   Plus
@@ -34,9 +26,9 @@ import {
   acceptFriendRequest,
   removeFriend,
   fetchFriendsFromDB,
-  subscribeToFriendRequests,
   subscribeToFriendsAndRequests
 } from '../services/friendService';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export type ProfileTab = 'stats' | 'friends' | 'requests' | 'add';
 
@@ -55,12 +47,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   userAccount,
   onClose,
   onLogout,
-  onUpdateUserAccount,
   onGoogleLogin,
   onJoinRoom,
   roomId = 'TR-1001',
   initialTab = 'stats'
 }) => {
+  const { t, formatMoney, language } = useLanguage();
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const [copiedId, setCopiedId] = useState(false);
   const [targetCode, setTargetCode] = useState('');
@@ -96,6 +88,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
   // Title rank based on wins
   const getRank = (wins: number) => {
+    if (language === 'en') {
+      if (wins >= 15) return { title: 'Bosphorus & Turkey Emperor 👑', color: 'from-amber-300 via-amber-400 to-yellow-200' };
+      if (wins >= 8) return { title: 'Grand Real Estate Tycoon 💎', color: 'from-sky-400 via-indigo-300 to-teal-300' };
+      if (wins >= 4) return { title: 'Master Investor 🥈', color: 'from-emerald-400 to-teal-200' };
+      if (wins >= 1) return { title: 'Future Millionaire 🥉', color: 'from-amber-500 to-amber-300' };
+      return { title: 'Novice Investor 🎲', color: 'from-slate-400 to-slate-200' };
+    }
     if (wins >= 15) return { title: 'Boğaz & Türkiye İmparatoru 👑', color: 'from-amber-300 via-amber-400 to-yellow-200' };
     if (wins >= 8) return { title: 'Büyük Gayrimenkul Kralı 💎', color: 'from-sky-400 via-indigo-300 to-teal-300' };
     if (wins >= 4) return { title: 'Usta Emlakçı & Yatırımcı 🥈', color: 'from-emerald-400 to-teal-200' };
@@ -137,7 +136,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         setStatusMessage({ text: res.message, type: 'error' });
       }
     } catch (err: any) {
-      setStatusMessage({ text: 'İstek gönderilirken bir hata oluştu.', type: 'error' });
+      setStatusMessage({ text: language === 'en' ? 'Failed to send friend request.' : 'İstek gönderilirken bir hata oluştu.', type: 'error' });
     } finally {
       setIsAdding(false);
     }
@@ -166,13 +165,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         const { friends, pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
         setFriendsList(friends);
         setIncomingRequests(pendingRequests);
-        setStatusMessage({ text: `🎉 "${req.fromDisplayName}" ile artık arkadaşsınız!`, type: 'success' });
+        setStatusMessage({ text: `🎉 "${req.fromDisplayName}" ${language === 'en' ? 'is now your friend!' : 'ile artık arkadaşsınız!'}`, type: 'success' });
         setTimeout(() => setStatusMessage(null), 3000);
       } else {
-        setStatusMessage({ text: res.message || 'İstek kabul edilemedi.', type: 'error' });
+        setStatusMessage({ text: res.message || (language === 'en' ? 'Could not accept request.' : 'İstek kabul edilemedi.'), type: 'error' });
       }
     } catch (e) {
-      setStatusMessage({ text: 'İstek kabul edilemedi.', type: 'error' });
+      setStatusMessage({ text: language === 'en' ? 'Could not accept request.' : 'İstek kabul edilemedi.', type: 'error' });
     }
   };
 
@@ -182,7 +181,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       await removeFriend(userAccount.uid, reqId);
       const { pendingRequests } = await fetchFriendsFromDB(userAccount.uid);
       setIncomingRequests(pendingRequests);
-      setStatusMessage({ text: 'Arkadaşlık isteği reddedildi.', type: 'error' });
+      setStatusMessage({ text: language === 'en' ? 'Friend request declined.' : 'Arkadaşlık isteği reddedildi.', type: 'error' });
       setTimeout(() => setStatusMessage(null), 2500);
     } catch (e) {}
   };
@@ -201,12 +200,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     try {
       const res = await removeFriend(userAccount.uid, friendUidOrCode);
       if (res.success) {
-        setStatusMessage({ text: 'Arkadaş listenizden çıkarıldı.', type: 'success' });
+        setStatusMessage({ text: language === 'en' ? 'Removed from friends list.' : 'Arkadaş listenizden çıkarıldı.', type: 'success' });
       } else {
-        setStatusMessage({ text: res.message || 'Arkadaş çıkarılamadı.', type: 'error' });
+        setStatusMessage({ text: res.message || (language === 'en' ? 'Could not remove friend.' : 'Arkadaş çıkarılamadı.'), type: 'error' });
       }
     } catch (e) {
-      setStatusMessage({ text: 'Arkadaş çıkarılamadı.', type: 'error' });
+      setStatusMessage({ text: language === 'en' ? 'Could not remove friend.' : 'Arkadaş çıkarılamadı.', type: 'error' });
     }
     setTimeout(() => setStatusMessage(null), 2500);
   };
@@ -217,7 +216,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
       navigator.clipboard.writeText(inviteUrl);
       setCopiedInviteCode(friend.friendCode);
-      setStatusMessage({ text: `📋 ${friend.displayName} için "${roomId}" oda davet bağlantısı panoya kopyalandı!`, type: 'success' });
+      setStatusMessage({ text: `📋 ${friend.displayName}: ${language === 'en' ? 'Invite link copied to clipboard!' : `"${roomId}" oda davet bağlantısı kopyalandı!`}`, type: 'success' });
       setTimeout(() => {
         setCopiedInviteCode(null);
         setStatusMessage(null);
@@ -247,7 +246,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         <button
           onClick={onClose}
           className="absolute top-3.5 right-3.5 sm:top-4 sm:right-4 p-2 rounded-full bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800 transition cursor-pointer z-10 active:scale-95"
-          title="Kapat"
+          title={t('closeBtn')}
         >
           <X className="w-4 h-4" />
         </button>
@@ -266,7 +265,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 {userAccount.displayName.charAt(0).toUpperCase()}
               </div>
             )}
-            <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border-2 border-slate-950 ring-1 ring-emerald-400" title="Çevrimiçi" />
+            <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border-2 border-slate-950 ring-1 ring-emerald-400" title={language === 'en' ? 'Online' : 'Çevrimiçi'} />
           </div>
 
           <div className="min-w-0 flex-1 space-y-0.5">
@@ -287,7 +286,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             
             {userAccount.friendCode && (
               <div className="flex items-center gap-1.5 pt-0.5">
-                <span className="text-[9.5px] text-slate-400 font-medium">Özel ID:</span>
+                <span className="text-[9.5px] text-slate-400 font-medium">{t('friendCodeLabel')}:</span>
                 <span className="text-[10.5px] font-mono font-black text-amber-300 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.2 rounded">
                   {userAccount.friendCode}
                 </span>
@@ -310,7 +309,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             }`}
           >
             <Trophy className="w-3.5 h-3.5 shrink-0" />
-            <span>İstatistik</span>
+            <span>{t('tabStats')}</span>
           </button>
 
           <button
@@ -325,7 +324,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             }`}
           >
             <Users className="w-3.5 h-3.5 shrink-0" />
-            <span>Arkadaşlar ({friendsList.length})</span>
+            <span>{t('tabFriends')} ({friendsList.length})</span>
           </button>
 
           <button
@@ -342,7 +341,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             }`}
           >
             <Inbox className="w-3.5 h-3.5 shrink-0" />
-            <span>Gelen İstek</span>
+            <span>{t('tabRequests')}</span>
             {incomingRequests.length > 0 && (
               <span className="bg-rose-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.2 animate-bounce shadow">
                 {incomingRequests.length}
@@ -362,7 +361,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             }`}
           >
             <UserPlus className="w-3.5 h-3.5 shrink-0" />
-            <span>Ekle</span>
+            <span>{t('tabAddFriend')}</span>
           </button>
         </div>
 
@@ -385,27 +384,27 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             {/* 4 Stat Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div className="bg-[#070b14] border border-amber-500/30 rounded-2xl p-2 sm:p-2.5 text-center space-y-0.5">
-                <span className="text-[10px] text-amber-400 font-bold block uppercase tracking-wide">Zaferler</span>
+                <span className="text-[10px] text-amber-400 font-bold block uppercase tracking-wide">{t('gamesWonStat')}</span>
                 <span className="text-lg sm:text-xl font-black text-amber-300">{stats.gamesWon}</span>
-                <span className="text-[9px] text-slate-500 block font-semibold">1.lik</span>
+                <span className="text-[9px] text-slate-500 block font-semibold">{language === 'en' ? '1st Place' : '1.lik'}</span>
               </div>
 
               <div className="bg-[#070b14] border border-slate-800 rounded-2xl p-2 sm:p-2.5 text-center space-y-0.5">
-                <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wide">Kazanma %</span>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wide">{language === 'en' ? 'Win Rate' : 'Kazanma %'}</span>
                 <span className="text-lg sm:text-xl font-black text-white">%{winRate}</span>
-                <span className="text-[9px] text-slate-500 block font-semibold">{totalPlayed} Maç</span>
+                <span className="text-[9px] text-slate-500 block font-semibold">{totalPlayed} {language === 'en' ? 'Matches' : 'Maç'}</span>
               </div>
 
               <div className="bg-[#070b14] border border-slate-800 rounded-2xl p-2 sm:p-2.5 text-center space-y-0.5">
-                <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wide">Mağlubiyet</span>
+                <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wide">{language === 'en' ? 'Losses' : 'Mağlubiyet'}</span>
                 <span className="text-lg sm:text-xl font-black text-rose-400">{stats.gamesLost || 0}</span>
-                <span className="text-[9px] text-slate-500 block font-semibold">İflas & Kayıp</span>
+                <span className="text-[9px] text-slate-500 block font-semibold">{language === 'en' ? 'Bankrupt/Lost' : 'İflas & Kayıp'}</span>
               </div>
 
               <div className="bg-[#070b14] border border-emerald-500/30 rounded-2xl p-2 sm:p-2.5 text-center space-y-0.5">
-                <span className="text-[10px] text-emerald-400 font-bold block uppercase tracking-wide">Toplam Kazanç</span>
-                <span className="text-sm sm:text-base font-black text-emerald-300 truncate block">₺{stats.totalMoneyEarned.toLocaleString('tr-TR')}</span>
-                <span className="text-[9px] text-slate-500 block font-semibold">Servet</span>
+                <span className="text-[10px] text-emerald-400 font-bold block uppercase tracking-wide">{t('netWorthStat')}</span>
+                <span className="text-sm sm:text-base font-black text-emerald-300 truncate block">{formatMoney(stats.totalMoneyEarned)}</span>
+                <span className="text-[9px] text-slate-500 block font-semibold">{language === 'en' ? 'Net Wealth' : 'Servet'}</span>
               </div>
             </div>
 
@@ -413,14 +412,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-black uppercase tracking-wide text-slate-300">
                 <span className="flex items-center gap-1.5">
-                  <History className="w-3.5 h-3.5 text-amber-400" /> Son Maç Geçmişi
+                  <History className="w-3.5 h-3.5 text-amber-400" /> {language === 'en' ? 'Recent Match History' : 'Son Maç Geçmişi'}
                 </span>
-                <span className="text-[10px] text-slate-500 font-bold">{history.length} Oyun</span>
+                <span className="text-[10px] text-slate-500 font-bold">{history.length} {language === 'en' ? 'Games' : 'Oyun'}</span>
               </div>
 
               {history.length === 0 ? (
                 <div className="p-4 rounded-2xl bg-[#070b14] border border-slate-800 text-center text-xs text-slate-500">
-                  Henüz tamamlanmış bir maç kaydı bulunmuyor.
+                  {language === 'en' ? 'No completed matches recorded yet.' : 'Henüz tamamlanmış bir maç kaydı bulunmuyor.'}
                 </div>
               ) : (
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
@@ -439,14 +438,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                           <span className="text-base">{isWin ? '🏆' : '❌'}</span>
                           <div className="min-w-0">
                             <div className="font-bold text-white flex items-center gap-1.5 truncate">
-                              <span>{isWin ? 'ZAFER (1.)' : record.result === 'BANKRUPTCY' ? 'İFLAS ETTİ' : 'MAĞLUBİYET'}</span>
+                              <span>{isWin ? (language === 'en' ? 'VICTORY (1st)' : 'ZAFER (1.)') : record.result === 'BANKRUPTCY' ? (language === 'en' ? 'BANKRUPT' : 'İFLAS ETTİ') : (language === 'en' ? 'DEFEAT' : 'MAĞLUBİYET')}</span>
                               <span className="text-[10px] text-slate-400 font-normal">({record.roomId})</span>
                             </div>
                             <div className="text-[10px] text-slate-400 flex items-center gap-2">
                               <span>{record.date}</span>
                               <span>•</span>
                               <span className="flex items-center gap-0.5">
-                                <Users className="w-2.5 h-2.5" /> {record.opponentsCount} Oyuncu
+                                <Users className="w-2.5 h-2.5" /> {record.opponentsCount} {language === 'en' ? 'Players' : 'Oyuncu'}
                               </span>
                             </div>
                           </div>
@@ -454,10 +453,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
                         <div className="text-right shrink-0">
                           <span className={`font-black text-xs block ${isWin ? 'text-emerald-400' : 'text-slate-400'}`}>
-                            {isWin ? `+₺${record.moneyEarned.toLocaleString('tr-TR')}` : `₺${record.moneyEarned.toLocaleString('tr-TR')}`}
+                            {isWin ? `+${formatMoney(record.moneyEarned)}` : formatMoney(record.moneyEarned)}
                           </span>
                           <span className="text-[9px] text-slate-500 uppercase font-semibold">
-                            {isWin ? 'Kazanılan Ödül' : 'Bakiye'}
+                            {isWin ? (language === 'en' ? 'Prize Money' : 'Kazanılan Ödül') : (language === 'en' ? 'Balance' : 'Bakiye')}
                           </span>
                         </div>
                       </div>
@@ -480,10 +479,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Size Özel Arkadaş ID'niz
+                      <ShieldCheck className="w-3.5 h-3.5" /> {t('friendCodeLabel')}
                     </span>
                     <p className="text-[11px] text-slate-300 font-medium">
-                      Arkadaşlarınız sizi eklemek için bu kodu kullanabilir:
+                      {language === 'en' ? 'Friends can use this code to add you:' : 'Arkadaşlarınız sizi eklemek için bu kodu kullanabilir:'}
                     </p>
                   </div>
                   <button
@@ -491,7 +490,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition cursor-pointer shadow-md active:scale-95 shrink-0"
                   >
                     {copiedId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedId ? 'Kopyalandı' : 'Kopyala'}</span>
+                    <span>{copiedId ? t('copied') : t('copy')}</span>
                   </button>
                 </div>
                 <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1 rounded-xl border border-amber-500/30">
@@ -506,13 +505,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-black uppercase tracking-wide text-slate-300">
                 <span className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-amber-400" /> Ekli Arkadaşlar ({friendsList.length})
+                  <Users className="w-3.5 h-3.5 text-amber-400" /> {t('tabFriends')} ({friendsList.length})
                 </span>
                 <button
                   onClick={() => setActiveTab('add')}
                   className="text-[10px] text-amber-400 hover:text-amber-300 font-bold flex items-center gap-0.5 cursor-pointer"
                 >
-                  <Plus className="w-3 h-3" /> Arkadaş Ekle
+                  <Plus className="w-3 h-3" /> {t('tabAddFriend')}
                 </button>
               </div>
 
@@ -522,17 +521,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     <Users className="w-5 h-5" />
                   </div>
                   <div className="space-y-0.5">
-                    <p className="text-xs text-slate-300 font-bold">Henüz ekli bir arkadaşınız yok</p>
-                    <p className="text-[10.5px] text-slate-500 max-w-xs mx-auto">
-                      Arkadaşınızın Özel ID'sini (Örn: TP-849201) girerek hemen istek gönderebilirsiniz.
-                    </p>
+                    <p className="text-xs text-slate-300 font-bold">{t('noFriendsYet')}</p>
                   </div>
                   <button
                     onClick={() => setActiveTab('add')}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition cursor-pointer shadow active:scale-95"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
-                    <span>Arkadaş Ekle</span>
+                    <span>{t('tabAddFriend')}</span>
                   </button>
                 </div>
               ) : (
@@ -564,7 +560,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                               className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-950 ${
                                 isOnline ? 'bg-emerald-400 ring-1 ring-emerald-300' : 'bg-slate-600'
                               }`}
-                              title={isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}
+                              title={isOnline ? (language === 'en' ? 'Online' : 'Çevrimiçi') : (language === 'en' ? 'Offline' : 'Çevrimdışı')}
                             />
                           </div>
 
@@ -573,7 +569,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                               <span className="truncate">{friend.displayName}</span>
                               {isOnline && (
                                 <span className="text-[8.5px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/30 shrink-0 flex items-center gap-0.5">
-                                  <Radio className="w-2.5 h-2.5 animate-pulse" /> Çevrimiçi
+                                  <Radio className="w-2.5 h-2.5 animate-pulse" /> {language === 'en' ? 'Online' : 'Çevrimiçi'}
                                 </span>
                               )}
                             </div>
@@ -581,10 +577,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                               <span className="font-mono text-amber-300 font-bold">{friend.friendCode}</span>
                               <span>•</span>
                               {inActiveRoom ? (
-                                <span className="text-sky-300 font-bold">🎮 Oda: {friend.activeRoomId}</span>
+                                <span className="text-sky-300 font-bold">🎮 {language === 'en' ? 'Room:' : 'Oda:'} {friend.activeRoomId}</span>
                               ) : (
                                 <span className="text-slate-500">
-                                  <Trophy className="w-2.5 h-2.5 inline text-amber-400" /> {friendStats.gamesWon} Zafer
+                                  <Trophy className="w-2.5 h-2.5 inline text-amber-400" /> {friendStats.gamesWon} {language === 'en' ? 'Wins' : 'Zafer'}
                                 </span>
                               )}
                             </div>
@@ -597,16 +593,16 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                             <button
                               onClick={() => handleJoinFriendRoom(friend.activeRoomId)}
                               className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-[11px] transition cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95 animate-pulse"
-                              title={`Doğrudan "${friend.activeRoomId}" Odasına Katıl`}
+                              title={`Join room ${friend.activeRoomId}`}
                             >
                               <LogIn className="w-3.5 h-3.5" />
-                              <span>Odaya Katıl</span>
+                              <span>{language === 'en' ? 'Join' : 'Odaya Katıl'}</span>
                             </button>
                           ) : (
                             <button
                               onClick={() => handleInviteFriend(friend)}
                               className="flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-[11px] transition cursor-pointer active:scale-95"
-                              title="Mevcut Odaya Davet Linki Kopyala"
+                              title={t('copyRoomLink')}
                             >
                               {copiedInviteCode === friend.friendCode ? (
                                 <Check className="w-3 h-3 text-emerald-400" />
@@ -614,7 +610,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                                 <Share2 className="w-3 h-3 text-sky-400" />
                               )}
                               <span className="hidden sm:inline">
-                                {copiedInviteCode === friend.friendCode ? 'Kopyalandı' : 'Davet Et'}
+                                {copiedInviteCode === friend.friendCode ? t('copied') : t('inviteFriendToRoom')}
                               </span>
                             </button>
                           )}
@@ -622,7 +618,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                           <button
                             onClick={() => handleRemoveFriend(friend.friendCode)}
                             className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 transition cursor-pointer active:scale-95"
-                            title="Arkadaşı Sil"
+                            title={language === 'en' ? 'Remove Friend' : 'Arkadaşı Sil'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -637,16 +633,16 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
         )}
 
-        {/* TAB 3: GELEN ARKADAŞLIK İSTEKLERİ (ALWAYS VISIBLE & ACCESSIBLE) */}
+        {/* TAB 3: GELEN ARKADAŞLIK İSTEKLERİ */}
         {activeTab === 'requests' && (
           <div className="overflow-y-auto pr-0.5 space-y-3 flex-1">
             
             <div className="flex items-center justify-between text-xs font-black uppercase tracking-wide text-slate-300 border-b border-slate-800 pb-2">
               <span className="flex items-center gap-1.5 text-amber-400">
-                <Inbox className="w-4 h-4" /> Gelen Arkadaşlık İstekleri
+                <Inbox className="w-4 h-4" /> {t('tabRequests')}
               </span>
               <span className="text-[10.5px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-black px-2 py-0.5 rounded-full">
-                {incomingRequests.length} Bekleyen
+                {incomingRequests.length} {language === 'en' ? 'Pending' : 'Bekleyen'}
               </span>
             </div>
 
@@ -656,16 +652,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   <Mail className="w-6 h-6" />
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-xs font-black text-white">Bekleyen Arkadaşlık İsteğiniz Yok</h4>
+                  <h4 className="text-xs font-black text-white">{t('noPendingRequests')}</h4>
                   <p className="text-[11px] text-slate-400 max-w-sm mx-auto leading-relaxed">
-                    Arkadaşlarınız size Özel ID numaranız üzerinden istek gönderdiğinde burada gerçek zamanlı olarak anında listelenir ve tek dokunuşla kabul edebilirsiniz.
+                    {language === 'en'
+                      ? 'When friends send requests with your friend code, they will appear here in real-time.'
+                      : 'Arkadaşlarınız size Özel ID numaranız üzerinden istek gönderdiğinde burada gerçek zamanlı olarak anında listelenir.'}
                   </p>
                 </div>
 
                 {userAccount.friendCode && (
                   <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 bg-slate-900/60 p-2.5 rounded-xl">
                     <div className="text-left">
-                      <span className="text-[9.5px] uppercase font-bold text-slate-400 block">Sizin Özel Kodunuz</span>
+                      <span className="text-[9.5px] uppercase font-bold text-slate-400 block">{t('friendCodeLabel')}</span>
                       <span className="text-xs font-mono font-black text-amber-300">{userAccount.friendCode}</span>
                     </div>
                     <button
@@ -673,7 +671,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition cursor-pointer shadow active:scale-95"
                     >
                       {copiedId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedId ? 'Kopyalandı!' : 'Kodu Kopyala'}</span>
+                      <span>{copiedId ? t('copied') : t('copyFriendCode')}</span>
                     </button>
                   </div>
                 )}
@@ -698,7 +696,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                         <div className="flex items-center gap-2 text-[10px] text-slate-400">
                           <span className="font-mono text-amber-300 font-bold bg-amber-500/10 px-1 rounded">{req.fromFriendCode}</span>
                           <span>•</span>
-                          <span>{req.createdAt || 'Az önce'}</span>
+                          <span>{req.createdAt || (language === 'en' ? 'Just now' : 'Az önce')}</span>
                         </div>
                       </div>
                     </div>
@@ -707,18 +705,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       <button
                         onClick={() => handleAcceptRequest(req)}
                         className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95"
-                        title="İsteği Kabul Et"
+                        title={t('acceptRequest')}
                       >
                         <Check className="w-3.5 h-3.5" />
-                        <span>Kabul Et</span>
+                        <span>{t('acceptRequest')}</span>
                       </button>
                       <button
                         onClick={() => handleDeclineRequest(req.id)}
                         className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-xs transition cursor-pointer active:scale-95"
-                        title="İsteği Reddet"
+                        title={t('rejectRequest')}
                       >
                         <X className="w-3.5 h-3.5" />
-                        <span className="sm:hidden">Reddet</span>
+                        <span className="sm:hidden">{t('rejectRequest')}</span>
                       </button>
                     </div>
                   </div>
@@ -739,10 +737,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Sizin Arkadaş ID Numaranız
+                      <ShieldCheck className="w-3.5 h-3.5" /> {t('friendCodeLabel')}
                     </span>
                     <p className="text-[11px] text-slate-300">
-                      Arkadaşlarınıza bu kodu vererek sizi eklemelerini sağlayabilirsiniz:
+                      {language === 'en' ? 'Share your code to let others add you:' : 'Arkadaşlarınıza bu kodu vererek sizi eklemelerini sağlayabilirsiniz:'}
                     </p>
                   </div>
                   <button
@@ -750,7 +748,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition cursor-pointer shadow-md active:scale-95 shrink-0"
                   >
                     {copiedId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedId ? 'Kopyalandı' : 'Kopyala'}</span>
+                    <span>{copiedId ? t('copied') : t('copy')}</span>
                   </button>
                 </div>
                 <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-amber-500/30">
@@ -766,17 +764,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               <form onSubmit={handleSendRequest} className="space-y-2 bg-[#070b14] border border-slate-800 rounded-2xl p-3.5">
                 <label className="text-xs font-black text-slate-200 flex items-center gap-1.5">
                   <UserPlus className="w-4 h-4 text-amber-400" />
-                  <span>Özel ID ile Arkadaşlık İsteği Gönder</span>
+                  <span>{t('tabAddFriend')}</span>
                 </label>
                 <p className="text-[11px] text-slate-400">
-                  Arkadaşınızın 6 haneli kodunu girin. İstek karşı tarafa anında iletilir.
+                  {language === 'en'
+                    ? 'Enter your friend\'s 6-character code (e.g. TP-849201).'
+                    : 'Arkadaşınızın 6 haneli kodunu girin. İstek karşı tarafa anında iletilir.'}
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
                   <input
                     type="text"
                     value={targetCode}
                     onChange={(e) => setTargetCode(e.target.value.toUpperCase())}
-                    placeholder="Örn: TP-849201"
+                    placeholder={t('enterFriendCodePlaceholder')}
                     className="flex-1 bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-white placeholder-slate-600 outline-none transition uppercase"
                   />
                   <button
@@ -789,7 +789,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                     ) : (
                       <Send className="w-4 h-4" />
                     )}
-                    <span>İstek Gönder</span>
+                    <span>{t('sendFriendRequestBtn')}</span>
                   </button>
                 </div>
               </form>
@@ -797,9 +797,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               <div className="bg-gradient-to-r from-amber-500/10 to-rose-500/10 border border-amber-500/30 rounded-2xl p-4 text-center space-y-2.5">
                 <Users className="w-8 h-8 text-amber-400 mx-auto" />
                 <div className="space-y-0.5">
-                  <h4 className="text-xs font-black text-white">Google ile Giriş Yapın</h4>
+                  <h4 className="text-xs font-black text-white">{t('googleLogin')}</h4>
                   <p className="text-[11px] text-slate-300">
-                    Özel ID almak ve arkadaş ekleyip davet edebilmek için Google hesabınızla giriş yapmanız gerekmektedir.
+                    {language === 'en'
+                      ? 'Sign in with Google to get your permanent Friend Code and add friends.'
+                      : 'Özel ID almak ve arkadaş ekleyip davet edebilmek için Google hesabınızla giriş yapmanız gerekmektedir.'}
                   </p>
                 </div>
                 {onGoogleLogin && (
@@ -813,7 +815,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                       <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                     </svg>
-                    <span>Google ile Giriş Yap</span>
+                    <span>{t('googleLogin')}</span>
                   </button>
                 )}
               </div>
@@ -832,7 +834,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-bold text-xs transition cursor-pointer active:scale-95"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Oturumu Kapat (Çıkış Yap)</span>
+            <span>{t('googleLogout')}</span>
           </button>
         </div>
 

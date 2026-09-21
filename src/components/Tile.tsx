@@ -1,6 +1,7 @@
 import React from 'react';
 import { BoardTile, ColorGroup, Player } from '../types/game';
 import { Anchor, Sparkles } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface TileProps {
   tile: BoardTile;
@@ -31,6 +32,9 @@ export const Tile: React.FC<TileProps> = ({
   onClick,
   style
 }) => {
+  const { language, translateTile, formatMoney, t } = useLanguage();
+  const translated = translateTile(tile);
+
   const isStart = tile.type === 'start';
   const isJail = tile.type === 'jail';
   const isParking = tile.type === 'parking';
@@ -67,14 +71,14 @@ export const Tile: React.FC<TileProps> = ({
           ? 'bg-gradient-to-b from-rose-600 via-red-700 to-rose-950 border-rose-400 text-white'
           : 'bg-gradient-to-b from-[#131b2e] to-[#0a101d] border-slate-800'
       } ${tile.ownerId ? 'ring-1 sm:ring-2' : ''}`}
-      title={`${tile.name} ${tile.price ? `(₺${tile.price})` : ''} ${owner ? `• Sahibi: ${owner.name}` : ''}`}
+      title={`${translated.name} ${tile.price ? `(${formatMoney(tile.price)})` : ''} ${owner ? `• ${t('ownerLabel')}: ${owner.name}` : ''}`}
     >
       {/* Owner Badge on Top Right */}
       {owner && (
         <div
           className="absolute -top-1 -right-1 sm:-top-1.5 sm:-right-1.5 z-20 w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-full border-2 border-white shadow-md flex items-center justify-center text-[8px] sm:text-[11px] animate-fade-in"
           style={{ backgroundColor: owner.color }}
-          title={`Sahibi: ${owner.name}`}
+          title={`${t('ownerLabel')}: ${owner.name}`}
         >
           <span>{owner.avatar}</span>
         </div>
@@ -107,7 +111,7 @@ export const Tile: React.FC<TileProps> = ({
         <div className="absolute inset-0 z-0 opacity-30 group-hover:opacity-55 transition-opacity duration-300 pointer-events-none rounded-md sm:rounded-xl overflow-hidden">
           <img
             src={tile.image}
-            alt={tile.name}
+            alt={translated.name}
             className="w-full h-full object-cover"
             loading="lazy"
           />
@@ -115,12 +119,12 @@ export const Tile: React.FC<TileProps> = ({
         </div>
       )}
 
-      {/* 4. Special Graphic for ŞANS ❓ */}
+      {/* 4. Special Graphic for ŞANS / CHANCE ❓ */}
       {isChance && (
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
           <div className="flex items-center gap-0.5 text-[7px] sm:text-[10px] font-bold tracking-wider uppercase drop-shadow text-yellow-200">
             <Sparkles className="w-2 h-2 sm:w-2.5 sm:h-2.5" />
-            <span>ŞANS</span>
+            <span>{language === 'en' ? 'CHANCE' : 'ŞANS'}</span>
           </div>
           <span className="text-base sm:text-3xl font-black text-white drop-shadow-md my-0.5 animate-bounce-short leading-none">
             ?
@@ -128,11 +132,11 @@ export const Tile: React.FC<TileProps> = ({
         </div>
       )}
 
-      {/* 5. Special Graphic for KAMU FONU 🎁 */}
+      {/* 5. Special Graphic for KAMU FONU / CHEST 🎁 */}
       {isChest && (
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
           <span className="text-[7px] sm:text-[10px] font-bold tracking-wider uppercase drop-shadow text-cyan-100 leading-none">
-            FON
+            {language === 'en' ? 'CHEST' : 'FON'}
           </span>
           <span className="text-sm sm:text-2xl drop-shadow-md my-0.5 animate-pulse leading-none">
             📦
@@ -145,10 +149,10 @@ export const Tile: React.FC<TileProps> = ({
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
           <span className="text-sm sm:text-2xl font-black text-slate-950 mb-0.5 leading-none">➔</span>
           <span className="text-[7px] sm:text-xs font-black text-slate-950 tracking-tight leading-none uppercase">
-            BAŞLANGIÇ
+            {language === 'en' ? 'GO' : 'BAŞLANGIÇ'}
           </span>
           <span className="text-[6.5px] sm:text-[9.5px] font-extrabold text-slate-900 mt-0.5 leading-none">
-            +₺200
+            +{formatMoney(200)}
           </span>
         </div>
       )}
@@ -157,9 +161,11 @@ export const Tile: React.FC<TileProps> = ({
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
           <span className="text-sm sm:text-2xl mb-0.5 leading-none">🔒</span>
           <span className="text-[7px] sm:text-[10.5px] font-bold text-white tracking-tight leading-none uppercase">
-            HAPİS
+            {language === 'en' ? 'JAIL' : 'HAPİS'}
           </span>
-          <span className="text-[6px] sm:text-[8.5px] text-slate-300 leading-none mt-0.5">Ziyaret</span>
+          <span className="text-[6px] sm:text-[8.5px] text-slate-300 leading-none mt-0.5">
+            {language === 'en' ? 'Visiting' : 'Ziyaret'}
+          </span>
         </div>
       )}
 
@@ -167,9 +173,11 @@ export const Tile: React.FC<TileProps> = ({
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
           <span className="text-sm sm:text-2xl mb-0.5 leading-none">🅿️</span>
           <span className="text-[7px] sm:text-[10.5px] font-bold text-white tracking-tight leading-none uppercase">
-            OTOPARK
+            {language === 'en' ? 'PARKING' : 'OTOPARK'}
           </span>
-          <span className="text-[6px] sm:text-[8.5px] text-emerald-200 leading-none mt-0.5">Ücretsiz</span>
+          <span className="text-[6px] sm:text-[8.5px] text-emerald-200 leading-none mt-0.5">
+            {language === 'en' ? 'Free' : 'Ücretsiz'}
+          </span>
         </div>
       )}
 
@@ -177,7 +185,7 @@ export const Tile: React.FC<TileProps> = ({
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
           <span className="text-sm sm:text-2xl mb-0.5 animate-pulse leading-none">🚨</span>
           <span className="text-[7px] sm:text-[10.5px] font-bold text-white tracking-tight leading-none uppercase">
-            KODESE GİT
+            {language === 'en' ? 'GO TO JAIL' : 'KODESE GİT'}
           </span>
         </div>
       )}
@@ -187,10 +195,10 @@ export const Tile: React.FC<TileProps> = ({
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
           <span className="text-xs sm:text-xl mb-0.5 leading-none">{tile.icon || '🏛️'}</span>
           <span className="text-[6.5px] sm:text-[9.5px] font-black text-white tracking-tight leading-none uppercase truncate max-w-full px-0.5">
-            {tile.name}
+            {translated.name}
           </span>
           <span className="text-[6px] sm:text-[8.5px] font-bold text-rose-300 mt-0.5 leading-none">
-            -₺{tile.taxAmount || 100}
+            -{formatMoney(tile.taxAmount || 100)}
           </span>
         </div>
       )}
@@ -236,13 +244,13 @@ export const Tile: React.FC<TileProps> = ({
           {/* City / Station Name & Price Box */}
           <div className="w-full flex flex-col items-center shrink-0">
             <span className="font-extrabold text-[7px] sm:text-[10.5px] md:text-xs text-white tracking-tight leading-tight group-hover:text-amber-300 transition drop-shadow uppercase truncate w-full text-center px-0.5">
-              {tile.name}
+              {translated.name}
             </span>
 
             {tile.price && (
               <div className="inline-flex items-center gap-0.5 mt-0.5 bg-slate-950/90 px-1 py-0.2 rounded border border-amber-500/30 shadow">
                 <span className="text-[6.5px] sm:text-[9.5px] font-black text-amber-300 leading-none">
-                  ₺{tile.price}
+                  {formatMoney(tile.price)}
                 </span>
               </div>
             )}
@@ -285,7 +293,7 @@ export const Tile: React.FC<TileProps> = ({
       {/* 8. Mortgaged Overlay */}
       {tile.isMortgaged && (
         <div className="absolute inset-0 bg-slate-950/90 z-20 flex items-center justify-center text-[7px] sm:text-[10px] font-black text-amber-400 uppercase tracking-widest backdrop-blur-[2px] rounded-md sm:rounded-xl border border-amber-500/50">
-          İPOTEKLİ
+          {t('mortgagedTag').toUpperCase()}
         </div>
       )}
     </div>

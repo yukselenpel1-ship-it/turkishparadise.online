@@ -1,18 +1,21 @@
 import React from 'react';
 import { GameLog } from '../types/game';
 import { ScrollText } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface GameLogsProps {
   logs: GameLog[];
 }
 
 export const GameLogs: React.FC<GameLogsProps> = ({ logs }) => {
+  const { t } = useLanguage();
+
   return (
     <div className="bg-[#0b1222]/90 border border-slate-800/90 rounded-2xl p-3 shadow-xl flex flex-col h-full max-h-[calc(100vh-85px)] select-none backdrop-blur-md">
       <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 mb-2 shrink-0">
         <ScrollText className="w-3.5 h-3.5 text-amber-400" />
         <span className="text-[11px] font-black text-amber-400 uppercase tracking-wider">
-          Oyun Akışı & Bildirimler
+          {t('logsHeader')}
         </span>
       </div>
 

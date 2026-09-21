@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { BoardTile, Player } from '../types/game';
-import { X, Building2, ArrowLeftRight, Home, Lock, Unlock } from 'lucide-react';
+import { X, Building2, Home, Lock, Unlock } from 'lucide-react';
 import { hasColorGroupMonopoly } from '../engine/gameEngine';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface MyPropertiesModalProps {
   currentPlayer: Player;
@@ -26,6 +27,7 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
   onToggleMortgage,
   onSellToBank,
 }) => {
+  const { t, formatMoney, translateTile, language } = useLanguage();
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>(currentPlayer.id);
 
   const activePlayer = players.find((p) => p.id === selectedPlayerId) || currentPlayer;
@@ -43,7 +45,7 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
         <div className="p-4 px-6 flex items-center justify-between border-b border-slate-800 bg-slate-900/90 shrink-0">
           <div className="flex items-center gap-2 text-amber-400 font-extrabold text-lg">
             <Building2 className="w-5 h-5" />
-            <span>Mülk Portföyü & Tapu Listesi</span>
+            <span>{t('myPropertiesTitle')}</span>
           </div>
           <button
             onClick={onClose}
@@ -71,7 +73,7 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
               >
                 <span>{p.avatar}</span>
                 <span>{p.name}</span>
-                {p.id === currentPlayer.id && <span className="text-[9px] opacity-75">(Siz)</span>}
+                {p.id === currentPlayer.id && <span className="text-[9px] opacity-75">({t('youBadge')})</span>}
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30 font-extrabold">
                   {pCount}
                 </span>
@@ -86,111 +88,123 @@ export const MyPropertiesModal: React.FC<MyPropertiesModalProps> = ({
             <div className="text-center py-12 space-y-2">
               <Building2 className="w-12 h-12 text-slate-600 mx-auto" />
               <p className="text-sm text-slate-400 font-bold">
-                {activePlayer.name} henüz herhangi bir şehre veya iskeleye sahip değil.
+                {t('noPropertiesOwned', { name: activePlayer.name })}
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {ownedTiles.map((tile) => (
-                <div
-                  key={tile.id}
-                  className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between space-y-3 hover:border-slate-700 transition shadow-lg"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="font-black text-sm text-white block uppercase">
-                        {tile.name}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-semibold">
-                        {tile.type === 'station' ? 'Vapur İskelesi' : `${tile.colorGroup} Grubu`}
-                      </span>
+              {ownedTiles.map((tile) => {
+                const translated = translateTile(tile);
+                const isStation = tile.type === 'station';
+                const hasMonopoly = !isStation && hasColorGroupMonopoly(board, tile.colorGroup, activePlayer.id);
+
+                return (
+                  <div
+                    key={tile.id}
+                    className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between space-y-3 hover:border-slate-700 transition shadow-lg"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-extrabold text-sm text-white">{translated.name}</span>
+                          {tile.isMortgaged && (
+                            <span className="text-[9px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/40 px-1.5 py-0.2 rounded">
+                              {t('mortgagedTag')}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-semibold block mt-0.5">
+                          {tile.price ? formatMoney(tile.price) : ''}
+                        </span>
+                      </div>
+
+                      {/* House Badges */}
+                      {tile.type === 'property' && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          {tile.houses === 5 ? (
+                            <span className="text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-lg">
+                              {t('hotelBadge')}
+                            </span>
+                          ) : tile.houses > 0 ? (
+                            <span className="text-xs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-lg">
+                              {t('housesCountBadge', { count: tile.houses })}
+                            </span>
+                          ) : hasMonopoly ? (
+                            <span className="text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 rounded-lg">
+                              {language === 'en' ? 'Monopoly' : 'Tam Seri'}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
 
-                    <span className="text-xs font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30">
-                      ₺{tile.price}
-                    </span>
-                  </div>
-
-                  {/* Houses & Mortgage Status */}
-                  <div className="flex items-center justify-between text-xs text-slate-300 bg-slate-900/60 p-2 rounded-xl">
-                    <span>
-                      {tile.houses === 5
-                        ? '🏨 1 Otel'
-                        : tile.houses > 0
-                        ? `🏠 ${tile.houses} Ev`
-                        : 'Arsa'}
-                    </span>
-                    {tile.isMortgaged ? (
-                      <span className="text-rose-400 font-bold text-[10px]">İPOTEKLİ</span>
-                    ) : (
-                      <span className="text-emerald-400 font-bold text-[10px]">AKTİF</span>
-                    )}
-                  </div>
-
-                  {/* Action Buttons: Takas & Ev Dik & İpotek */}
-                  <div className="flex items-center gap-1.5 pt-1">
-                    {/* Takas Button */}
-                    <button
-                      onClick={() => {
-                        onClose();
-                        onOpenTradeForTile(tile);
-                      }}
-                      className="flex-1 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 hover:text-white font-bold py-2 px-2 rounded-xl border border-indigo-700/60 transition text-[11px] flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-                    >
-                      <ArrowLeftRight className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{isCurrentMe ? 'Takasa Sun' : 'Takas Teklif Et'}</span>
-                    </button>
-
-                    {/* Manage if Mine */}
-                    {isCurrentMe && tile.type === 'property' && tile.houseCost && tile.houses < 5 && (
-                      <button
-                        onClick={() => onBuildHouse(tile.id)}
-                        disabled={!hasColorGroupMonopoly(board, tile.colorGroup, currentPlayer.id) || currentPlayer.money < tile.houseCost}
-                        className="p-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed text-amber-400 rounded-xl border border-amber-500/30 transition text-xs cursor-pointer active:scale-95"
-                        title={!hasColorGroupMonopoly(board, tile.colorGroup, currentPlayer.id) ? "Ev dikmek için bu rengin tüm şehirlerine sahip olmalısınız" : `Ev/Otel Dik (₺${tile.houseCost})`}
-                      >
-                        <Home className="w-4 h-4" />
-                      </button>
-                    )}
-
-                    {isCurrentMe && tile.type === 'property' && tile.houseCost && tile.houses > 0 && onSellHouse && (
-                      <button
-                        onClick={() => onSellHouse(tile.id)}
-                        className="p-2 bg-slate-900 hover:bg-slate-800 text-rose-400 rounded-xl border border-rose-500/30 transition text-xs cursor-pointer active:scale-95"
-                        title={`1 Ev Sat (+₺${Math.floor(tile.houseCost / 2)})`}
-                      >
-                        <span className="text-xs">🏚️</span>
-                      </button>
-                    )}
-
+                    {/* Actions if current viewing player is me */}
                     {isCurrentMe && (
-                      <button
-                        onClick={() => onToggleMortgage(tile.id)}
-                        className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-700 transition text-xs cursor-pointer active:scale-95"
-                        title={tile.isMortgaged ? 'İpoteği Kaldır' : 'İpotek Ettir'}
-                      >
-                        {tile.isMortgaged ? (
-                          <Unlock className="w-4 h-4 text-emerald-400" />
-                        ) : (
-                          <Lock className="w-4 h-4 text-amber-400" />
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-800/80">
+                        {tile.type === 'property' && tile.houseCost && tile.houses < 5 && (
+                          <button
+                            onClick={() => onBuildHouse(tile.id)}
+                            disabled={!hasMonopoly || currentPlayer.money < tile.houseCost}
+                            className="bg-slate-900 hover:bg-slate-850 disabled:opacity-40 text-amber-300 text-[10.5px] font-bold py-1.5 px-2 rounded-xl border border-amber-500/20 transition flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Home className="w-3 h-3" />
+                            <span>{t('buildHouseBtn', { cost: formatMoney(tile.houseCost) })}</span>
+                          </button>
                         )}
-                      </button>
-                    )}
 
-                    {isCurrentMe && onSellToBank && tile.price && (
-                      <button
-                        onClick={() => onSellToBank(tile.id)}
-                        className="px-2 py-1.5 bg-rose-950/70 hover:bg-rose-900 text-rose-300 rounded-xl border border-rose-800/60 transition text-[10px] font-bold cursor-pointer active:scale-95"
-                        title={`Bankaya 2/3 Fiyatına Sat (+₺${Math.floor(tile.price * (2/3)) + (tile.houses > 0 && tile.houseCost ? Math.floor(tile.houses * tile.houseCost * 0.5) : 0)})`}
-                      >
-                        🏛️ 2/3 Sat
-                      </button>
+                        {tile.type === 'property' && tile.houseCost && tile.houses > 0 && onSellHouse && (
+                          <button
+                            onClick={() => onSellHouse(tile.id)}
+                            className="bg-slate-900 hover:bg-slate-850 text-rose-300 text-[10.5px] font-bold py-1.5 px-2 rounded-xl border border-rose-500/20 transition flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <span>{t('sellHouseBtn', { gain: formatMoney(Math.floor(tile.houseCost / 2)) })}</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => onToggleMortgage(tile.id)}
+                          className="bg-slate-900 hover:bg-slate-850 text-slate-300 text-[10.5px] font-bold py-1.5 px-2 rounded-xl border border-slate-800 transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          {tile.isMortgaged ? (
+                            <>
+                              <Unlock className="w-3 h-3 text-emerald-400" />
+                              <span>{t('unmortgageBtn', { amount: formatMoney(Math.floor((tile.price || 0) * 0.55)) })}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="w-3 h-3 text-amber-400" />
+                              <span>{t('mortgageBtn', { amount: formatMoney(Math.floor((tile.price || 0) * 0.5)) })}</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            onClose();
+                            onOpenTradeForTile(tile);
+                          }}
+                          className="bg-indigo-950/60 hover:bg-indigo-900 text-indigo-300 text-[10.5px] font-bold py-1.5 px-2 rounded-xl border border-indigo-700/40 transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <span>{t('proposeTradeBtn')}</span>
+                        </button>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 px-6 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between text-xs text-slate-400 shrink-0">
+          <span>{t('propertyCount', { count: ownedTiles.length })}</span>
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition cursor-pointer"
+          >
+            {t('closeBtn')}
+          </button>
         </div>
 
       </div>

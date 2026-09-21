@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface DiceLogoProps {
   size?: 'sm' | 'md' | 'lg';
@@ -11,6 +12,8 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
   showText = true,
   className = ''
 }) => {
+  const { language } = useLanguage();
+
   const sizeStyles = {
     sm: 'w-7 h-7 sm:w-8 sm:h-8',
     md: 'w-8 h-8 sm:w-10 sm:h-10',
@@ -47,7 +50,7 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
           </span>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-[8.5px] sm:text-[10px] font-bold text-amber-300/80 font-mono tracking-widest uppercase">
-              TÜRKİYE MASA OYUNU
+              {language === 'en' ? 'TURKEY BOARD GAME' : 'TÜRKİYE MASA OYUNU'}
             </span>
             <span className="text-[7px] sm:text-[8px] font-black uppercase px-1 py-[0.5px] rounded bg-amber-500/20 text-amber-300 border border-amber-500/35 tracking-wider">
               BETA

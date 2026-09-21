@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface DiceProps {
   dice: [number, number];
@@ -112,6 +113,7 @@ export const Dice: React.FC<DiceProps> = ({
   isAfk,
   onTakeBackControl,
 }) => {
+  const { t, language } = useLanguage();
   const [isRolling, setIsRolling] = useState(false);
   const [displayDice, setDisplayDice] = useState<[number, number]>(dice);
   const rollIntervalRef = useRef<number | null>(null);
@@ -154,9 +156,9 @@ export const Dice: React.FC<DiceProps> = ({
       <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-full bg-slate-900/90 border border-amber-400/40 shadow-xl backdrop-blur-md">
         <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-ping" />
         <span className="text-[10px] sm:text-xs font-bold text-slate-200">
-          Sıra:{' '}
+          {language === 'en' ? 'Turn: ' : 'Sıra: '}
           <strong className="text-amber-400 font-extrabold">{currentTurnName}</strong>{' '}
-          {isMyTurn && <span className="text-rose-400 font-black">(Siz)</span>}
+          {isMyTurn && <span className="text-rose-400 font-black">({t('youBadge')})</span>}
         </span>
         {/* Turn Timer Badge */}
         <span
@@ -165,7 +167,7 @@ export const Dice: React.FC<DiceProps> = ({
               ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse'
               : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
           }`}
-          title="Tur Süresi (60sn sonra bot devralır)"
+          title={t('turnCountdownTooltip')}
         >
           <span>⏳</span>
           <span>{timerValue}s</span>
@@ -176,14 +178,14 @@ export const Dice: React.FC<DiceProps> = ({
       {isMyTurn && isAfk && (
         <div className="w-full max-w-[260px] sm:max-w-xs bg-amber-500/20 border border-amber-400 rounded-xl p-1.5 sm:p-2 text-center animate-bounce shadow-lg backdrop-blur-md">
           <p className="text-[10px] sm:text-[11px] text-amber-200 font-bold mb-1 leading-tight">
-            🤖 AFK Modu (Bot Oynuyor)
+            {t('afkBotAlert')}
           </p>
           {onTakeBackControl && (
             <button
               onClick={onTakeBackControl}
               className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black py-1 px-2.5 rounded-lg text-[10px] sm:text-xs shadow-md transition cursor-pointer"
             >
-              🎮 KONTROLÜ GERİ AL
+              {t('takeBackControl')}
             </button>
           )}
         </div>
@@ -208,7 +210,7 @@ export const Dice: React.FC<DiceProps> = ({
           }}
         >
           <span className="text-base sm:text-xl">🎲</span>
-          <span>{isRolling ? 'ZAR ATILIYOR...' : 'ZAR AT'}</span>
+          <span>{isRolling ? t('rollingDice') : t('rollDice')}</span>
         </button>
 
         {canEndTurn && isMyTurn && (
@@ -219,7 +221,7 @@ export const Dice: React.FC<DiceProps> = ({
             }}
             className="w-full bg-slate-900/90 hover:bg-slate-850 text-amber-300 hover:text-white font-bold py-1.5 sm:py-2.5 px-4 sm:px-6 rounded-lg sm:rounded-xl border border-amber-500/40 hover:border-amber-400 transition-all text-[11px] sm:text-xs tracking-wider uppercase flex items-center justify-center gap-1.5 shadow-lg cursor-pointer min-h-[34px] sm:min-h-[40px]"
           >
-            <span>TURU BİTİR</span>
+            <span>{t('endTurn')}</span>
             <span className="text-sm sm:text-base font-black">➔</span>
           </button>
         )}

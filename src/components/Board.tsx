@@ -4,6 +4,7 @@ import { Tile } from './Tile';
 import { Dice } from './Dice';
 import { soundManager } from '../services/soundEffects';
 import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt, Volume2, VolumeX } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface BoardProps {
   board: BoardTile[];
@@ -97,6 +98,7 @@ export const Board: React.FC<BoardProps> = ({
   turnSecondsRemaining,
   onTakeBackControl,
 }) => {
+  const { t, language, formatMoney } = useLanguage();
   const currentTurnPlayer = players[currentTurnIndex];
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
   const isJailed = currentTurnPlayer?.isJailed;
@@ -150,7 +152,7 @@ export const Board: React.FC<BoardProps> = ({
           <button
             onClick={() => soundManager.toggle()}
             className="absolute top-1.5 right-1.5 sm:top-2.5 sm:right-2.5 z-30 p-1 sm:p-1.5 rounded-lg bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-400 hover:text-white transition cursor-pointer backdrop-blur-sm shadow"
-            title={soundEnabled ? "Ses Efektlerini Kapat" : "Ses Efektlerini Aç"}
+            title={soundEnabled ? t('soundOff') : t('soundOn')}
           >
             {soundEnabled ? (
               <Volume2 className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400" />
@@ -165,7 +167,7 @@ export const Board: React.FC<BoardProps> = ({
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,#030712_95%)]" />
           </div>
 
-          {/* Majestic Golden TURKISH PARADISE PNG Emblem */}
+          {/* Majestic Golden TURKISH PARADISE Emblem */}
           <div className="text-center relative z-10 w-full pt-1 sm:pt-2.5 flex flex-col items-center select-none pointer-events-none">
             <img
               src="/turkish-paradise-logo.png"
@@ -181,14 +183,14 @@ export const Board: React.FC<BoardProps> = ({
             {isJailed && isMyTurn && !diceRolled && (
               <div className="w-full bg-rose-950/90 border border-rose-600 rounded-xl sm:rounded-2xl p-1.5 sm:p-2 text-center space-y-1 shadow-xl backdrop-blur-md animate-fade-in">
                 <p className="text-[10px] sm:text-xs text-rose-200 font-bold leading-tight">
-                  🔒 Kodestesiniz! (Kalan: {currentTurnPlayer.jailTurns}/3)
+                  {t('jailedAlert', { turns: currentTurnPlayer.jailTurns })}
                 </p>
                 <button
                   onClick={onPayJailBail}
                   disabled={currentTurnPlayer.money < 100}
                   className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-bold py-1.5 rounded-lg sm:rounded-xl transition flex items-center justify-center gap-1 text-[11px] sm:text-xs shadow-md cursor-pointer"
                 >
-                  <Unlock className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> 100₺ Kefalet Öde
+                  <Unlock className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {t('payBailBtn')}
                 </button>
               </div>
             )}
@@ -197,7 +199,7 @@ export const Board: React.FC<BoardProps> = ({
             {pendingAction === 'BUY_PROPERTY' && (
               <div className="w-full bg-amber-500/20 border border-amber-400/80 rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 text-center space-y-1.5 sm:space-y-2 shadow-xl animate-fade-in backdrop-blur-md">
                 <p className="text-[10.5px] sm:text-sm text-slate-100 font-bold leading-tight">
-                  {isMyTurn ? actionMessage : `🎲 ${currentTurnPlayer?.name} bu mülkü satın almayı değerlendiriyor...`}
+                  {isMyTurn ? actionMessage : t('evaluatingProperty', { name: currentTurnPlayer?.name || '' })}
                 </p>
                 {isMyTurn ? (
                   <div className="flex items-center gap-1.5 sm:gap-2">
@@ -205,13 +207,13 @@ export const Board: React.FC<BoardProps> = ({
                       onClick={onBuyProperty}
                       className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-extrabold py-1.5 sm:py-2 rounded-lg sm:rounded-xl transition flex items-center justify-center gap-1 text-xs sm:text-sm shadow-lg cursor-pointer"
                     >
-                      <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> AL 💰
+                      <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> {t('buyBtn')}
                     </button>
                     <button
                       onClick={onPassProperty}
                       className="px-3 sm:px-4 py-1.5 sm:py-2 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white font-bold rounded-lg sm:rounded-xl transition text-xs sm:text-sm border border-slate-700 cursor-pointer shadow-md"
                     >
-                      PAS ⏩
+                      {t('passBtn')}
                     </button>
                   </div>
                 ) : (
@@ -244,21 +246,21 @@ export const Board: React.FC<BoardProps> = ({
               className="flex items-center gap-1 text-slate-200 hover:text-amber-300 hover:bg-slate-900/80 bg-slate-950/60 backdrop-blur-sm px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-amber-500/20 shadow"
             >
               <ArrowLeftRight className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
-              <span>Takas</span>
+              <span>{t('tradeBtn')}</span>
             </button>
             <button
               onClick={onOpenProperties}
               className="flex items-center gap-1 text-slate-200 hover:text-emerald-300 hover:bg-slate-900/80 bg-slate-950/60 backdrop-blur-sm px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-amber-500/20 shadow"
             >
               <Building2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
-              <span>Mülkler</span>
+              <span>{t('propertiesBtn')}</span>
             </button>
             <button
               onClick={onOpenTransactions}
               className="flex items-center gap-1 text-slate-200 hover:text-sky-300 hover:bg-slate-900/80 bg-slate-950/60 backdrop-blur-sm px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition text-[10px] sm:text-xs font-bold cursor-pointer border border-amber-500/20 shadow"
             >
               <Receipt className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
-              <span>Hesap</span>
+              <span>{t('ledgerBtn')}</span>
             </button>
           </div>
 

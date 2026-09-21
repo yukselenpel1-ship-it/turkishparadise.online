@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, Player } from '../types/game';
 import { Send, MessageSquare } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface ChatProps {
   messages: ChatMessage[];
@@ -15,6 +16,7 @@ export const Chat: React.FC<ChatProps> = ({
   currentPlayer,
   onSendMessage,
 }) => {
+  const { t } = useLanguage();
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -45,9 +47,9 @@ export const Chat: React.FC<ChatProps> = ({
       <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5 shrink-0">
         <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-xs">
           <MessageSquare className="w-3.5 h-3.5" />
-          <span>Oyun Sohbeti</span>
+          <span>{t('chatHeader')}</span>
         </div>
-        <span className="text-[9px] text-slate-500 font-semibold">Canlı</span>
+        <span className="text-[9px] text-slate-500 font-semibold">{t('liveBadge')}</span>
       </div>
 
       {/* Messages List */}
@@ -113,7 +115,7 @@ export const Chat: React.FC<ChatProps> = ({
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={currentPlayer ? "Mesaj yaz..." : "Sohbet için oyuna katılın"}
+          placeholder={currentPlayer ? t('chatPlaceholder') : t('chatDisabledPlaceholder')}
           disabled={!currentPlayer}
           maxLength={100}
           className="flex-1 bg-[#070b14] border border-slate-800 focus:border-amber-400 text-white rounded-lg px-2.5 py-1 text-xs outline-none transition placeholder-slate-600 disabled:opacity-50"
