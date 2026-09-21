@@ -80,7 +80,17 @@ export const Lobby: React.FC<LobbyProps> = ({
   onLeaveLobby,
 }) => {
   const { language, t, formatMoney } = useLanguage();
-  const [mode, setMode] = useState<'main' | 'rooms' | 'friend'>('main');
+  const [mode, setMode] = useState<'main' | 'rooms' | 'friend'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const savedMode = sessionStorage.getItem('tp_lobby_mode') as 'main' | 'rooms' | 'friend' | null;
+        if (savedMode && ['main', 'rooms', 'friend'].includes(savedMode)) {
+          return savedMode;
+        }
+      }
+    } catch (e) {}
+    return 'main';
+  });
   const [name, setName] = useState('');
   const [roomCode, setRoomCode] = useState(settings.roomCode || 'TR-1001');
   const [selectedAvatar, setSelectedAvatar] = useState(PLAYER_AVATARS[0]);
@@ -98,6 +108,15 @@ export const Lobby: React.FC<LobbyProps> = ({
   const [liveRoomsCount, setLiveRoomsCount] = useState<number>(0);
   const [isRoomPublished, setIsRoomPublished] = useState<boolean>(false);
 
+  // Persist current lobby mode in sessionStorage across F5 reloads
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('tp_lobby_mode', mode);
+      }
+    } catch (e) {}
+  }, [mode]);
+
   // Subscribe to live public rooms list for badge count
   useEffect(() => {
     const unsubscribe = subscribeToPublicRooms((activeRooms) => {
@@ -107,6 +126,25 @@ export const Lobby: React.FC<LobbyProps> = ({
   }, []);
 
   const isPublicRoom = Boolean(settings.isPublic);
+
+  // Auto-fill player name with random default or logged in user displayName
+  useEffect(() => {
+    if (!name) {
+      if (userAccount?.displayName) {
+        setName(userAccount.displayName);
+      } else {
+        const randomDigits = Math.floor(100 + Math.random() * 900);
+        setName(`Oyuncu_${randomDigits}`);
+      }
+    }
+  }, [userAccount]);
+
+  // Sync isRoomPublished status from settings
+  useEffect(() => {
+    if (typeof settings.isPublic === 'boolean') {
+      setIsRoomPublished(settings.isPublic);
+    }
+  }, [settings.isPublic]);
 
   const handleTogglePublishPublicRoom = () => {
     const nextPublic = !isPublicRoom;
@@ -155,16 +193,21 @@ export const Lobby: React.FC<LobbyProps> = ({
     });
   }, []);
 
-  // Check URL query parameters for invite link: ?room=TR-XXXX or ?oda=TR-XXXX
+  // Check URL query parameters for explicit invite link: ?invite=TR-XXXX or ?oda=TR-XXXX or ?code=TR-XXXX
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const urlRoom = urlParams.get('room') || urlParams.get('oda') || urlParams.get('code');
-      if (urlRoom && urlRoom.trim()) {
-        const cleanCode = urlRoom.trim().toUpperCase();
+      const urlInvite = urlParams.get('invite') || urlParams.get('oda') || urlParams.get('code');
+      const urlRoom = urlParams.get('room');
+
+      if (urlInvite && urlInvite.trim()) {
+        const cleanCode = urlInvite.trim().toUpperCase();
         setRoomCode(cleanCode);
         setIsInviteLink(true);
         setMode('friend');
+      } else if (urlRoom && urlRoom.trim()) {
+        const cleanCode = urlRoom.trim().toUpperCase();
+        setRoomCode(cleanCode);
       }
     } catch (e) {}
   }, []);

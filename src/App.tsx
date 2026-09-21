@@ -273,26 +273,33 @@ export const App: React.FC = () => {
     };
   }, [userAccount?.uid, userAccount?.friendCode]);
 
-  // 2. Keep URL query param and Session Storage always synced with active room & game state
+  // 2. Keep URL query param and Session Storage always synced with active joined room & game state
   useEffect(() => {
-    if (typeof window !== 'undefined' && gameState.roomId) {
+    if (typeof window !== 'undefined') {
       try {
         const currentUrl = new URL(window.location.href);
-        if (currentUrl.searchParams.get('room') !== gameState.roomId) {
-          currentUrl.searchParams.set('room', gameState.roomId);
-          window.history.replaceState(null, '', currentUrl.toString());
-        }
-        sessionStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
-        localStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
+        const hasActiveJoinedRoom = Boolean(gameState.roomId && (gameState.phase === 'PLAYING' || gameState.players.length > 0));
 
-        // Always preserve full game state if match is ongoing or players have joined
-        if (gameState.phase === 'PLAYING' || gameState.players.length > 0) {
+        if (hasActiveJoinedRoom && gameState.roomId) {
+          if (currentUrl.searchParams.get('room') !== gameState.roomId) {
+            currentUrl.searchParams.set('room', gameState.roomId);
+            window.history.replaceState(null, '', currentUrl.toString());
+          }
+          sessionStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
+          localStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
+
           sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(gameState));
           localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(gameState));
+        } else if (!hasActiveJoinedRoom && !currentUrl.searchParams.get('invite') && !currentUrl.searchParams.get('oda')) {
+          // If on landing screen before joining, clean up URL param so F5 reload stays on exact tab
+          if (currentUrl.searchParams.has('room')) {
+            currentUrl.searchParams.delete('room');
+            window.history.replaceState(null, '', currentUrl.toString());
+          }
         }
       } catch (e) {}
     }
-  }, [gameState]);
+  }, [gameState.roomId, gameState.phase, gameState.players.length]);
 
   // 2.5 Auto-sync public room directory & register active host room provider
   useEffect(() => {
