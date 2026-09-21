@@ -506,7 +506,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     // Spectator Mode
     spectatorBadge: 'İzleyici 👁️',
     bankruptBadge: 'İflas (İzleyici)',
-    spectatorBanner: '👁️ İflas ettiniz ancak oyunu odada kalarak canlı izlemeye ve sohbet etmeye devam edebilirsiniz.',
+    spectatorBanner: '👁️ Oyun devam ediyor. Oyunu canlı olarak izleyebilir ve sohbete katılabilirsiniz.',
     spectatorMode: 'İzleyici Modu',
 
     // Public Rooms
@@ -768,7 +768,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     // Spectator Mode
     spectatorBadge: 'Spectator 👁️',
     bankruptBadge: 'Bankrupt (Watching)',
-    spectatorBanner: '👁️ You are bankrupt, but you can continue watching the game live and chatting in the room.',
+    spectatorBanner: '👁️ Match is in progress. You can watch the game live and chat with players.',
     spectatorMode: 'Spectator Mode',
 
     // Public Rooms

@@ -458,17 +458,18 @@ export const App: React.FC = () => {
 
           let nextPlayers = [...prev.players];
           if (existingIdx >= 0) {
-            // Restore returning player, preserving original host status, money, position
+            // Restore returning player, preserving original host status, inGame status, money, position
             const wasHost = nextPlayers[existingIdx].isHost;
+            const wasInGame = nextPlayers[existingIdx].inGame;
             nextPlayers[existingIdx] = {
               ...nextPlayers[existingIdx],
-              inGame: true,
+              inGame: wasInGame,
               isAfk: false,
               isBot: false,
               isHost: wasHost
             };
             const updated = { ...prev, players: nextPlayers };
-            addLog(updated, `✨ ${newPlayer.name} tekrar bağlandı ve oyuna döndü!`, 'success');
+            addLog(updated, `✨ ${newPlayer.name} tekrar bağlandı!`, 'success');
 
             console.log('[Multiplayer Join Debug - Reconnect]', {
               event: 'PLAYER_RECONNECTED',
@@ -476,15 +477,21 @@ export const App: React.FC = () => {
               hostPlayerId: prev.hostPlayerId,
               joiningUserId: newPlayer.userId,
               joiningPlayerId: newPlayer.id,
-              existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar })),
-              playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar }))
+              wasInGame,
+              existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar })),
+              playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar }))
             });
 
             syncRoomState(prev.roomId, updated);
             return updated;
           }
 
-          if (prev.players.length >= 6) return prev;
+          // If game has already started, new joiner enters strictly as a spectator
+          const isOngoingGame = prev.phase === 'PLAYING' || prev.phase === 'ENDED';
+          const isSpectator = isOngoingGame;
+
+          if (!isSpectator && prev.players.filter(p => p.inGame).length >= 6) return prev;
+          if (prev.players.length >= 16) return prev;
 
           // Auto-resolve color conflict: pick guaranteed free color without affecting existing players
           const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
@@ -504,7 +511,7 @@ export const App: React.FC = () => {
             assignedAvatar = freeAvatar || '🎲';
           }
 
-          const startMoney = prev.settings?.startingMoney || 1500;
+          const startMoney = isSpectator ? 0 : (prev.settings?.startingMoney || 1500);
           const playerToAdd: Player = {
             ...newPlayer,
             color: assignedColor,
@@ -515,7 +522,7 @@ export const App: React.FC = () => {
             jailTurns: 0,
             lapsCompleted: 0,
             firstLapPurchases: 0,
-            inGame: true,
+            inGame: !isSpectator, // Spectators are NEVER inGame
             isHost: false, // New joiner is NEVER host when joining existing room
             isAfk: false,
             isBot: false
@@ -526,16 +533,22 @@ export const App: React.FC = () => {
             hostPlayerId: prev.hostPlayerId || myPlayerId || undefined, // Strictly preserve hostPlayerId
             players: [...prev.players, playerToAdd]
           };
-          addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${prev.roomId})`, 'success');
+          
+          if (isSpectator) {
+            addLog(updated, `👁️ ${playerToAdd.name} oyunu izlemeye başladı! (${prev.roomId})`, 'info');
+          } else {
+            addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${prev.roomId})`, 'success');
+          }
 
           console.log('[Multiplayer Join Debug - New Player]', {
-            event: 'NEW_PLAYER_JOINED',
+            event: isSpectator ? 'NEW_SPECTATOR_JOINED' : 'NEW_PLAYER_JOINED',
             roomId: prev.roomId,
             hostPlayerId: updated.hostPlayerId,
+            isSpectator,
             joiningUserId: newPlayer.userId,
             joiningPlayerId: newPlayer.id,
-            existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar })),
-            playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, color: p.color, avatar: p.avatar }))
+            existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar })),
+            playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar }))
           });
 
           syncRoomState(prev.roomId, updated);
@@ -659,23 +672,40 @@ export const App: React.FC = () => {
         const isMeHost = isPlayerHost(gameState, myPlayerId);
         if (!isMeHost) return;
 
+        // Security / spectator check: Sender MUST exist, be active inGame, and not be a spectator!
+        const sender = gameState.players.find((p) => p.id === senderPlayerId);
+        if (!sender || !sender.inGame) {
+          console.warn('[Host onGameAction] Rejected action from spectator/inactive player:', senderPlayerId, actionType);
+          return;
+        }
+
+        const currentTurnPlayer = gameState.players[gameState.currentTurnIndex];
+
         if (actionType === 'ROLL_DICE') {
+          if (currentTurnPlayer?.id !== senderPlayerId) {
+            console.warn('[Host onGameAction] Rejected ROLL_DICE: Not sender turn', senderPlayerId);
+            return;
+          }
           if (!isMoving && !gameState.diceRolled) {
             handleRollDiceAction();
           }
         } else if (actionType === 'BUY_PROPERTY') {
+          if (currentTurnPlayer?.id !== senderPlayerId) return;
           if (gameState.pendingAction === 'BUY_PROPERTY') {
             handleBuyPropertyAction(senderPlayerId);
           }
         } else if (actionType === 'PASS_PROPERTY') {
+          if (currentTurnPlayer?.id !== senderPlayerId) return;
           if (gameState.pendingAction === 'BUY_PROPERTY') {
             handlePassPropertyAction(senderPlayerId);
           }
         } else if (actionType === 'END_TURN') {
+          if (currentTurnPlayer?.id !== senderPlayerId) return;
           if (gameState.diceRolled && !isMoving) {
             handleEndTurnAction();
           }
         } else if (actionType === 'PAY_JAIL') {
+          if (currentTurnPlayer?.id !== senderPlayerId) return;
           handlePayJailBailAction();
         } else if (actionType === 'BUILD_HOUSE' && payload?.tileId) {
           handleBuildHouseAction(payload.tileId);
@@ -686,6 +716,7 @@ export const App: React.FC = () => {
         } else if (actionType === 'BANKRUPTCY') {
           handleDeclareBankruptcyAction(payload?.playerId || senderPlayerId);
         } else if (actionType === 'CONFIRM_CHANCE') {
+          if (currentTurnPlayer?.id !== senderPlayerId) return;
           handleConfirmChanceCard();
         } else if (actionType === 'SELL_TO_BANK' && payload?.tileId) {
           handleSellToBankAction(payload.tileId);
@@ -1303,8 +1334,11 @@ export const App: React.FC = () => {
   const handleRollDiceAction = () => {
     if (isMoving || gameState.diceRolled || gameState.phase !== 'PLAYING') return;
 
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
-    if (!currentPlayer) return;
+    if (!currentPlayer || !currentPlayer.inGame) return;
 
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const isMeCurrent = currentPlayer.id === myPlayerId;
@@ -1430,6 +1464,9 @@ export const App: React.FC = () => {
 
   // End Turn Action
   const handleEndTurnAction = () => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
       if (gameState.roomId && myPlayerId) {
@@ -1442,6 +1479,9 @@ export const App: React.FC = () => {
 
   // Declare Bankruptcy Action
   const handleDeclareBankruptcyAction = (playerId?: string) => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const targetId = playerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId;
     if (!targetId) return;
@@ -1458,6 +1498,9 @@ export const App: React.FC = () => {
 
   // Buy Property Action
   const handleBuyPropertyAction = (actingPlayerId?: string) => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
 
@@ -1473,6 +1516,9 @@ export const App: React.FC = () => {
 
   // Pass Property Action (Skip buying)
   const handlePassPropertyAction = (actingPlayerId?: string) => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
 
@@ -1487,6 +1533,9 @@ export const App: React.FC = () => {
 
   // Sell Property to Bank for 2/3 price
   const handleSellToBankAction = (tileId: number) => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
       if (gameState.roomId && myPlayerId) {
@@ -1499,6 +1548,9 @@ export const App: React.FC = () => {
 
   // Pay 100 Bail to leave Kodes (Jail)
   const handlePayJailBailAction = () => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
       if (gameState.roomId && myPlayerId) {
@@ -1512,6 +1564,9 @@ export const App: React.FC = () => {
 
   // Build House Action
   const handleBuildHouseAction = (tileId: number) => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
       if (gameState.roomId && myPlayerId) {
@@ -1532,6 +1587,9 @@ export const App: React.FC = () => {
 
   // Sell House Action
   const handleSellHouseAction = (tileId: number) => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
       if (gameState.roomId && myPlayerId) {
@@ -1551,6 +1609,9 @@ export const App: React.FC = () => {
 
   // Toggle Mortgage Action
   const handleToggleMortgageAction = (tileId: number) => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
       if (gameState.roomId && myPlayerId) {
@@ -1570,6 +1631,9 @@ export const App: React.FC = () => {
 
   // Apply Chance Card
   const handleConfirmChanceCard = () => {
+    const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+    if (!myPlayer || !myPlayer.inGame) return;
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) {
       if (gameState.roomId && myPlayerId) {

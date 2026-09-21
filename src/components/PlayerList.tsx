@@ -77,7 +77,7 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                     )}
                   </div>
                   <div className="text-[9px] text-slate-400 truncate mt-0.5">
-                    {p.inGame ? `📍 ${currentTileName}` : `💀 ${t('bankruptBadge')}`}
+                    {p.inGame ? `📍 ${currentTileName}` : p.money < 0 ? `💀 ${t('bankruptBadge')}` : `👁️ ${t('spectatorBadge')}`}
                   </div>
                 </div>
               </div>

@@ -104,12 +104,12 @@ export const Board: React.FC<BoardProps> = ({
 }) => {
   const { t, language, formatMoney } = useLanguage();
   const currentTurnPlayer = players[currentTurnIndex];
-  const isMyTurn = currentTurnPlayer?.id === myPlayerId;
+  const myPlayer = players.find((p) => p.id === myPlayerId);
+  const isSpectator = Boolean(!myPlayer || !myPlayer.inGame);
+  const isMyTurn = Boolean(!isSpectator && currentTurnPlayer?.id === myPlayerId);
   const isJailed = currentTurnPlayer?.isJailed;
   const isAfk = Boolean(currentTurnPlayer?.isAfk);
   const activeMovingPlayerId = isMoving ? currentTurnPlayer?.id : null;
-  const myPlayer = players.find((p) => p.id === myPlayerId);
-  const isSpectator = Boolean(myPlayer && !myPlayer.inGame);
 
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
 
@@ -298,10 +298,10 @@ export const Board: React.FC<BoardProps> = ({
             {/* Dice Roll & End Turn Controls */}
             <Dice
               dice={dice}
-              disabled={diceRolled}
+              disabled={diceRolled || isSpectator}
               onRoll={onRollDice}
               onEndTurn={onEndTurn}
-              canEndTurn={diceRolled && pendingAction === 'NONE' && (currentTurnPlayer ? currentTurnPlayer.money >= 0 : true)}
+              canEndTurn={!isSpectator && diceRolled && pendingAction === 'NONE' && (currentTurnPlayer ? currentTurnPlayer.money >= 0 : true)}
               currentTurnName={currentTurnPlayer?.name || ''}
               isMyTurn={isMyTurn}
               turnSecondsRemaining={turnSecondsRemaining}
