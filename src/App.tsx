@@ -498,65 +498,74 @@ export const App: React.FC = () => {
       (leavingPlayerId) => {
         // Handle player leaving/disconnecting
         setGameState((prev) => {
-          const currentHostId = prev.hostPlayerId || (prev.players.find((p) => p.isHost)?.id) || prev.players[0]?.id;
-          const wasHostLeaving = currentHostId === leavingPlayerId;
-
-          if (wasHostLeaving) {
-            // Host left! Perform Host Migration to next connected human player
-            const remainingHumans = prev.players.filter((p) => p.id !== leavingPlayerId && !p.isBot);
-            const nextHost = remainingHumans[0];
-
-            if (!nextHost) {
-              // No human players remaining
-              return prev;
-            }
-
-            const updatedPlayers = prev.players
-              .filter((p) => prev.phase === 'LOBBY' ? p.id !== leavingPlayerId : true)
-              .map((p) => ({
-                ...p,
-                isAfk: p.id === leavingPlayerId ? true : p.isAfk,
-                isHost: p.id === nextHost.id
-              }));
-
-            const leavingName = prev.players.find(p => p.id === leavingPlayerId)?.name || 'Kurucu';
-            const updated: GameState = {
-              ...prev,
-              hostPlayerId: nextHost.id,
-              players: updatedPlayers
-            };
-            addLog(updated, `👑 Oda Kurucusu (${leavingName}) ayrıldı. Yeni Kurucu: ${nextHost.name}!`, 'warning');
-
-            if (nextHost.id === myPlayerId) {
-              syncManager.sendHostMigrated(prev.roomId, nextHost.id);
-              syncRoomState(prev.roomId, updated);
-            }
-            return updated;
-          }
-
           const isMeHost = isPlayerHost(prev, myPlayerId);
-          if (!isMeHost) return prev;
 
-          const leavingPlayer = prev.players.find((p) => p.id === leavingPlayerId);
-          if (!leavingPlayer) return prev;
+          if (isMeHost) {
+            // I AM THE HOST: A guest player is leaving
+            if (leavingPlayerId === myPlayerId) return prev; // handled locally
 
-          let updated: GameState;
-          if (prev.phase === 'LOBBY') {
-            updated = {
-              ...prev,
-              players: prev.players.filter((p) => p.id !== leavingPlayerId)
-            };
-            addLog(updated, `🚪 ${leavingPlayer.name} odadan ayrıldı.`, 'info');
+            const leavingPlayer = prev.players.find((p) => p.id === leavingPlayerId);
+            if (!leavingPlayer) return prev;
+
+            let updated: GameState;
+            if (prev.phase === 'LOBBY') {
+              updated = {
+                ...prev,
+                players: prev.players.filter((p) => p.id !== leavingPlayerId)
+              };
+              addLog(updated, `🚪 ${leavingPlayer.name} odadan ayrıldı.`, 'info');
+            } else {
+              const updatedPlayers = prev.players.map((p) =>
+                p.id === leavingPlayerId ? { ...p, isAfk: true } : p
+              );
+              updated = { ...prev, players: updatedPlayers };
+              addLog(updated, `🚪 ${leavingPlayer.name} oyundan ayrıldı (AFK moduna geçti).`, 'warning');
+            }
+
+            syncRoomState(prev.roomId, updated);
+            return updated;
           } else {
-            const updatedPlayers = prev.players.map((p) =>
-              p.id === leavingPlayerId ? { ...p, isAfk: true } : p
-            );
-            updated = { ...prev, players: updatedPlayers };
-            addLog(updated, `🚪 ${leavingPlayer.name} oyundan ayrıldı (AFK moduna geçti).`, 'warning');
-          }
+            // I AM A GUEST: Check if the HOST left
+            const hostId = prev.hostPlayerId || prev.players.find((p) => p.isHost)?.id || prev.players[0]?.id;
+            if (hostId && hostId === leavingPlayerId) {
+              // Host actually left! Perform Host Migration to next connected human player
+              const remainingHumans = prev.players.filter((p) => p.id !== leavingPlayerId && !p.isBot);
+              const nextHost = remainingHumans[0];
 
-          syncRoomState(prev.roomId, updated);
-          return updated;
+              if (!nextHost) return prev;
+
+              const updatedPlayers = prev.players
+                .filter((p) => prev.phase === 'LOBBY' ? p.id !== leavingPlayerId : true)
+                .map((p) => ({
+                  ...p,
+                  isAfk: p.id === leavingPlayerId ? true : p.isAfk,
+                  isHost: p.id === nextHost.id
+                }));
+
+              const leavingName = prev.players.find(p => p.id === leavingPlayerId)?.name || 'Kurucu';
+              const updated: GameState = {
+                ...prev,
+                hostPlayerId: nextHost.id,
+                players: updatedPlayers
+              };
+              addLog(updated, `👑 Oda Kurucusu (${leavingName}) ayrıldı. Yeni Kurucu: ${nextHost.name}!`, 'warning');
+
+              if (nextHost.id === myPlayerId) {
+                syncManager.sendHostMigrated(prev.roomId, nextHost.id);
+                syncRoomState(prev.roomId, updated);
+              }
+              return updated;
+            }
+
+            // Another guest left; remove from local view if in lobby
+            if (prev.phase === 'LOBBY') {
+              return {
+                ...prev,
+                players: prev.players.filter((p) => p.id !== leavingPlayerId)
+              };
+            }
+            return prev;
+          }
         });
       },
       (newHostPlayerId) => {
@@ -1061,13 +1070,14 @@ export const App: React.FC = () => {
 
   // Leave Lobby / Go Back (Only affects departing player, preserves room for remaining players)
   const handleLeaveLobby = () => {
-    if (!myPlayerId) return;
+    const currentRoom = gameState.roomId;
+    const currentId = myPlayerId;
 
-    if (gameState.roomId) {
-      syncManager.sendLeaveNotice(gameState.roomId, myPlayerId);
-      if (isPlayerHost(gameState, myPlayerId)) {
-        unpublishPublicRoom(gameState.roomId);
+    if (currentRoom && currentId) {
+      if (isPlayerHost(gameState, currentId)) {
+        unpublishPublicRoom(currentRoom);
       }
+      syncManager.leaveRoom(currentRoom, currentId);
     }
 
     try {

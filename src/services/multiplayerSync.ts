@@ -422,6 +422,46 @@ class MultiplayerSyncManager {
   }
 
   /**
+   * Safely leave room, closing all WebRTC connections, unsubscribing from room topic and resetting listeners
+   */
+  public leaveRoom(roomId?: string, playerId?: string): void {
+    const targetRoom = roomId || this.currentRoomId;
+    if (targetRoom && playerId) {
+      this.sendLeaveNotice(targetRoom, playerId);
+    }
+
+    // Close all WebRTC peer connections
+    try {
+      if (this.hostConnection) {
+        this.hostConnection.close();
+        this.hostConnection = null;
+      }
+      this.peerConnections.forEach((conn) => {
+        try {
+          conn.close();
+        } catch (e) {}
+      });
+      this.peerConnections.clear();
+      if (this.peer) {
+        this.peer.destroy();
+        this.peer = null;
+      }
+    } catch (e) {}
+
+    // Unsubscribe from room topic if connected
+    if (targetRoom && this.mqttClient && this.isMqttConnected) {
+      try {
+        const topic = `turkishparadise/rooms/${targetRoom.toLowerCase()}`;
+        this.mqttClient.unsubscribe(topic);
+      } catch (e) {}
+    }
+
+    this.listeners.clear();
+    this.currentRoomId = null;
+    this.isHost = false;
+  }
+
+  /**
    * Send host migration notification
    */
   public sendHostMigrated(roomId: string, newHostPlayerId: string): void {
