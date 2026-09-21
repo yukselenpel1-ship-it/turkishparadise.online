@@ -525,15 +525,23 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
         requestedMoney: 0
       };
 
-      // Case A: Target is ANOTHER BOT $\rightarrow$ Bilateral evaluation
-      if (targetOwner.isBot) {
+      // Case A: Target is ANOTHER BOT or Target is an AFK HUMAN PLAYER -> Automatic bilateral evaluation
+      if (targetOwner.isBot || targetOwner.isAfk) {
         const evalResult = evaluateTradeOfferByBot(newState, offer, targetOwner);
         if (evalResult.accepted) {
-          // Execute immediate Bot-to-Bot Trade!
-          return executeTrade(newState, offer);
+          // Execute immediate Trade!
+          const resultState = executeTrade(newState, offer);
+          if (targetOwner.isAfk) {
+            addLog(resultState, `🤝 ${targetOwner.name} AFK modunda olduğu için bot teklifi değerlendirdi ve kabul etti!`, 'success');
+          }
+          return resultState;
+        } else {
+          if (targetOwner.isAfk) {
+            addLog(newState, `💬 ${bot.name}, ${targetOwner.name} (AFK) oyuncusuna takas teklifi yaptı ancak AFK botu teklifi yetersiz buldu.`, 'info');
+          }
         }
       } 
-      // Case B: Target is HUMAN PLAYER $\rightarrow$ Show interactive incoming trade modal!
+      // Case B: Target is ACTIVE HUMAN PLAYER -> Show interactive incoming trade modal!
       else {
         newState.incomingTradeOffer = {
           ...offer,

@@ -25,7 +25,8 @@ import {
   addLog,
   addTransaction,
   isPlayerHost,
-  declareBankruptcy
+  declareBankruptcy,
+  evaluateTradeOfferByBot
 } from './engine/gameEngine';
 import {
   loginAsGuest,
@@ -707,8 +708,13 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (gameState.phase !== 'PLAYING' || isMoving) return;
 
-    // If human is reviewing an incoming trade offer from bot, don't interrupt
-    if (gameState.incomingTradeOffer) return;
+    // If an ACTIVE human player is reviewing an incoming trade offer, wait for their decision
+    if (gameState.incomingTradeOffer) {
+      const recipient = gameState.players.find((p) => p.id === gameState.incomingTradeOffer?.toPlayerId);
+      if (recipient && !recipient.isBot && !recipient.isAfk) {
+        return;
+      }
+    }
 
     const currentPlayer = gameState.players[gameState.currentTurnIndex];
     const isMeHost = isPlayerHost(gameState, myPlayerId);
@@ -819,6 +825,41 @@ export const App: React.FC = () => {
     isMoving,
     myPlayerId
   ]);
+
+  // 3.5 Auto-resolve Incoming Trade Offer if recipient is AFK or Bot
+  useEffect(() => {
+    if (gameState.phase !== 'PLAYING' || !gameState.incomingTradeOffer || isMoving) return;
+
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) return;
+
+    const recipient = gameState.players.find((p) => p.id === gameState.incomingTradeOffer?.toPlayerId);
+    if (!recipient) {
+      updateAndBroadcastGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
+      return;
+    }
+
+    if (recipient.isBot || recipient.isAfk) {
+      const timer = setTimeout(() => {
+        updateAndBroadcastGameState((prev) => {
+          if (!prev.incomingTradeOffer) return prev;
+          const target = prev.players.find((p) => p.id === prev.incomingTradeOffer?.toPlayerId);
+          if (!target) return { ...prev, incomingTradeOffer: undefined };
+
+          const evalResult = evaluateTradeOfferByBot(prev, prev.incomingTradeOffer, target);
+          if (evalResult.accepted) {
+            addLog(prev, `🤝 AFK (${target.name}) adına bot takas teklifini kabul etti!`, 'success');
+            return executeTrade(prev, prev.incomingTradeOffer);
+          } else {
+            const sender = prev.players.find((p) => p.id === prev.incomingTradeOffer?.fromPlayerId);
+            addLog(prev, `❌ AFK (${target.name}) adına bot, ${sender?.name || 'gelen'} takas teklifini reddetti: ${evalResult.reason}`, 'warning');
+            return { ...prev, incomingTradeOffer: undefined };
+          }
+        });
+      }, 2200);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.incomingTradeOffer, gameState.phase, gameState.players, isMoving, myPlayerId]);
 
   // Human Player Takes Back Control from AFK Bot
   const handleTakeBackControl = () => {
