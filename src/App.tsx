@@ -142,6 +142,20 @@ export const App: React.FC = () => {
   const [mobileSheet, setMobileSheet] = useState<'players' | 'chat' | 'logs' | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const prevChatCountRef = useRef<number>(gameState.chatMessages?.length || 0);
+  const gameStateRef = useRef<GameState>(gameState);
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
+  const isMovingRef = useRef<boolean>(isMoving);
+  useEffect(() => {
+    isMovingRef.current = isMoving;
+  }, [isMoving]);
+
+  const myPlayerIdRef = useRef<string | null>(myPlayerId);
+  useEffect(() => {
+    myPlayerIdRef.current = myPlayerId;
+  }, [myPlayerId]);
 
   // Subscribe to real-time incoming friend requests for profile badge
   useEffect(() => {
@@ -669,39 +683,48 @@ export const App: React.FC = () => {
       },
       (senderPlayerId, actionType, payload) => {
         // Handle incoming game action from non-host client on authoritative Host
-        const isMeHost = isPlayerHost(gameState, myPlayerId);
+        const liveState = gameStateRef.current;
+        const liveMyId = myPlayerIdRef.current;
+        const isMeHost = isPlayerHost(liveState, liveMyId);
         if (!isMeHost) return;
 
         // Security / spectator check: Sender MUST exist, be active inGame, and not be a spectator!
-        const sender = gameState.players.find((p) => p.id === senderPlayerId);
+        const sender = liveState.players.find((p) => p.id === senderPlayerId);
         if (!sender || !sender.inGame) {
-          console.warn('[Host onGameAction] Rejected action from spectator/inactive player:', senderPlayerId, actionType);
+          console.warn('[Host onGameAction] Rejected action from spectator/inactive player:', senderPlayerId, actionType, {
+            senderPlayerId,
+            currentPlayers: liveState.players.map(p => ({ id: p.id, name: p.name, inGame: p.inGame }))
+          });
           return;
         }
 
-        const currentTurnPlayer = gameState.players[gameState.currentTurnIndex];
+        const currentTurnPlayer = liveState.players[liveState.currentTurnIndex];
 
         if (actionType === 'ROLL_DICE') {
           if (currentTurnPlayer?.id !== senderPlayerId) {
-            console.warn('[Host onGameAction] Rejected ROLL_DICE: Not sender turn', senderPlayerId);
+            console.warn('[Host onGameAction] Rejected ROLL_DICE: Not sender turn', {
+              senderPlayerId,
+              currentTurnPlayerId: currentTurnPlayer?.id,
+              currentTurnPlayerName: currentTurnPlayer?.name
+            });
             return;
           }
-          if (!isMoving && !gameState.diceRolled) {
+          if (!isMovingRef.current && !liveState.diceRolled) {
             handleRollDiceAction();
           }
         } else if (actionType === 'BUY_PROPERTY') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
-          if (gameState.pendingAction === 'BUY_PROPERTY') {
+          if (liveState.pendingAction === 'BUY_PROPERTY') {
             handleBuyPropertyAction(senderPlayerId);
           }
         } else if (actionType === 'PASS_PROPERTY') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
-          if (gameState.pendingAction === 'BUY_PROPERTY') {
+          if (liveState.pendingAction === 'BUY_PROPERTY') {
             handlePassPropertyAction(senderPlayerId);
           }
         } else if (actionType === 'END_TURN') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
-          if (gameState.diceRolled && !isMoving) {
+          if (liveState.diceRolled && !isMovingRef.current) {
             handleEndTurnAction();
           }
         } else if (actionType === 'PAY_JAIL') {
@@ -1331,22 +1354,24 @@ export const App: React.FC = () => {
   };
 
   // Step-by-Step Animated Roll Dice Action
-  // Step-by-Step Animated Roll Dice Action
   const handleRollDiceAction = () => {
-    if (isMoving || gameState.diceRolled || gameState.phase !== 'PLAYING') return;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
 
-    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    if (isMovingRef.current || liveState.diceRolled || liveState.phase !== 'PLAYING') return;
+
+    const currentPlayer = liveState.players[liveState.currentTurnIndex];
     if (!currentPlayer || !currentPlayer.inGame) return;
 
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const isMeCurrent = currentPlayer.id === myPlayerId;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const isMeCurrent = currentPlayer.id === liveMyId;
 
     // Non-host player: forward action to authoritative host
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame || !isMeCurrent) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'ROLL_DICE');
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'ROLL_DICE');
       }
       return;
     }
@@ -1365,30 +1390,34 @@ export const App: React.FC = () => {
         updateAndBroadcastGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
-          p.isJailed = false;
-          p.jailTurns = 0;
+          if (p) {
+            p.isJailed = false;
+            p.jailTurns = 0;
+          }
           updated.dice = dice;
           updated.diceRolled = true;
-          addLog(updated, `🎉 ${p.name} çift zar atarak (${dice[0]}-${dice[1]}) kodesten ücretsiz çıktı!`, 'success');
+          addLog(updated, `🎉 ${p?.name || currentPlayer.name} çift zar atarak (${dice[0]}-${dice[1]}) kodesten ücretsiz çıktı!`, 'success');
           return updated;
         });
       } else {
         updateAndBroadcastGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
-          p.jailTurns += 1;
+          if (p) {
+            p.jailTurns += 1;
+            if (p.jailTurns >= 3) {
+              p.isJailed = false;
+              p.money -= 100;
+              p.jailTurns = 0;
+              addTransaction(updated, p, 'expense', 'bail', 100, '3 tur kodes sonrası zorunlu kefalet ödendi');
+              addLog(updated, `⚠️ ${p.name} 3 tur bekledi ve 100₺ ödeyerek kodesten çıktı.`, 'warning');
+            } else {
+              addLog(updated, `🔒 ${p.name} (${dice[0]}-${dice[1]}) attı ve kodeste kaldı (${p.jailTurns}/3 tur).`, 'info');
+              updated.pendingAction = 'NONE';
+            }
+          }
           updated.dice = dice;
           updated.diceRolled = true;
-          if (p.jailTurns >= 3) {
-            p.isJailed = false;
-            p.money -= 100;
-            p.jailTurns = 0;
-            addTransaction(updated, p, 'expense', 'bail', 100, '3 tur kodes sonrası zorunlu kefalet ödendi');
-            addLog(updated, `⚠️ ${p.name} 3 tur bekledi ve 100₺ ödeyerek kodesten çıktı.`, 'warning');
-          } else {
-            addLog(updated, `🔒 ${p.name} (${dice[0]}-${dice[1]}) attı ve kodeste kaldı (${p.jailTurns}/3 tur).`, 'info');
-            updated.pendingAction = 'NONE';
-          }
           return updated;
         });
         return;
@@ -1397,19 +1426,21 @@ export const App: React.FC = () => {
 
     // Doubles streak 3rd time check -> Straight to Jail (Kodes)
     if (isDouble && !currentPlayer.isJailed) {
-      const nextDoubles = (gameState.doublesCount || 0) + 1;
+      const nextDoubles = (liveState.doublesCount || 0) + 1;
       if (nextDoubles >= 3) {
         soundManager.playJail();
         updateAndBroadcastGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
-          p.position = JAIL_TILE_INDEX;
-          p.isJailed = true;
-          p.jailTurns = 0;
+          if (p) {
+            p.position = JAIL_TILE_INDEX;
+            p.isJailed = true;
+            p.jailTurns = 0;
+          }
           updated.doublesCount = 0;
           updated.dice = dice;
           updated.diceRolled = true;
-          addLog(updated, `🚨 3 kez üst üste çift atan (${dice[0]}-${dice[1]}) ${p.name} doğrudan Kodese gönderildi!`, 'danger');
+          addLog(updated, `🚨 3 kez üst üste çift atan (${dice[0]}-${dice[1]}) ${p?.name || currentPlayer.name} doğrudan Kodese gönderildi!`, 'danger');
           updated.pendingAction = 'NONE';
           return updated;
         });
@@ -1459,12 +1490,14 @@ export const App: React.FC = () => {
 
   // End Turn Action
   const handleEndTurnAction = () => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'END_TURN');
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'END_TURN');
       }
       return;
     }
@@ -1473,15 +1506,17 @@ export const App: React.FC = () => {
 
   // Declare Bankruptcy Action
   const handleDeclareBankruptcyAction = (playerId?: string) => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const targetId = playerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const targetId = playerId || liveState.players[liveState.currentTurnIndex]?.id || liveMyId;
     if (!targetId) return;
 
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BANKRUPTCY', { playerId: targetId });
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'BANKRUPTCY', { playerId: targetId });
       }
       return;
     }
@@ -1491,14 +1526,16 @@ export const App: React.FC = () => {
 
   // Buy Property Action
   const handleBuyPropertyAction = (actingPlayerId?: string) => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const activeActorId = actingPlayerId || liveState.players[liveState.currentTurnIndex]?.id || liveMyId || undefined;
 
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BUY_PROPERTY');
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'BUY_PROPERTY');
       }
       return;
     }
@@ -1508,14 +1545,16 @@ export const App: React.FC = () => {
 
   // Pass Property Action (Skip buying)
   const handlePassPropertyAction = (actingPlayerId?: string) => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const activeActorId = actingPlayerId || gameState.players[gameState.currentTurnIndex]?.id || myPlayerId || undefined;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const activeActorId = actingPlayerId || liveState.players[liveState.currentTurnIndex]?.id || liveMyId || undefined;
 
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'PASS_PROPERTY');
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'PASS_PROPERTY');
       }
       return;
     }
@@ -1524,13 +1563,15 @@ export const App: React.FC = () => {
 
   // Sell Property to Bank for 2/3 price
   const handleSellToBankAction = (tileId: number, actingPlayerId?: string) => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const actorId = actingPlayerId || myPlayerId || undefined;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const actorId = actingPlayerId || liveMyId || undefined;
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'SELL_TO_BANK', { tileId });
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'SELL_TO_BANK', { tileId });
       }
       return;
     }
@@ -1539,12 +1580,14 @@ export const App: React.FC = () => {
 
   // Pay 100 Bail to leave Kodes (Jail)
   const handlePayJailBailAction = () => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'PAY_JAIL');
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'PAY_JAIL');
       }
       return;
     }
@@ -1554,13 +1597,15 @@ export const App: React.FC = () => {
 
   // Build House Action
   const handleBuildHouseAction = (tileId: number, actingPlayerId?: string) => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const actorId = actingPlayerId || myPlayerId || undefined;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const actorId = actingPlayerId || liveMyId || undefined;
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'BUILD_HOUSE', { tileId });
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'BUILD_HOUSE', { tileId });
       }
       return;
     }
@@ -1577,13 +1622,15 @@ export const App: React.FC = () => {
 
   // Sell House Action
   const handleSellHouseAction = (tileId: number, actingPlayerId?: string) => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const actorId = actingPlayerId || myPlayerId || undefined;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const actorId = actingPlayerId || liveMyId || undefined;
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'SELL_HOUSE', { tileId });
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'SELL_HOUSE', { tileId });
       }
       return;
     }
@@ -1599,13 +1646,15 @@ export const App: React.FC = () => {
 
   // Toggle Mortgage Action
   const handleToggleMortgageAction = (tileId: number, actingPlayerId?: string) => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
-    const actorId = actingPlayerId || myPlayerId || undefined;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const actorId = actingPlayerId || liveMyId || undefined;
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'MORTGAGE', { tileId });
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'MORTGAGE', { tileId });
       }
       return;
     }
@@ -1621,12 +1670,14 @@ export const App: React.FC = () => {
 
   // Apply Chance Card
   const handleConfirmChanceCard = () => {
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost) {
-      const myPlayer = gameState.players.find((p) => p.id === myPlayerId);
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendGameAction(gameState.roomId, myPlayerId, 'CONFIRM_CHANCE');
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'CONFIRM_CHANCE');
       }
       return;
     }
