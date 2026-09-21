@@ -15,6 +15,7 @@ interface BoardProps {
   pendingAction: string;
   actionMessage?: string;
   myPlayerId: string | null;
+  isMoving?: boolean;
   onTileClick: (tile: BoardTile) => void;
   onRollDice: () => void;
   onEndTurn: () => void;
@@ -86,6 +87,7 @@ export const Board: React.FC<BoardProps> = ({
   pendingAction,
   actionMessage,
   myPlayerId,
+  isMoving = false,
   onTileClick,
   onRollDice,
   onEndTurn,
@@ -103,6 +105,7 @@ export const Board: React.FC<BoardProps> = ({
   const isMyTurn = currentTurnPlayer?.id === myPlayerId;
   const isJailed = currentTurnPlayer?.isJailed;
   const isAfk = Boolean(currentTurnPlayer?.isAfk);
+  const activeMovingPlayerId = isMoving ? currentTurnPlayer?.id : null;
 
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
 
@@ -131,6 +134,7 @@ export const Board: React.FC<BoardProps> = ({
               playersOnTile={playersOnTile}
               owner={owner}
               myPlayerId={myPlayerId}
+              activeMovingPlayerId={activeMovingPlayerId}
               onClick={() => onTileClick(tile)}
               style={{
                 gridRowStart: pos.row,

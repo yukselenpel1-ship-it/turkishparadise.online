@@ -8,6 +8,7 @@ interface TileProps {
   playersOnTile: Player[];
   owner?: Player;
   myPlayerId?: string | null;
+  activeMovingPlayerId?: string | null;
   onClick?: () => void;
   style?: React.CSSProperties;
 }
@@ -29,6 +30,7 @@ export const Tile: React.FC<TileProps> = ({
   playersOnTile,
   owner,
   myPlayerId,
+  activeMovingPlayerId,
   onClick,
   style
 }) => {
@@ -207,33 +209,31 @@ export const Tile: React.FC<TileProps> = ({
       {(isProperty || isStation) ? (
         <div className="flex-1 flex flex-col justify-between items-center p-0.5 sm:p-1 text-center relative z-10 min-h-0 w-full">
           {/* Player Tokens positioned ABOVE city name */}
-          <div className="flex-1 flex items-center justify-center w-full min-h-[14px] sm:min-h-[22px]">
+          <div className="flex-1 flex items-center justify-center w-full min-h-[16px] sm:min-h-[26px]">
             {playersOnTile.length > 0 && (
               <div className="flex flex-row items-center justify-center gap-0.5 sm:gap-1 max-w-full flex-wrap z-30">
                 {playersOnTile.map((p) => {
                   const isMe = myPlayerId ? p.id === myPlayerId : false;
+                  const isMovingCurrent = Boolean(activeMovingPlayerId && activeMovingPlayerId === p.id);
                   return (
                     <div
                       key={p.id}
-                      title={p.name}
-                      className="w-3.5 h-3.5 sm:w-6 sm:h-6 rounded-full bg-slate-900 border sm:border-2 shadow-xl flex items-center justify-center text-[9px] sm:text-xs relative shrink-0 transition-transform duration-200"
+                      title={`${p.name}${isMe ? ' (Siz)' : ''}`}
+                      className={`rounded-full bg-slate-950 flex items-center justify-center relative shrink-0 transition-all duration-300 ease-out ${
+                        isMovingCurrent
+                          ? 'w-6 h-6 sm:w-8 sm:h-8 text-sm sm:text-lg border-2 border-amber-300 shadow-[0_0_25px_rgba(245,158,11,1)] scale-[1.75] sm:scale-[2.0] -translate-y-2 sm:-translate-y-3 z-50 animate-bounce ring-4 ring-amber-400/90 ring-offset-2 ring-offset-slate-950'
+                          : isMe
+                          ? 'w-4.5 h-4.5 sm:w-6 sm:h-6 text-[10.5px] sm:text-sm border-2 shadow-xl ring-2 ring-amber-400/80 ring-offset-1 ring-offset-slate-950 scale-100 z-30'
+                          : 'w-4 h-4 sm:w-5.5 sm:h-5.5 text-[9.5px] sm:text-xs border-2 shadow-lg scale-100 z-20'
+                      }`}
                       style={{
-                        borderColor: p.color,
-                        boxShadow: `0 0 6px ${p.color}`,
+                        borderColor: isMovingCurrent ? '#fde047' : p.color,
+                        boxShadow: isMovingCurrent
+                          ? `0 0 25px ${p.color}, 0 0 15px rgba(253,224,71,0.9)`
+                          : `0 0 8px ${p.color}90, 0 2px 5px rgba(0,0,0,0.8)`,
                       }}
                     >
-                      {p.avatar}
-
-                      {/* Red Pin placed exactly on top of the user's token */}
-                      {isMe && (
-                        <div className="absolute -top-2.5 sm:-top-4.5 left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-bounce drop-shadow-[0_2px_4px_rgba(239,68,68,0.8)]">
-                          <img
-                            src="/pin.png"
-                            alt="Konumunuz"
-                            className="w-3 h-3 sm:w-4.5 sm:h-4.5 object-contain"
-                          />
-                        </div>
-                      )}
+                      <span className="leading-none drop-shadow select-none">{p.avatar}</span>
                     </div>
                   );
                 })}
@@ -257,32 +257,31 @@ export const Tile: React.FC<TileProps> = ({
           </div>
         </div>
       ) : (
-        /* For Corners and Special Tiles, render tokens around the bottom/center with pin attached */
+        /* For Corners and Special Tiles, render tokens around the bottom/center without pins */
         playersOnTile.length > 0 && (
           <div className="absolute bottom-0.5 sm:bottom-1 left-1/2 -translate-x-1/2 flex flex-row items-center justify-center gap-0.5 sm:gap-1 z-30">
             {playersOnTile.map((p) => {
               const isMe = myPlayerId ? p.id === myPlayerId : false;
+              const isMovingCurrent = Boolean(activeMovingPlayerId && activeMovingPlayerId === p.id);
               return (
                 <div
                   key={p.id}
-                  title={p.name}
-                  className="w-3.5 h-3.5 sm:w-6 sm:h-6 rounded-full bg-slate-900 border sm:border-2 shadow-xl flex items-center justify-center text-[9px] sm:text-xs relative shrink-0"
+                  title={`${p.name}${isMe ? ' (Siz)' : ''}`}
+                  className={`rounded-full bg-slate-950 flex items-center justify-center relative shrink-0 transition-all duration-300 ease-out ${
+                    isMovingCurrent
+                      ? 'w-6 h-6 sm:w-8 sm:h-8 text-sm sm:text-lg border-2 border-amber-300 shadow-[0_0_25px_rgba(245,158,11,1)] scale-[1.75] sm:scale-[2.0] -translate-y-2 sm:-translate-y-3 z-50 animate-bounce ring-4 ring-amber-400/90 ring-offset-2 ring-offset-slate-950'
+                      : isMe
+                      ? 'w-4.5 h-4.5 sm:w-6 sm:h-6 text-[10.5px] sm:text-sm border-2 shadow-xl ring-2 ring-amber-400/80 ring-offset-1 ring-offset-slate-950 scale-100 z-30'
+                      : 'w-4 h-4 sm:w-5.5 sm:h-5.5 text-[9.5px] sm:text-xs border-2 shadow-lg scale-100 z-20'
+                  }`}
                   style={{
-                    borderColor: p.color,
-                    boxShadow: `0 0 6px ${p.color}`,
+                    borderColor: isMovingCurrent ? '#fde047' : p.color,
+                    boxShadow: isMovingCurrent
+                      ? `0 0 25px ${p.color}, 0 0 15px rgba(253,224,71,0.9)`
+                      : `0 0 8px ${p.color}90, 0 2px 5px rgba(0,0,0,0.8)`,
                   }}
                 >
-                  {p.avatar}
-
-                  {isMe && (
-                    <div className="absolute -top-2.5 sm:-top-4.5 left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-bounce drop-shadow-[0_2px_4px_rgba(239,68,68,0.8)]">
-                      <img
-                        src="/pin.png"
-                        alt="Konumunuz"
-                        className="w-3 h-3 sm:w-4.5 sm:h-4.5 object-contain"
-                      />
-                    </div>
-                  )}
+                  <span className="leading-none drop-shadow select-none">{p.avatar}</span>
                 </div>
               );
             })}

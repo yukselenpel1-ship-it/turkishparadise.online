@@ -1524,6 +1524,7 @@ export const App: React.FC = () => {
                 pendingAction={gameState.pendingAction}
                 actionMessage={gameState.actionMessage}
                 myPlayerId={myPlayerId}
+                isMoving={isMoving}
                 onTileClick={(tile) => setSelectedTile(tile)}
                 onRollDice={handleRollDiceAction}
                 onEndTurn={handleEndTurnAction}
