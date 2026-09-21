@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Player, GameSettings, BotDifficulty, UserAccount } from '../types/game';
-import { PLAYER_AVATARS, PLAYER_COLORS } from '../engine/gameEngine';
+import { PLAYER_AVATARS, PLAYER_COLORS, FALLBACK_PLAYER_AVATARS, FALLBACK_PLAYER_COLORS } from '../engine/gameEngine';
 import { soundManager } from '../services/soundEffects';
 import { ProfileModal, ProfileTab } from './ProfileModal';
 import { subscribeToFriendRequests } from '../services/friendService';
 import { DiceLogo } from './DiceLogo';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 import { PublicRoomsList } from './PublicRoomsList';
-import { subscribeToPublicRooms, publishPublicRoom } from '../services/publicRoomsService';
+import { subscribeToPublicRooms, publishPublicRoom, unpublishPublicRoom } from '../services/publicRoomsService';
 import {
   User,
   Gamepad2,
@@ -106,23 +106,32 @@ export const Lobby: React.FC<LobbyProps> = ({
     return () => unsubscribe();
   }, []);
 
-  const handlePublishPublicRoom = () => {
+  const isPublicRoom = Boolean(settings.isPublic);
+
+  const handleTogglePublishPublicRoom = () => {
+    const nextPublic = !isPublicRoom;
+    onUpdateSettings({ ...settings, isPublic: nextPublic });
     const hostPlayer = players.find((p) => p.isHost) || players[0];
     const roomInfo = {
       roomId: settings.roomCode || roomCode,
-      hostName: hostPlayer?.name || 'Kurucu',
+      hostName: hostPlayer?.name || userAccount?.displayName || 'Kurucu',
       hostAvatar: hostPlayer?.avatar || '👑',
       playerCount: players.length,
       maxPlayers: 6,
       botCount: players.filter((p) => p.isBot).length,
       phase: 'LOBBY' as const,
       startingMoney: settings.startingMoney || 1500,
-      isPublic: true,
+      isPublic: nextPublic,
       updatedAt: Date.now(),
     };
-    publishPublicRoom(roomInfo);
-    setIsRoomPublished(true);
-    setTimeout(() => setIsRoomPublished(false), 5000);
+    if (nextPublic) {
+      publishPublicRoom(roomInfo);
+      setIsRoomPublished(true);
+      setTimeout(() => setIsRoomPublished(false), 4000);
+    } else {
+      unpublishPublicRoom(settings.roomCode || roomCode);
+      setIsRoomPublished(false);
+    }
   };
 
   // Subscribe to real-time incoming friend requests for header badge
@@ -585,15 +594,19 @@ export const Lobby: React.FC<LobbyProps> = ({
                   {isHost && (
                     <button
                       type="button"
-                      onClick={handlePublishPublicRoom}
-                      className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer mt-1 ${
-                        isRoomPublished
-                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
-                          : 'bg-slate-900/90 hover:bg-slate-850 border-amber-500/30 text-amber-300 hover:text-white'
+                      onClick={handleTogglePublishPublicRoom}
+                      className={`w-full flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer mt-1 ${
+                        isPublicRoom
+                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30 shadow-lg shadow-emerald-500/10'
+                          : 'bg-slate-900/90 hover:bg-slate-800 border-amber-500/30 text-amber-300 hover:text-white'
                       }`}
                     >
-                      <Globe className={`w-3.5 h-3.5 ${isRoomPublished ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
-                      <span>{isRoomPublished ? '✅ ' + t('roomPublishedNotice') : t('shareRoomPublicly')}</span>
+                      <Globe className={`w-3.5 h-3.5 ${isPublicRoom ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
+                      <span>
+                        {isPublicRoom
+                          ? (isRoomPublished ? '✅ ' + t('roomPublishedNotice') : (language === 'en' ? '🌐 Live in Directory (Click to make Private)' : '🌐 Canlı Listede Yayında (Gizlemek için tıkla)'))
+                          : t('shareRoomPublicly')}
+                      </span>
                     </button>
                   )}
                 </div>

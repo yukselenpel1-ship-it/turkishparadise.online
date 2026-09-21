@@ -249,6 +249,7 @@ export interface TranslationDictionary {
   publicRoomsBtn: string;
   publicRoomsTitle: string;
   shareRoomPublicly: string;
+  unshareRoomPublicly: string;
   roomPublishedNotice: string;
 
   // Common
@@ -512,6 +513,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     publicRoomsBtn: '🌐 Canlı Odalar',
     publicRoomsTitle: 'Açık Canlı Odalar',
     shareRoomPublicly: 'Odayı Listede Paylaş 🌐',
+    unshareRoomPublicly: 'Odayı Listeden Gizle 🔒',
     roomPublishedNotice: 'Oda canlı odalar listesinde yayınlandı!',
 
     // Common
@@ -773,6 +775,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     publicRoomsBtn: '🌐 Live Rooms',
     publicRoomsTitle: 'Public Live Rooms',
     shareRoomPublicly: 'Publish Room Publicly 🌐',
+    unshareRoomPublicly: 'Make Room Private 🔒',
     roomPublishedNotice: 'Room published to live directory!',
 
     // Common

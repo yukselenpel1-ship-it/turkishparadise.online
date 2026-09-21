@@ -31,7 +31,17 @@ export const PLAYER_COLORS = [
   '#EC4899', // Pink
 ];
 
+export const FALLBACK_PLAYER_COLORS = [
+  '#06B6D4', // Cyan
+  '#84CC16', // Lime
+  '#F97316', // Orange
+  '#A855F7', // Violet
+  '#14B8A6', // Teal
+  '#E11D48', // Rose
+];
+
 export const PLAYER_AVATARS = ['🏎️', '🎩', '🐕', '⛵', '🐱', '🚀'];
+export const FALLBACK_PLAYER_AVATARS = ['✈️', '👑', '🦁', '🦅', '💎', '🏆', '🎯', '🎲'];
 
 export function createInitialState(settings?: Partial<GameSettings>): GameState {
   const mergedSettings: GameSettings = {
@@ -40,7 +50,7 @@ export function createInitialState(settings?: Partial<GameSettings>): GameState 
     firstLapBuyLimit: settings?.firstLapBuyLimit ?? 0, // 0 = unlimited, 1..4
     botDifficulty: settings?.botDifficulty ?? 'medium',
     roomCode: settings?.roomCode ?? `TR-${Math.floor(1000 + Math.random() * 9000)}`,
-    isPublic: settings?.isPublic ?? true
+    isPublic: settings?.isPublic ?? false
   };
 
   return {

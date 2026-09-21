@@ -22,6 +22,8 @@ import {
   addChatMessage,
   PLAYER_COLORS,
   PLAYER_AVATARS,
+  FALLBACK_PLAYER_COLORS,
+  FALLBACK_PLAYER_AVATARS,
   addLog,
   addTransaction,
   isPlayerHost,
@@ -401,18 +403,13 @@ export const App: React.FC = () => {
             localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(remoteState));
           } catch (e) {}
 
-          // Auto-reconnect player to their seat if recovering after F5
+          // Auto-reconnect player to their seat ONLY if recovering after F5 with exact saved playerId
           const savedId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY);
-          const currentUserId = userAccount?.uid || getPersistentGuestId();
-          const matchedPlayer = remoteState.players.find(
-            (p) =>
-              (savedId && p.id === savedId) ||
-              (currentUserId && p.userId === currentUserId) ||
-              (userAccount && p.id === userAccount.uid)
-          );
-
-          if (matchedPlayer && (!myPlayerId || myPlayerId !== matchedPlayer.id)) {
-            setMyPlayerId(matchedPlayer.id);
+          if (!myPlayerId && savedId) {
+            const matchedPlayer = remoteState.players.find((p) => p.id === savedId);
+            if (matchedPlayer) {
+              setMyPlayerId(matchedPlayer.id);
+            }
           }
         }
       },
@@ -421,23 +418,21 @@ export const App: React.FC = () => {
         setGameState((prev) => {
           const isHost = isPlayerHost(prev, myPlayerId);
           if (!isHost) return prev;
+          if (newPlayer.id === myPlayerId) return prev;
 
-          // Check if player is re-joining by unique playerId or persistent userId
-          const existingIdx = prev.players.findIndex(
-            (p) => p.id === newPlayer.id || (newPlayer.userId && p.userId && p.userId === newPlayer.userId)
-          );
+          // Check if player is already in room by exact ID
+          const existingIdx = prev.players.findIndex((p) => p.id === newPlayer.id);
 
           let nextPlayers = [...prev.players];
           if (existingIdx >= 0) {
-            // Restore returning player and clear AFK, preserving original host status
+            // Restore returning player, preserving original host status, money, position
             const wasHost = nextPlayers[existingIdx].isHost;
             nextPlayers[existingIdx] = {
               ...nextPlayers[existingIdx],
-              ...newPlayer,
-              isHost: wasHost,
               inGame: true,
               isAfk: false,
-              isBot: false
+              isBot: false,
+              isHost: wasHost
             };
             const updated = { ...prev, players: nextPlayers };
             addLog(updated, `✨ ${newPlayer.name} tekrar bağlandı ve oyuna döndü!`, 'success');
@@ -447,26 +442,36 @@ export const App: React.FC = () => {
 
           if (prev.players.length >= 6) return prev;
 
-          // Auto-resolve color conflict if incoming color is taken
-          let assignedColor = newPlayer.color;
+          // Auto-resolve color conflict: pick guaranteed free color
+          const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
           const takenColors = prev.players.map((p) => p.color);
-          if (takenColors.includes(assignedColor)) {
-            const freeColor = PLAYER_COLORS.find((c) => !takenColors.includes(c));
-            if (freeColor) assignedColor = freeColor;
+          let assignedColor = newPlayer.color;
+          if (!assignedColor || takenColors.includes(assignedColor)) {
+            const freeColor = allColors.find((c) => !takenColors.includes(c));
+            assignedColor = freeColor || `hsl(${Math.floor(Math.random() * 360)}, 85%, 60%)`;
           }
 
-          // Auto-resolve avatar conflict if incoming avatar is taken
-          let assignedAvatar = newPlayer.avatar;
+          // Auto-resolve avatar conflict: pick guaranteed free avatar
+          const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
           const takenAvatars = prev.players.map((p) => p.avatar);
-          if (takenAvatars.includes(assignedAvatar)) {
-            const freeAvatar = PLAYER_AVATARS.find((a) => !takenAvatars.includes(a));
-            if (freeAvatar) assignedAvatar = freeAvatar;
+          let assignedAvatar = newPlayer.avatar;
+          if (!assignedAvatar || takenAvatars.includes(assignedAvatar)) {
+            const freeAvatar = allAvatars.find((a) => !takenAvatars.includes(a));
+            assignedAvatar = freeAvatar || '🎲';
           }
 
+          const startMoney = prev.settings?.startingMoney || 1500;
           const playerToAdd: Player = {
             ...newPlayer,
             color: assignedColor,
             avatar: assignedAvatar,
+            money: startMoney,
+            position: 0,
+            isJailed: false,
+            jailTurns: 0,
+            lapsCompleted: 0,
+            firstLapPurchases: 0,
+            inGame: true,
             isHost: false, // New joiner is NEVER host when joining existing room
             isAfk: false,
             isBot: false
@@ -978,23 +983,26 @@ export const App: React.FC = () => {
     const newPlayerId = `p_${cleanUid}_${randomSuffix}`;
     const startMoney = gameState.settings?.startingMoney || 1500;
     
+    // Check if user is creating a brand new room or joining an existing room
+    const isCreatingRoom = gameState.players.length === 0 || (gameState.phase === 'LOBBY' && !gameState.hostPlayerId);
+
     // Determine unique color not taken by existing players
+    const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
     const existingColors = gameState.players.map((p) => p.color);
     let chosenColor = color || '';
     if (!chosenColor || existingColors.includes(chosenColor)) {
-      const freeColor = PLAYER_COLORS.find((c) => !existingColors.includes(c));
-      chosenColor = freeColor || PLAYER_COLORS[gameState.players.length % PLAYER_COLORS.length];
+      const freeColor = allColors.find((c) => !existingColors.includes(c));
+      chosenColor = freeColor || allColors[gameState.players.length % allColors.length];
     }
 
     // Determine unique avatar not taken by existing players
+    const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
     const existingAvatars = gameState.players.map((p) => p.avatar);
     let chosenAvatar = avatar || '';
     if (!chosenAvatar || existingAvatars.includes(chosenAvatar)) {
-      const freeAvatar = PLAYER_AVATARS.find((a) => !existingAvatars.includes(a));
-      chosenAvatar = freeAvatar || PLAYER_AVATARS[gameState.players.length % PLAYER_AVATARS.length];
+      const freeAvatar = allAvatars.find((a) => !existingAvatars.includes(a));
+      chosenAvatar = freeAvatar || allAvatars[gameState.players.length % allAvatars.length];
     }
-    
-    const isHostPlayer = gameState.players.length === 0;
 
     const newPlayer: Player = {
       id: newPlayerId,
@@ -1010,7 +1018,7 @@ export const App: React.FC = () => {
       firstLapPurchases: 0,
       inGame: true,
       isBot: false,
-      isHost: isHostPlayer
+      isHost: isCreatingRoom
     };
 
     setMyPlayerId(newPlayerId);
@@ -1026,33 +1034,29 @@ export const App: React.FC = () => {
     // Send join request to room host
     syncManager.sendJoinRequest(finalRoom, newPlayer);
 
-    updateAndBroadcastGameState((prev) => {
-      // Avoid duplicate join if already exists
-      const existingIdx = prev.players.findIndex(p => p.id === newPlayerId || (p.userId && p.userId === currentUserId));
-      let nextPlayers = [...prev.players];
-      if (existingIdx >= 0) {
-        nextPlayers[existingIdx] = {
-          ...nextPlayers[existingIdx],
-          ...newPlayer,
-          isHost: nextPlayers[existingIdx].isHost // maintain host status if previously host
+    if (isCreatingRoom) {
+      // Room Creator initializes the room and broadcasts as Host
+      updateAndBroadcastGameState((prev) => {
+        const updated: GameState = {
+          ...prev,
+          roomId: finalRoom,
+          hostPlayerId: newPlayerId,
+          isOnlineGame: isOnline,
+          settings: { ...prev.settings, roomCode: finalRoom },
+          players: [newPlayer]
         };
-      } else {
-        nextPlayers.push(newPlayer);
-      }
-
-      const updatedHostId = prev.hostPlayerId || (isHostPlayer ? newPlayerId : undefined);
-
-      const updated: GameState = {
+        addLog(updated, `👋 ${newPlayer.name} odayı kurdu! (${finalRoom})`, 'success');
+        return updated;
+      });
+    } else {
+      // Joiner sets local roomId and waits for Host's STATE_SYNC
+      setGameState((prev) => ({
         ...prev,
         roomId: finalRoom,
-        hostPlayerId: updatedHostId,
         isOnlineGame: isOnline,
-        settings: { ...prev.settings, roomCode: finalRoom },
-        players: nextPlayers
-      };
-      addLog(updated, `👋 ${newPlayer.name} odaya katıldı! (${finalRoom})`, 'success');
-      return updated;
-    });
+        settings: { ...prev.settings, roomCode: finalRoom }
+      }));
+    }
   };
 
   // Leave Lobby / Go Back (Only affects departing player, preserves room for remaining players)
