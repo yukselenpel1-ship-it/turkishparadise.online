@@ -158,6 +158,77 @@ export const App: React.FC = () => {
     myPlayerIdRef.current = myPlayerId;
   }, [myPlayerId]);
 
+  const pendingRemoteStateRef = useRef<GameState | null>(null);
+  const activeStepIntervalRef = useRef<any>(null);
+  const saveStorageTimeoutRef = useRef<any>(null);
+
+  const debouncedSaveGameState = (state: GameState) => {
+    if (saveStorageTimeoutRef.current) {
+      clearTimeout(saveStorageTimeoutRef.current);
+    }
+    saveStorageTimeoutRef.current = setTimeout(() => {
+      try {
+        const serialized = JSON.stringify(state);
+        sessionStorage.setItem(SESSION_GAME_STATE_KEY, serialized);
+        localStorage.setItem(SESSION_GAME_STATE_KEY, serialized);
+      } catch (e) {}
+    }, 800);
+  };
+
+  const runLocalStepAnimation = (
+    playerId: string,
+    totalSteps: number,
+    onComplete?: () => void
+  ) => {
+    if (activeStepIntervalRef.current) {
+      clearInterval(activeStepIntervalRef.current);
+      activeStepIntervalRef.current = null;
+    }
+
+    setIsMoving(true);
+    isMovingRef.current = true;
+
+    let currentStep = 0;
+    const STEP_INTERVAL_MS = 180; // 180ms per tile step: silky smooth 60 FPS motion & responsive audio
+
+    activeStepIntervalRef.current = setInterval(() => {
+      currentStep++;
+      soundManager.playStep();
+
+      setGameState((prev) => {
+        const { state } = advancePlayerStep(prev, playerId);
+        return state;
+      });
+
+      if (currentStep >= totalSteps) {
+        if (activeStepIntervalRef.current) {
+          clearInterval(activeStepIntervalRef.current);
+          activeStepIntervalRef.current = null;
+        }
+
+        setTimeout(() => {
+          setIsMoving(false);
+          isMovingRef.current = false;
+          if (onComplete) {
+            onComplete();
+          }
+        }, 120);
+      }
+    }, STEP_INTERVAL_MS);
+  };
+
+  // Cleanup active intervals on unmount
+  useEffect(() => {
+    return () => {
+      if (activeStepIntervalRef.current) {
+        clearInterval(activeStepIntervalRef.current);
+      }
+      if (saveStorageTimeoutRef.current) {
+        clearTimeout(saveStorageTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Subscribe to real-time incoming friend requests for profile badge
   useEffect(() => {
     if (!userAccount?.uid) {
@@ -302,9 +373,7 @@ export const App: React.FC = () => {
           }
           sessionStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
           localStorage.setItem(SESSION_ROOM_ID_KEY, gameState.roomId);
-
-          sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(gameState));
-          localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(gameState));
+          debouncedSaveGameState(gameState);
         } else if (!hasActiveJoinedRoom && !currentUrl.searchParams.get('invite') && !currentUrl.searchParams.get('oda')) {
           // If on landing screen before joining, clean up URL param so F5 reload stays on exact tab
           if (currentUrl.searchParams.has('room')) {
@@ -420,46 +489,48 @@ export const App: React.FC = () => {
       (remoteState) => {
         if (!remoteState || remoteState.roomId !== gameState.roomId) return;
 
-        setGameState((prev) => {
-          const isCurrentlyHost = isPlayerHost(prev, myPlayerId);
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        const isCurrentlyHost = isPlayerHost(liveState, liveMyId);
 
-          // 🛡️ HOST PROTECTION SHIELD:
-          // If I am already established as Host in this room, never accept an external state
-          // that overwrites my host status or drops me from the player list!
-          if (isCurrentlyHost && prev.hostPlayerId === myPlayerId && prev.players.some(p => p.id === myPlayerId)) {
-            const remoteHost = remoteState.hostPlayerId;
-            const hasMeInRemote = remoteState.players?.some(p => p.id === myPlayerId);
+        // 🛡️ HOST PROTECTION SHIELD:
+        // If I am already established as Host in this room, never accept an external state
+        // that overwrites my host status or drops me from the player list!
+        if (isCurrentlyHost && liveState.hostPlayerId === liveMyId && liveState.players.some(p => p.id === liveMyId)) {
+          const remoteHost = remoteState.hostPlayerId;
+          const hasMeInRemote = remoteState.players?.some(p => p.id === liveMyId);
 
-            if (remoteHost !== myPlayerId || !hasMeInRemote) {
-              console.warn('[Host Shield] Rejected rogue/stale STATE_SYNC from peer:', {
-                myPlayerId,
-                currentHost: prev.hostPlayerId,
-                remoteHost,
-                hasMeInRemote,
-                remotePlayersCount: remoteState.players?.length
-              });
-              // Force-rebroadcast authoritative host state to correct any out-of-sync peers
-              syncRoomState(prev.roomId, prev);
-              return prev;
-            }
+          if (remoteHost !== liveMyId || !hasMeInRemote) {
+            console.warn('[Host Shield] Rejected rogue/stale STATE_SYNC from peer:', {
+              myPlayerId: liveMyId,
+              currentHost: liveState.hostPlayerId,
+              remoteHost,
+              hasMeInRemote,
+              remotePlayersCount: remoteState.players?.length
+            });
+            // Force-rebroadcast authoritative host state to correct any out-of-sync peers
+            syncRoomState(liveState.roomId, liveState);
+            return;
           }
+        }
 
-          try {
-            sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(remoteState));
-            localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(remoteState));
-          } catch (e) {}
+        // If local stepping animation is currently running, buffer remote state to apply on arrival
+        if (isMovingRef.current) {
+          pendingRemoteStateRef.current = remoteState;
+          return;
+        }
 
-          // Auto-reconnect player to their seat ONLY if recovering after F5 with exact saved playerId
-          const savedId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY);
-          if (!myPlayerId && savedId) {
-            const matchedPlayer = remoteState.players.find((p) => p.id === savedId);
-            if (matchedPlayer) {
-              setMyPlayerId(matchedPlayer.id);
-            }
+        setGameState(remoteState);
+        debouncedSaveGameState(remoteState);
+
+        // Auto-reconnect player to their seat ONLY if recovering after F5 with exact saved playerId
+        const savedId = sessionStorage.getItem(SESSION_PLAYER_ID_KEY) || localStorage.getItem(SESSION_PLAYER_ID_KEY);
+        if (!liveMyId && savedId) {
+          const matchedPlayer = remoteState.players.find((p) => p.id === savedId);
+          if (matchedPlayer) {
+            setMyPlayerId(matchedPlayer.id);
           }
-
-          return remoteState;
-        });
+        }
       },
       (newPlayer) => {
         // Host adds incoming player and broadcasts updated state
@@ -746,6 +817,51 @@ export const App: React.FC = () => {
           handleSellToBankAction(payload.tileId, senderPlayerId);
         }
       },
+      (diceData) => {
+        // Handle incoming DICE_ROLLED event on non-host peers
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        const isMeHost = isPlayerHost(liveState, liveMyId);
+        if (isMeHost) return; // Host already initiated animation locally
+
+        const rollingPlayer = liveState.players.find((p) => p.id === diceData.playerId);
+        if (!rollingPlayer) return;
+
+        // Play dice roll sound
+        soundManager.playDiceRoll();
+
+        // Update local dice and log
+        setGameState((prev) => {
+          const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+          updated.dice = diceData.dice;
+          updated.diceRolled = true;
+          updated.doublesCount = diceData.doublesStreak;
+          if (diceData.isDouble) {
+            addLog(
+              updated,
+              `🎲 ${rollingPlayer.name} çift attı: 🎲 ${diceData.dice[0]} - ${diceData.dice[1]}! İlerledikten sonra bir kez daha zar atacak! (${diceData.doublesStreak}/3)`,
+              'success'
+            );
+          } else {
+            addLog(
+              updated,
+              `${rollingPlayer.name} zar attı: 🎲 ${diceData.dice[0]} - ${diceData.dice[1]} (Toplam: ${diceData.total})`,
+              'action'
+            );
+          }
+          return updated;
+        });
+
+        // Run smooth client-side local stepping animation on Guest
+        runLocalStepAnimation(diceData.playerId, diceData.total, () => {
+          if (pendingRemoteStateRef.current) {
+            const next = pendingRemoteStateRef.current;
+            pendingRemoteStateRef.current = null;
+            setGameState(next);
+            debouncedSaveGameState(next);
+          }
+        });
+      },
       isMeHost
     );
 
@@ -763,10 +879,7 @@ export const App: React.FC = () => {
 
       if (next.roomId && (isHost || isInitialRoomCreation || allowNonHost)) {
         syncRoomState(next.roomId, next);
-        try {
-          sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(next));
-          localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(next));
-        } catch (e) {}
+        debouncedSaveGameState(next);
       }
       return next;
     });
@@ -1185,10 +1298,7 @@ export const App: React.FC = () => {
 
         setGameState(freshState);
         syncRoomState(finalRoom, freshState);
-        try {
-          sessionStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(freshState));
-          localStorage.setItem(SESSION_GAME_STATE_KEY, JSON.stringify(freshState));
-        } catch (e) {}
+        debouncedSaveGameState(freshState);
       } else {
         // Joiner sets local roomId and sends JOIN_REQUEST + REQUEST_SYNC to Host
         setGameState((prev) => ({
@@ -1450,14 +1560,31 @@ export const App: React.FC = () => {
       }
     }
 
-    // Start Step-by-Step Movement and broadcast each step live to all devices
-    setIsMoving(true);
-    updateAndBroadcastGameState((prev) => {
+    // Start Step-by-Step Movement: broadcast 1 lightweight DICE_ROLLED event and animate locally
+    const startPos = currentPlayer.position;
+    const targetPos = (startPos + diceTotal) % 38;
+    const passedGo = targetPos < startPos;
+    const nextStreak = isDouble ? (liveState.doublesCount || 0) + 1 : 0;
+
+    // 1. Broadcast instant lightweight DICE_ROLLED event to all peers (Guest, Spectators)
+    syncManager.sendDiceRolled(
+      liveState.roomId || '',
+      currentPlayer.id,
+      dice,
+      diceTotal,
+      isDouble,
+      nextStreak,
+      startPos,
+      targetPos,
+      passedGo
+    );
+
+    // 2. Set local dice state on Host
+    setGameState((prev) => {
       const updated = JSON.parse(JSON.stringify(prev)) as GameState;
       updated.dice = dice;
       updated.diceRolled = true;
       if (isDouble) {
-        const nextStreak = (prev.doublesCount || 0) + 1;
         updated.doublesCount = nextStreak;
         addLog(updated, `🎲 ${currentPlayer.name} çift attı: 🎲 ${dice[0]} - ${dice[1]}! İlerledikten sonra bir kez daha zar atacak! (${nextStreak}/3)`, 'success');
       } else {
@@ -1467,27 +1594,14 @@ export const App: React.FC = () => {
       return updated;
     });
 
-    let stepCount = 0;
-    const interval = setInterval(() => {
-      stepCount++;
-      soundManager.playStep();
+    // 3. Run smooth local step animation on Host
+    runLocalStepAnimation(currentPlayer.id, diceTotal, () => {
       updateAndBroadcastGameState((prev) => {
-        const { state } = advancePlayerStep(prev, currentPlayer.id);
-        return state;
+        const landingState = finalizePlayerLanding(prev, currentPlayer.id);
+        landingState.turnStartedAt = Date.now(); // Fresh 60s timer for property decision
+        return landingState;
       });
-
-      if (stepCount >= diceTotal) {
-        clearInterval(interval);
-        setTimeout(() => {
-          updateAndBroadcastGameState((prev) => {
-            const landingState = finalizePlayerLanding(prev, currentPlayer.id);
-            landingState.turnStartedAt = Date.now(); // Fresh 60s timer for property decision
-            return landingState;
-          });
-          setIsMoving(false);
-        }, 220);
-      }
-    }, 200);
+    });
   };
 
   // End Turn Action

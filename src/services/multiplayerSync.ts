@@ -13,6 +13,19 @@ const BROKER_URLS = [
 
 export type SyncMessage =
   | { type: 'STATE_SYNC'; senderId: string; roomId: string; version: number; state: GameState }
+  | {
+      type: 'DICE_ROLLED';
+      senderId: string;
+      roomId: string;
+      playerId: string;
+      dice: [number, number];
+      total: number;
+      isDouble: boolean;
+      doublesStreak: number;
+      startPosition: number;
+      targetPosition: number;
+      passedGo: boolean;
+    }
   | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; player: Player }
   | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; playerId: string }
   | { type: 'HOST_MIGRATED'; senderId: string; roomId: string; newHostPlayerId: string }
@@ -487,6 +500,36 @@ class MultiplayerSyncManager {
   }
 
   /**
+   * Broadcast real-time lightweight dice roll event to all room participants
+   */
+  public sendDiceRolled(
+    roomId: string,
+    playerId: string,
+    dice: [number, number],
+    total: number,
+    isDouble: boolean,
+    doublesStreak: number,
+    startPosition: number,
+    targetPosition: number,
+    passedGo: boolean
+  ): void {
+    const msg: SyncMessage = {
+      type: 'DICE_ROLLED',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      playerId,
+      dice,
+      total,
+      isDouble,
+      doublesStreak,
+      startPosition,
+      targetPosition,
+      passedGo
+    };
+    this.send(msg);
+  }
+
+  /**
    * Send authoritative game action request to host
    */
   public sendGameAction(roomId: string, playerId: string, actionType: string, payload?: any): string {
@@ -536,15 +579,15 @@ class MultiplayerSyncManager {
       } catch (e) {}
     }
 
-    // 3. MQTT WebSocket Global Relay
+    // 3. MQTT WebSocket Global Relay (qos: 0 for instant, zero-latency delivery without PUBACK roundtrip)
     if (this.mqttClient && this.isMqttConnected) {
       try {
-        this.mqttClient.publish(topic, payload, { qos: 1 });
+        this.mqttClient.publish(topic, payload, { qos: 0 });
       } catch (err) {
         console.warn('[Sync] MQTT Publish error:', err);
       }
     } else {
-      this.pendingPublishes.push({ topic, payload, retain: false, qos: 1 });
+      this.pendingPublishes.push({ topic, payload, retain: false, qos: 0 });
     }
   }
 
@@ -552,7 +595,7 @@ class MultiplayerSyncManager {
     if (this.mqttClient && (this.isMqttConnected || this.mqttClient.reconnecting)) {
       if (this.currentRoomId) {
         const topic = `turkishparadise/rooms/${this.currentRoomId.toLowerCase()}`;
-        this.mqttClient.subscribe(topic, { qos: 1 });
+        this.mqttClient.subscribe(topic, { qos: 0 });
       }
       return;
     }

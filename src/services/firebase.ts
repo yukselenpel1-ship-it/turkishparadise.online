@@ -386,6 +386,17 @@ export async function relayDiceRoll(roomId: string, playerId: string, actionId: 
   }
 }
 
+export interface DiceRolledPayload {
+  playerId: string;
+  dice: [number, number];
+  total: number;
+  isDouble: boolean;
+  doublesStreak: number;
+  startPosition: number;
+  targetPosition: number;
+  passedGo: boolean;
+}
+
 /**
  * Subscribe to real-time room updates across devices worldwide
  */
@@ -397,6 +408,7 @@ export function subscribeToRoom(
   onPlayerLeft?: (playerId: string) => void,
   onHostMigrated?: (newHostPlayerId: string) => void,
   onGameAction?: (playerId: string, actionType: string, payload?: any) => void,
+  onDiceRolled?: (data: DiceRolledPayload) => void,
   isHost = false
 ): () => void {
   const seenActions = new Set<string>();
@@ -415,6 +427,17 @@ export function subscribeToRoom(
     (msg) => {
       if (msg.type === 'STATE_SYNC' && msg.state) {
         onUpdate(msg.state);
+      } else if (msg.type === 'DICE_ROLLED' && onDiceRolled) {
+        onDiceRolled({
+          playerId: msg.playerId,
+          dice: msg.dice,
+          total: msg.total,
+          isDouble: msg.isDouble,
+          doublesStreak: msg.doublesStreak,
+          startPosition: msg.startPosition,
+          targetPosition: msg.targetPosition,
+          passedGo: msg.passedGo
+        });
       } else if (msg.type === 'JOIN_REQUEST' && msg.player && onJoinRequest) {
         onJoinRequest(msg.player);
       } else if (msg.type === 'REQUEST_SYNC' && onRequestSync) {
