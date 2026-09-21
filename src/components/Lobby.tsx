@@ -1303,12 +1303,12 @@ export const Lobby: React.FC<LobbyProps> = ({
       </main>
 
       {/* 3. Footer */}
-      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-semibold text-slate-500 relative z-20">
+      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 pt-8 pb-12 sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:text-xs font-semibold text-slate-500 relative z-20 mt-auto text-center sm:text-left">
         <span>© 2026 Turkish Paradise - {language === 'en' ? 'All Rights Reserved. Turkey-Themed Web Board Game.' : 'Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.'}</span>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setActiveModal('contact')}
-            className="hover:text-amber-400 text-slate-400 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+            className="hover:text-amber-400 text-slate-400 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 px-3.5 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
           >
             <Mail className="w-3.5 h-3.5 text-amber-400" />
             <span>{t('contact')}: <span className="font-mono text-amber-300/90">turkishparadisegame@gmail.com</span></span>

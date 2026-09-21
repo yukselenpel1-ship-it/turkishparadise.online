@@ -427,10 +427,10 @@ export const translations: Record<Language, TranslationDictionary> = {
 
     // Profile & Social Modal
     profileTitle: 'Kullanıcı Profili & İstatistikler',
-    tabStats: 'İstatistikler',
+    tabStats: 'İstatistik',
     tabFriends: 'Arkadaşlar',
     tabRequests: 'İstekler',
-    tabAddFriend: 'Arkadaş Ekle',
+    tabAddFriend: 'Ekle',
     friendCodeLabel: 'Özel Arkadaş Kodunuz',
     copyFriendCode: 'Kodu Kopyala',
     gamesWonStat: 'Kazanılan Maç',
@@ -668,10 +668,10 @@ export const translations: Record<Language, TranslationDictionary> = {
 
     // Profile & Social Modal
     profileTitle: 'User Profile & Statistics',
-    tabStats: 'Statistics',
+    tabStats: 'Stats',
     tabFriends: 'Friends',
     tabRequests: 'Requests',
-    tabAddFriend: 'Add Friend',
+    tabAddFriend: 'Add',
     friendCodeLabel: 'Your Friend Code',
     copyFriendCode: 'Copy Code',
     gamesWonStat: 'Games Won',

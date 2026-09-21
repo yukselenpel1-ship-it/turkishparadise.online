@@ -295,21 +295,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
         </div>
 
-        {/* 2. Top Tab Navigation: 4 Accessible Tabs */}
-        <div className="flex items-center gap-1 p-1 bg-slate-900/90 rounded-2xl border border-slate-800 overflow-x-auto no-scrollbar shrink-0">
+        {/* 2. Top Tab Navigation: 4 Clean Responsive Grid Tabs */}
+        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-900/90 rounded-2xl border border-slate-800 shrink-0 select-none">
           <button
             onClick={() => {
               setActiveTab('stats');
               setStatusMessage(null);
             }}
-            className={`flex-1 min-w-[70px] flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl font-bold text-[11px] sm:text-xs transition cursor-pointer whitespace-nowrap ${
+            className={`w-full flex items-center justify-center gap-1 py-1.5 sm:py-2 px-1 rounded-xl font-bold text-[10px] sm:text-xs transition cursor-pointer text-center ${
               activeTab === 'stats'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
             }`}
           >
             <Trophy className="w-3.5 h-3.5 shrink-0" />
-            <span>{t('tabStats')}</span>
+            <span className="truncate">{t('tabStats')}</span>
           </button>
 
           <button
@@ -317,14 +317,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               setActiveTab('friends');
               setStatusMessage(null);
             }}
-            className={`flex-1 min-w-[80px] flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl font-bold text-[11px] sm:text-xs transition cursor-pointer whitespace-nowrap ${
+            className={`w-full flex items-center justify-center gap-1 py-1.5 sm:py-2 px-1 rounded-xl font-bold text-[10px] sm:text-xs transition cursor-pointer text-center ${
               activeTab === 'friends'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
             }`}
           >
             <Users className="w-3.5 h-3.5 shrink-0" />
-            <span>{t('tabFriends')} ({friendsList.length})</span>
+            <span className="truncate">{t('tabFriends')}</span>
+            {friendsList.length > 0 && (
+              <span className={`text-[9px] px-1 py-0.2 rounded font-black shrink-0 ${activeTab === 'friends' ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-amber-300'}`}>
+                {friendsList.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -332,18 +337,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               setActiveTab('requests');
               setStatusMessage(null);
             }}
-            className={`flex-1 min-w-[85px] flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl font-bold text-[11px] sm:text-xs transition cursor-pointer whitespace-nowrap relative ${
+            className={`w-full flex items-center justify-center gap-1 py-1.5 sm:py-2 px-1 rounded-xl font-bold text-[10px] sm:text-xs transition cursor-pointer text-center relative ${
               activeTab === 'requests'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
                 : incomingRequests.length > 0
                 ? 'text-amber-300 bg-amber-500/10 border border-amber-500/30'
-                : 'text-slate-400 hover:text-white'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
             }`}
           >
             <Inbox className="w-3.5 h-3.5 shrink-0" />
-            <span>{t('tabRequests')}</span>
+            <span className="truncate">{t('tabRequests')}</span>
             {incomingRequests.length > 0 && (
-              <span className="bg-rose-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.2 animate-bounce shadow">
+              <span className="bg-rose-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.2 animate-bounce shadow shrink-0">
                 {incomingRequests.length}
               </span>
             )}
@@ -354,14 +359,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               setActiveTab('add');
               setStatusMessage(null);
             }}
-            className={`flex-1 min-w-[70px] flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl font-bold text-[11px] sm:text-xs transition cursor-pointer whitespace-nowrap ${
+            className={`w-full flex items-center justify-center gap-1 py-1.5 sm:py-2 px-1 rounded-xl font-bold text-[10px] sm:text-xs transition cursor-pointer text-center ${
               activeTab === 'add'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
             }`}
           >
             <UserPlus className="w-3.5 h-3.5 shrink-0" />
-            <span>{t('tabAddFriend')}</span>
+            <span className="truncate">{t('tabAddFriend')}</span>
           </button>
         </div>
 
