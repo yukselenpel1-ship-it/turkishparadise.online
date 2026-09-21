@@ -1402,7 +1402,7 @@ export function runBotTurn(state: GameState): GameState {
 
     if (tile && tile.price) {
       if (difficulty === 'easy') {
-        shouldBuy = currentBot.money >= tile.price + 100 && Math.random() > 0.4;
+        shouldBuy = currentBot.money >= tile.price + 50 && Math.random() > 0.55;
       } else if (difficulty === 'medium') {
         shouldBuy = currentBot.money >= tile.price + 80;
       } else {

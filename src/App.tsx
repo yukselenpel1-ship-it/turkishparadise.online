@@ -940,8 +940,8 @@ export const App: React.FC = () => {
               // Medium Bot: Smart investor, buys if money >= price, high buy rate
               shouldBuy = currentPlayer.money >= tile.price && (hasSameColor || currentPlayer.money >= tile.price + 30 || Math.random() > 0.1);
             } else {
-              // Easy Bot: Also buys properties actively (~85% buy rate), only passes if very low on cash
-              shouldBuy = currentPlayer.money >= tile.price && (hasSameColor ? Math.random() > 0.05 : (currentPlayer.money >= tile.price + 20 || Math.random() > 0.15));
+              // Easy Bot: Low aggression, casual buyer (~40-45% buy rate, reduced by 50%)
+              shouldBuy = currentPlayer.money >= tile.price + 50 && (hasSameColor ? Math.random() > 0.4 : Math.random() > 0.55);
             }
           }
           if (shouldBuy) {
