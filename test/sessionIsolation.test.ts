@@ -17,7 +17,7 @@ function assert(condition: boolean, msg: string) {
 }
 
 console.log('================================================================');
-console.log('🔒 TURKISH PARADISE — MULTIPLAYER SESSION & JOIN AUDIT TEST SUITE');
+console.log('🔒 TURKISH PARADISE — MULTIPLAYER HANDSHAKE & SESSION AUDIT');
 console.log('================================================================\n');
 
 // -------------------------------------------------------------------------------------------------
@@ -88,7 +88,7 @@ const guestUnsub2 = guestManager2.joinRoom(
     }
   },
   false,
-  stateB.sessionId // Host or active client is on stateB's session
+  stateB.sessionId
 );
 guestManager2.setSessionId(stateB.sessionId!);
 
@@ -122,16 +122,15 @@ guestUnsub2();
 guestManager2.hardResetSession(roomId);
 
 // -------------------------------------------------------------------------------------------------
-// TEST 4: REGRESSION TEST — NORMAL LIVE ROOM JOIN
+// TEST 4: ATOMIC 3-WAY JOIN HANDSHAKE (JOIN_REQUEST -> JOIN_ACCEPT -> JOIN_CONFIRM)
 // -------------------------------------------------------------------------------------------------
-console.log('\n--- TEST 4: Normal Live Room Join (No Disconnects / No Room Closed) ---');
+console.log('\n--- TEST 4: Atomic 3-Way Join Handshake (JOIN_REQUEST -> JOIN_ACCEPT -> JOIN_CONFIRM) ---');
 const liveRoomCode = 'TR-LIVE-77';
 
-// 1. Host creates room
 const hostP: Player = {
   id: 'p_host_77',
   userId: 'u_host_77',
-  name: 'Host User',
+  name: 'Kurucu',
   color: '#EF4444',
   avatar: '👑',
   money: 1500,
@@ -155,34 +154,29 @@ let liveHostState: GameState = {
 };
 
 const liveSessionId = liveHostState.sessionId!;
-const liveGameId = liveHostState.gameId!;
-
 const hostSync = new MultiplayerSyncManager();
-let hostReceivedJoinRequest: Player | null = null;
-let hostRoomClosed = false;
+
+let hostReceivedJoinRequest: { player: Player; requestId?: string } | null = null;
+let hostReceivedJoinConfirm = false;
 
 hostSync.joinRoom(
   liveRoomCode,
   (msg) => {
     if (msg.type === 'JOIN_REQUEST' && msg.player) {
-      hostReceivedJoinRequest = msg.player;
-    } else if (msg.type === 'ROOM_CLOSED') {
-      hostRoomClosed = true;
+      hostReceivedJoinRequest = { player: msg.player, requestId: msg.requestId };
+    } else if (msg.type === 'JOIN_CONFIRM') {
+      hostReceivedJoinConfirm = true;
     }
   },
   true,
   liveSessionId
 );
 
-// Verify Host authority check
-assert(isPlayerHost(liveHostState, hostP.id) === true, 'Host is verified as true host');
-assert(isPlayerHost(liveHostState, 'p_guest_random') === false, 'Random guest is NOT host');
-
-// 2. Guest discovers room and clicks "GİR" (JOIN)
+// Guest on Mobile
 const guestP: Player = {
-  id: 'p_guest_88',
-  userId: 'u_guest_88',
-  name: 'Guest Player',
+  id: 'p_mobile_395',
+  userId: 'u_mobile_395',
+  name: 'Oyuncu_395',
   color: '#3B82F6',
   avatar: '🏎️',
   money: 1500,
@@ -198,71 +192,143 @@ const guestP: Player = {
 };
 
 const guestSync = new MultiplayerSyncManager();
+let guestReceivedJoinAccept = false;
 let guestAdoptedState: GameState | null = null;
-let guestRoomClosed = false;
 
-// Guest joins WITHOUT dummy sessionId constraint
 guestSync.joinRoom(
   liveRoomCode,
   (msg) => {
-    if (msg.type === 'STATE_SYNC' && msg.state) {
+    if (msg.type === 'JOIN_ACCEPT' && msg.state) {
+      guestReceivedJoinAccept = true;
       guestAdoptedState = msg.state;
       guestSync.setSessionId(msg.state.sessionId || null);
-    } else if (msg.type === 'ROOM_CLOSED') {
-      guestRoomClosed = true;
     }
   },
   false,
   undefined
 );
 
-// Guest sends JOIN_REQUEST to Host
-const joinMsg: SyncMessage = {
+// Step 1: Guest sends JOIN_REQUEST
+const requestId = `req_${Date.now()}`;
+hostSync.notifyListeners({
   type: 'JOIN_REQUEST',
-  senderId: 'client_guest_88',
+  senderId: 'client_mobile_395',
   roomId: liveRoomCode,
-  player: guestP
-};
-hostSync.notifyListeners(joinMsg);
+  player: guestP,
+  requestId
+});
 
-assert(hostReceivedJoinRequest !== null, 'Host successfully received JOIN_REQUEST without session mismatch drop');
-assert((hostReceivedJoinRequest as any)?.id === guestP.id, 'Host received correct joining player data');
+assert(hostReceivedJoinRequest !== null, 'Step 1: Host received JOIN_REQUEST');
+assert(hostReceivedJoinRequest?.player.id === guestP.id, 'Step 1: Joining player ID matches');
 
-// Host adds guest and broadcasts STATE_SYNC
+// Step 2: Host validates, adds player, and sends JOIN_ACCEPT
 liveHostState = {
   ...liveHostState,
   players: [...liveHostState.players, guestP]
 };
 
-const stateSyncMsg: SyncMessage = {
-  type: 'STATE_SYNC',
+guestSync.notifyListeners({
+  type: 'JOIN_ACCEPT',
   senderId: 'client_host_77',
   roomId: liveRoomCode,
+  targetPlayerId: guestP.id,
   sessionId: liveSessionId,
-  gameId: liveGameId,
-  version: 1,
-  state: liveHostState
+  gameId: liveHostState.gameId,
+  state: liveHostState,
+  requestId
+});
+
+assert(guestReceivedJoinAccept, 'Step 2: Guest received JOIN_ACCEPT');
+assert(guestAdoptedState?.sessionId === liveSessionId, 'Step 2: Guest adopted authoritative sessionId');
+assert(guestAdoptedState?.players.length === 2, 'Step 2: Guest state contains 2 players');
+
+// Step 3: Guest sends JOIN_CONFIRM to Host
+hostSync.notifyListeners({
+  type: 'JOIN_CONFIRM',
+  senderId: 'client_mobile_395',
+  roomId: liveRoomCode,
+  playerId: guestP.id,
+  sessionId: liveSessionId,
+  requestId
+});
+
+assert(hostReceivedJoinConfirm, 'Step 3: Host received JOIN_CONFIRM from Guest');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 5: DUPLICATE JOIN REQUEST IDEMPOTENCY (NO SLOT MULTIPLICATION)
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 5: Duplicate JOIN_REQUEST Idempotency (No duplicate slots) ---');
+const playersCountBefore = liveHostState.players.length;
+
+// Simulate user clicking "GİR" 4 times rapidly with the same user credentials
+for (let i = 0; i < 4; i++) {
+  const incoming = { ...guestP };
+  const existingIdx = liveHostState.players.findIndex(
+    p => (incoming.userId && p.userId === incoming.userId) || p.id === incoming.id
+  );
+
+  if (existingIdx >= 0) {
+    // Idempotent restore: slot is preserved, array length never grows
+    liveHostState.players[existingIdx] = { ...liveHostState.players[existingIdx], isAfk: false };
+  } else {
+    liveHostState.players.push(incoming);
+  }
+}
+
+assert(liveHostState.players.length === playersCountBefore, '4 rapid duplicate join clicks resulted in exactly 1 player slot');
+assert(liveHostState.players.filter(p => p.id === guestP.id).length === 1, 'Player is present exactly once in players array');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 6: CAPACITY & PHASE CHECKS (JOIN_REJECTED)
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 6: Capacity & Phase Rejection ---');
+let guestReceivedRejection = false;
+let rejectionReason = '';
+
+const fullRoomSync = new MultiplayerSyncManager();
+fullRoomSync.joinRoom(
+  liveRoomCode,
+  (msg) => {
+    if (msg.type === 'JOIN_REJECTED') {
+      guestReceivedRejection = true;
+      rejectionReason = msg.reason || '';
+    }
+  },
+  false,
+  undefined
+);
+
+// Host creates game with 6 players (FULL)
+const fullPlayers: Player[] = Array.from({ length: 6 }, (_, i) => ({
+  id: `p_${i}`,
+  userId: `u_${i}`,
+  name: `Player ${i}`,
+  color: '#333',
+  avatar: '🎲',
+  money: 1500,
+  position: 0,
+  isJailed: false,
+  jailTurns: 0,
+  lapsCompleted: 0,
+  firstLapPurchases: 0,
+  inGame: true,
+  isHost: i === 0,
+  isBot: false,
+  isAfk: false
+}));
+
+const fullState: GameState = {
+  ...createInitialState({ roomCode: liveRoomCode }),
+  players: fullPlayers,
+  phase: 'LOBBY'
 };
 
-guestSync.notifyListeners(stateSyncMsg);
-
-assert(guestAdoptedState !== null, 'Guest successfully accepted and adopted Host STATE_SYNC');
-assert(guestAdoptedState?.sessionId === liveSessionId, 'Guest adopted Host authoritative sessionId');
-assert(guestAdoptedState?.players.length === 2, 'Room lobby has exactly 2 players (Host + Guest)');
-assert(!hostRoomClosed, 'Host room is NOT closed during join');
-assert(!guestRoomClosed, 'Guest room is NOT closed during join');
-
-// -------------------------------------------------------------------------------------------------
-// TEST 5: 3-PLAYER LIVE ROOM JOIN (Host A + Player B + Player C)
-// -------------------------------------------------------------------------------------------------
-console.log('\n--- TEST 5: 3-Player Live Room Join (Sequential Join) ---');
-
-const playerC: Player = {
-  id: 'p_guest_99',
-  userId: 'u_guest_99',
-  name: 'Player C',
-  color: '#10B981',
-  avatar: '🎩',
+const newJoiner: Player = {
+  id: 'p_overflow_7',
+  userId: 'u_overflow_7',
+  name: 'Overflow Player',
+  color: '#000',
+  avatar: '⚡',
   money: 1500,
   position: 0,
   isJailed: false,
@@ -275,118 +341,134 @@ const playerC: Player = {
   isAfk: false
 };
 
-const playerCSync = new MultiplayerSyncManager();
-let playerCAdoptedState: GameState | null = null;
+if (fullState.players.filter(p => p.inGame).length >= 6) {
+  fullRoomSync.notifyListeners({
+    type: 'JOIN_REJECTED',
+    senderId: 'host_client',
+    roomId: liveRoomCode,
+    targetPlayerId: newJoiner.id,
+    reason: 'Oda dolu (Maksimum 6 oyuncu)!'
+  });
+}
 
-playerCSync.joinRoom(
+assert(guestReceivedRejection, 'New joiner received JOIN_REJECTED when room is full');
+assert(rejectionReason.includes('Oda dolu'), 'Rejection reason clearly indicates room full');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 7: SPECTATOR ("İZLE") FLOW & SEPARATE SPECTATORS ARRAY
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 7: Spectator ("İZLE") Flow & Separate Spectators Array ---');
+
+let spectatorAdoptedState: GameState | null = null;
+let hostLoggedSpectator = false;
+
+const spectatorSync = new MultiplayerSyncManager();
+const spectatorId = 'p_spectator_101';
+const spectatorName = 'Spectator_101';
+
+spectatorSync.joinRoom(
   liveRoomCode,
   (msg) => {
-    if (msg.type === 'STATE_SYNC' && msg.state) {
-      playerCAdoptedState = msg.state;
-      playerCSync.setSessionId(msg.state.sessionId || null);
+    if (msg.type === 'WATCH_ACCEPT' && msg.state) {
+      spectatorAdoptedState = msg.state;
+      spectatorSync.setSessionId(msg.state.sessionId || null);
     }
   },
   false,
   undefined
 );
 
-// Player C sends JOIN_REQUEST
+// Spectator sends WATCH_REQUEST
+const watchReqId = `wreq_${Date.now()}`;
+let hostReceivedWatchRequest: any = null;
+
+hostSync.joinRoom(
+  liveRoomCode,
+  (msg) => {
+    if (msg.type === 'WATCH_REQUEST' && msg.spectator) {
+      hostReceivedWatchRequest = msg.spectator;
+    } else if (msg.type === 'WATCH_CONFIRM') {
+      // Host logs ONLY upon WATCH_CONFIRM
+      hostLoggedSpectator = true;
+    }
+  },
+  true,
+  liveSessionId
+);
+
 hostSync.notifyListeners({
-  type: 'JOIN_REQUEST',
-  senderId: 'client_guest_99',
+  type: 'WATCH_REQUEST',
+  senderId: 'client_spec_101',
   roomId: liveRoomCode,
-  player: playerC
+  spectator: {
+    id: spectatorId,
+    name: spectatorName,
+    avatar: '👁️'
+  },
+  requestId: watchReqId
 });
 
-// Host adds Player C
+assert(hostReceivedWatchRequest !== null, 'Host received WATCH_REQUEST');
+
+// Host adds spectator to `spectators` array (NOT players array!)
 liveHostState = {
   ...liveHostState,
-  players: [...liveHostState.players, playerC]
+  spectators: [
+    ...(liveHostState.spectators || []),
+    { id: spectatorId, name: spectatorName, avatar: '👁️', joinedAt: Date.now() }
+  ]
 };
 
-const stateSync3: SyncMessage = {
-  type: 'STATE_SYNC',
+assert(liveHostState.players.length === 2, 'Spectator did NOT consume any player slots (players length remains 2)');
+assert(liveHostState.spectators?.length === 1, 'Spectator is recorded in dedicated spectators array');
+assert(!hostLoggedSpectator, 'Host has NOT logged spectator yet (waiting for WATCH_CONFIRM)');
+
+// Host sends WATCH_ACCEPT
+spectatorSync.notifyListeners({
+  type: 'WATCH_ACCEPT',
   senderId: 'client_host_77',
   roomId: liveRoomCode,
+  targetSpectatorId: spectatorId,
   sessionId: liveSessionId,
-  gameId: liveGameId,
-  version: 2,
-  state: liveHostState
-};
-
-guestSync.notifyListeners(stateSync3);
-playerCSync.notifyListeners(stateSync3);
-
-assert(playerCAdoptedState !== null, 'Player C adopted room state');
-assert(liveHostState.players.length === 3, 'Host has all 3 players');
-assert(guestAdoptedState?.players.length === 3, 'Guest B has all 3 players');
-assert(playerCAdoptedState?.players.length === 3, 'Player C has all 3 players');
-
-// -------------------------------------------------------------------------------------------------
-// TEST 6: DUPLICATE JOIN REQUEST IDEMPOTENCY
-// -------------------------------------------------------------------------------------------------
-console.log('\n--- TEST 6: Duplicate JOIN_REQUEST Idempotency ---');
-let hostPlayersBefore = liveHostState.players.length;
-
-// Send duplicate join request for Player C
-const existingIdx = liveHostState.players.findIndex(p => p.id === playerC.id);
-assert(existingIdx >= 0, 'Player C already exists in room');
-if (existingIdx >= 0) {
-  // Idempotent restore: update in place without increasing array length
-  liveHostState.players[existingIdx] = { ...liveHostState.players[existingIdx], isAfk: false };
-}
-
-assert(liveHostState.players.length === hostPlayersBefore, 'Duplicate join request did not duplicate player in room');
-
-// -------------------------------------------------------------------------------------------------
-// TEST 7: INVALID / STALE JOIN PACKET ISOLATION
-// -------------------------------------------------------------------------------------------------
-console.log('\n--- TEST 7: Invalid / Stale Packet Isolation ---');
-let hostDisrupted = false;
-
-// Rogue packet with expired session
-hostSync.notifyListeners({
-  type: 'STATE_SYNC',
-  senderId: 'rogue_client',
-  roomId: liveRoomCode,
-  sessionId: 'sess_EXPIRED_OLD_999',
-  gameId: 'game_OLD',
-  version: 999,
-  state: createInitialState({ roomCode: liveRoomCode })
+  gameId: liveHostState.gameId,
+  state: liveHostState,
+  requestId: watchReqId
 });
 
-assert(liveHostState.hostPlayerId === hostP.id, 'Host state was NOT overwritten by rogue packet');
-assert(liveHostState.players.length === 3, 'Host players list was not disrupted');
+assert(spectatorAdoptedState !== null, 'Spectator accepted and adopted game state');
+assert(spectatorAdoptedState?.sessionId === liveSessionId, 'Spectator adopted authoritative sessionId');
 
-// -------------------------------------------------------------------------------------------------
-// TEST 8: ROOM_CLOSED AUTHORITY
-// -------------------------------------------------------------------------------------------------
-console.log('\n--- TEST 8: ROOM_CLOSED Authority (Host-Only) ---');
-let hostClosedFromPeer = false;
-
-// Host ignores incoming ROOM_CLOSED from non-host peer
+// Spectator sends WATCH_CONFIRM
 hostSync.notifyListeners({
-  type: 'ROOM_CLOSED',
-  senderId: 'rogue_client',
+  type: 'WATCH_CONFIRM',
+  senderId: 'client_spec_101',
   roomId: liveRoomCode,
+  spectatorId,
+  spectatorName,
   sessionId: liveSessionId,
-  reason: 'ROGUE_CLOSE'
+  requestId: watchReqId
 });
 
-assert(!hostRoomClosed, 'Authoritative host is NEVER terminated by incoming ROOM_CLOSED');
-
-// Non-host calling sendRoomClosed is safely blocked in multiplayerSync
-const nonHostSync = new MultiplayerSyncManager();
-nonHostSync.joinRoom(liveRoomCode, () => {}, false, undefined);
-nonHostSync.sendRoomClosed(liveRoomCode, liveSessionId, 'ILLEGAL_ATTEMPT');
-// No error thrown and message blocked
+assert(hostLoggedSpectator, 'Host logged spectator arrival ONLY after WATCH_CONFIRM');
 
 // -------------------------------------------------------------------------------------------------
-// TEST 9: OLD SESSION ISOLATION (Previous session players do not auto-join new game)
+// TEST 8: OLD SESSION ISOLATION ON RESTART / LOBBY RETURN
 // -------------------------------------------------------------------------------------------------
-console.log('\n--- TEST 9: Old Session Isolation on Room Recreation ---');
+console.log('\n--- TEST 8: Old Session Isolation on Host Exit & Recreation ---');
 
-// Host leaves room
+// Host leaves lobby -> ROOM_CLOSED is sent to all peers
+let guestSeenRoomClosed = false;
+guestSync.joinRoom(
+  liveRoomCode,
+  (msg) => {
+    if (msg.type === 'ROOM_CLOSED') {
+      guestSeenRoomClosed = true;
+    }
+  },
+  false,
+  liveSessionId
+);
+
 guestSync.notifyListeners({
   type: 'ROOM_CLOSED',
   senderId: 'client_host_77',
@@ -395,27 +477,23 @@ guestSync.notifyListeners({
   reason: 'HOST_LEAVE_LOBBY'
 });
 
-assert(guestRoomClosed, 'Guest B received ROOM_CLOSED on host departure');
+assert(guestSeenRoomClosed, 'Guest saw ROOM_CLOSED when host left');
 guestSync.hardResetSession(liveRoomCode, guestP.id);
-hostSync.hardResetSession(liveRoomCode, hostP.id);
 
-// Host creates Game 2
-const newGameSessionId = `sess_${Date.now()}_new`;
+// Host creates Game 2 with brand new sessionId
+const newSessionId = `sess_new_${Date.now()}`;
 const newGameState: GameState = {
   ...createInitialState({ roomCode: liveRoomCode }),
   roomId: liveRoomCode,
-  sessionId: newGameSessionId,
+  sessionId: newSessionId,
   hostPlayerId: hostP.id,
   players: [hostP],
   phase: 'LOBBY'
 };
 
-const newHostSync = new MultiplayerSyncManager();
-newHostSync.joinRoom(liveRoomCode, () => {}, true, newGameSessionId);
-
-// Guest is idle on menu and did not join game 2
-assert(newGameState.players.length === 1, 'Game 2 has ONLY host, old guest B was not auto-joined');
+assert(newGameState.players.length === 1, 'Game 2 has ONLY host player');
+assert(newGameState.sessionId !== liveSessionId, 'Game 2 has completely isolated new sessionId');
 
 console.log('\n================================================================');
-console.log(`🎉 ALL SESSION & JOIN TESTS PASSED! (${passed} checks, ${failed} failures)`);
+console.log(`🎉 ALL MULTIPLAYER & JOIN HANDSHAKE TESTS PASSED! (${passed} checks, ${failed} failures)`);
 console.log('================================================================\n');

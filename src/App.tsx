@@ -570,9 +570,10 @@ export const App: React.FC = () => {
     const isMeHost = Boolean(myPlayerId && (gameState.hostPlayerId === myPlayerId || gameState.players.find(p => p.id === myPlayerId)?.isHost));
     const activeGeneration = sessionGenerationRef.current;
 
-    const unsubscribe = subscribeToRoom(
-      gameState.roomId,
-      (remoteState) => {
+    const unsubscribe = subscribeToRoom(gameState.roomId, {
+      isHost: isMeHost,
+      sessionId: isMeHost ? gameState.sessionId : undefined,
+      onUpdate: (remoteState) => {
         if (!remoteState || remoteState.roomId !== gameState.roomId) return;
         if (activeGeneration !== sessionGenerationRef.current) return;
 
@@ -636,142 +637,229 @@ export const App: React.FC = () => {
           }
         }
       },
-      (newPlayer) => {
+      onJoinRequest: (newPlayer, requestId) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
-        // Host adds incoming player and broadcasts updated state
-        setGameState((prev) => {
-          const isHost = isPlayerHost(prev, myPlayerId);
-          if (!isHost) return prev;
-          if (newPlayer.id === myPlayerId) return prev;
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        const isHost = isPlayerHost(liveState, liveMyId);
+        if (!isHost) return;
+        if (newPlayer.id === liveMyId || (newPlayer.userId && newPlayer.userId === userAccount?.uid)) return;
 
-          // Check if player is already in room by exact unique playerId
-          const existingIdx = prev.players.findIndex((p) => p.id === newPlayer.id);
+        // Deduplication: Check if player already exists by userId or id
+        const existingIdx = liveState.players.findIndex((p) =>
+          (newPlayer.userId && p.userId === newPlayer.userId) || p.id === newPlayer.id
+        );
 
-          let nextPlayers = [...prev.players];
-          if (existingIdx >= 0) {
-            // Restore returning player, preserving original host status, inGame status, money, position
-            const wasHost = nextPlayers[existingIdx].isHost;
-            const wasInGame = nextPlayers[existingIdx].inGame;
-            nextPlayers[existingIdx] = {
-              ...nextPlayers[existingIdx],
-              inGame: wasInGame,
-              isAfk: false,
-              isBot: false,
-              isHost: wasHost
-            };
-            const updated = { ...prev, players: nextPlayers };
-            addLog(updated, `✨ ${newPlayer.name} tekrar bağlandı!`, 'success');
-
-            console.log('[Multiplayer Join Debug - Reconnect]', {
-              event: 'PLAYER_RECONNECTED',
-              roomId: prev.roomId,
-              hostPlayerId: prev.hostPlayerId,
-              joiningUserId: newPlayer.userId,
-              joiningPlayerId: newPlayer.id,
-              wasInGame,
-              existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar })),
-              playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar }))
-            });
-
-            syncRoomState(prev.roomId, updated);
-            return updated;
-          }
-
-          // If game has already started, new joiner enters strictly as a spectator
-          const isOngoingGame = prev.phase === 'PLAYING' || prev.phase === 'ENDED';
-          const isSpectator = isOngoingGame;
-
-          if (!isSpectator && prev.players.filter(p => p.inGame).length >= 6) return prev;
-          if (prev.players.length >= 16) return prev;
-
-          // Auto-resolve color conflict: pick guaranteed free color without affecting existing players
-          const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
-          const takenColors = prev.players.map((p) => p.color);
-          let assignedColor = newPlayer.color;
-          if (!assignedColor || takenColors.includes(assignedColor)) {
-            const freeColor = allColors.find((c) => !takenColors.includes(c));
-            assignedColor = freeColor || `hsl(${Math.floor(Math.random() * 360)}, 85%, 60%)`;
-          }
-
-          // Auto-resolve avatar conflict: pick guaranteed free avatar without affecting existing players
-          const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
-          const takenAvatars = prev.players.map((p) => p.avatar);
-          let assignedAvatar = newPlayer.avatar;
-          if (!assignedAvatar || takenAvatars.includes(assignedAvatar)) {
-            const freeAvatar = allAvatars.find((a) => !takenAvatars.includes(a));
-            assignedAvatar = freeAvatar || '🎲';
-          }
-
-          const startMoney = isSpectator ? 0 : (prev.settings?.startingMoney || 1500);
-          const playerToAdd: Player = {
-            ...newPlayer,
-            color: assignedColor,
-            avatar: assignedAvatar,
-            money: startMoney,
-            position: 0,
-            isJailed: false,
-            jailTurns: 0,
-            lapsCompleted: 0,
-            firstLapPurchases: 0,
-            inGame: !isSpectator, // Spectators are NEVER inGame
-            isHost: false, // New joiner is NEVER host when joining existing room
-            isAfk: false,
-            isBot: false
+        if (existingIdx >= 0) {
+          // Idempotent restore: reconnect player in their existing slot
+          const existingPlayer = liveState.players[existingIdx];
+          const updatedPlayers = [...liveState.players];
+          updatedPlayers[existingIdx] = {
+            ...existingPlayer,
+            isAfk: false
           };
-
           const updated: GameState = {
-            ...prev,
-            hostPlayerId: prev.hostPlayerId || myPlayerId || undefined, // Strictly preserve hostPlayerId
-            players: [...prev.players, playerToAdd]
+            ...liveState,
+            players: updatedPlayers
           };
-          
-          if (isSpectator) {
-            addLog(updated, `👁️ ${playerToAdd.name} oyunu izlemeye başladı! (${prev.roomId})`, 'info');
-          } else {
-            addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${prev.roomId})`, 'success');
-          }
+          setGameState(updated);
+          addLog(updated, `✨ ${existingPlayer.name} tekrar bağlandı!`, 'success');
+          syncRoomState(liveState.roomId || '', updated);
+          syncManager.sendJoinAccept(liveState.roomId || '', newPlayer.id, updated, requestId);
+          return;
+        }
 
-          console.log('[Multiplayer Join Debug - New Player]', {
-            event: isSpectator ? 'NEW_SPECTATOR_JOINED' : 'NEW_PLAYER_JOINED',
-            roomId: prev.roomId,
-            hostPlayerId: updated.hostPlayerId,
-            isSpectator,
-            joiningUserId: newPlayer.userId,
-            joiningPlayerId: newPlayer.id,
-            existingPlayers: prev.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar })),
-            playersAfterJoin: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, inGame: p.inGame, color: p.color, avatar: p.avatar }))
+        // Capacity & Phase Checks
+        if (liveState.phase !== 'LOBBY') {
+          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oyun zaten başladı! İzleyici olarak katılabilirsiniz.', requestId);
+          return;
+        }
+        const activeCount = liveState.players.filter(p => p.inGame).length;
+        if (activeCount >= 6) {
+          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda dolu (Maksimum 6 oyuncu)!', requestId);
+          return;
+        }
+        if (liveState.players.length >= 16) {
+          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda kapasitesi dolu!', requestId);
+          return;
+        }
+
+        // Auto-resolve color conflict
+        const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
+        const takenColors = liveState.players.map((p) => p.color);
+        let assignedColor = newPlayer.color;
+        if (!assignedColor || takenColors.includes(assignedColor)) {
+          const freeColor = allColors.find((c) => !takenColors.includes(c));
+          assignedColor = freeColor || `hsl(${Math.floor(Math.random() * 360)}, 85%, 60%)`;
+        }
+
+        // Auto-resolve avatar conflict
+        const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
+        const takenAvatars = liveState.players.map((p) => p.avatar);
+        let assignedAvatar = newPlayer.avatar;
+        if (!assignedAvatar || takenAvatars.includes(assignedAvatar)) {
+          const freeAvatar = allAvatars.find((a) => !takenAvatars.includes(a));
+          assignedAvatar = freeAvatar || '🎲';
+        }
+
+        const startMoney = liveState.settings?.startingMoney || 1500;
+        const playerToAdd: Player = {
+          ...newPlayer,
+          color: assignedColor,
+          avatar: assignedAvatar,
+          money: startMoney,
+          position: 0,
+          isJailed: false,
+          jailTurns: 0,
+          lapsCompleted: 0,
+          firstLapPurchases: 0,
+          inGame: true,
+          isHost: false,
+          isAfk: false,
+          isBot: false
+        };
+
+        const updated: GameState = {
+          ...liveState,
+          hostPlayerId: liveState.hostPlayerId || liveMyId || undefined,
+          players: [...liveState.players, playerToAdd]
+        };
+
+        setGameState(updated);
+        addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${liveState.roomId})`, 'success');
+        syncRoomState(liveState.roomId || '', updated);
+        syncManager.sendJoinAccept(liveState.roomId || '', newPlayer.id, updated, requestId);
+      },
+      onJoinAccept: (msg) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        const liveMyId = myPlayerIdRef.current;
+        const currentUid = userAccount?.uid || getPersistentGuestId();
+        const isTargetMe = msg.targetPlayerId === liveMyId || msg.targetPlayerId?.includes(currentUid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
+        if (!isTargetMe || !msg.state) return;
+
+        const remoteState = msg.state as GameState;
+        if (remoteState.sessionId) {
+          syncManager.setSessionId(remoteState.sessionId);
+        }
+        setGameState(remoteState);
+        debouncedSaveGameState(remoteState);
+
+        if (liveMyId && remoteState.roomId) {
+          syncManager.sendJoinConfirm(remoteState.roomId, liveMyId, remoteState.sessionId, msg.requestId);
+        }
+      },
+      onJoinConfirm: (requestId, playerId) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        if (!isPlayerHost(liveState, liveMyId)) return;
+
+        const p = liveState.players.find(x => x.id === playerId);
+        if (p && p.isAfk) {
+          const updated = {
+            ...liveState,
+            players: liveState.players.map(x => x.id === playerId ? { ...x, isAfk: false } : x)
+          };
+          setGameState(updated);
+          syncRoomState(liveState.roomId || '', updated);
+        }
+      },
+      onJoinRejected: (reason) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        alert(`Odaya katılınamadı: ${reason || 'Oda kurucusu katılımı reddetti.'}`);
+        terminateGameSession('JOIN_REJECTED', false);
+      },
+      onWatchRequest: (spectator, requestId) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        if (!isPlayerHost(liveState, liveMyId)) return;
+
+        const existingSpectators = liveState.spectators || [];
+        let nextSpectators = [...existingSpectators];
+        if (!nextSpectators.some(s => s.id === spectator.id)) {
+          nextSpectators.push({
+            id: spectator.id,
+            name: spectator.name || 'İzleyici',
+            avatar: spectator.avatar || '👁️',
+            joinedAt: Date.now()
           });
+        }
 
-          syncRoomState(prev.roomId, updated);
-          return updated;
-        });
-      },
-      () => {
-        // Reply with current state when a peer requests sync
-        setGameState((prev) => {
-          if (prev.roomId && prev.players.length > 0) {
-            syncRoomState(prev.roomId, prev);
-          }
-          return prev;
-        });
-      },
-      (leavingPlayerId) => {
-        // Handle player leaving/disconnecting
-        setGameState((prev) => {
-          const isMeHost = isPlayerHost(prev, myPlayerId);
+        const updated: GameState = {
+          ...liveState,
+          spectators: nextSpectators
+        };
 
-          if (isMeHost) {
+        setGameState(updated);
+        syncRoomState(liveState.roomId || '', updated);
+        syncManager.sendWatchAccept(liveState.roomId || '', spectator.id, updated, requestId);
+      },
+      onWatchAccept: (msg) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        const liveMyId = myPlayerIdRef.current;
+        const currentUid = userAccount?.uid || getPersistentGuestId();
+        const isTargetMe = msg.targetSpectatorId === liveMyId || msg.targetSpectatorId?.includes(currentUid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
+        if (!isTargetMe || !msg.state) return;
+
+        const remoteState = msg.state as GameState;
+        if (remoteState.sessionId) {
+          syncManager.setSessionId(remoteState.sessionId);
+        }
+        setGameState(remoteState);
+        debouncedSaveGameState(remoteState);
+
+        const spectatorName = userAccount?.displayName || 'İzleyici';
+        if (liveMyId && remoteState.roomId) {
+          syncManager.sendWatchConfirm(remoteState.roomId, liveMyId, spectatorName, remoteState.sessionId, msg.requestId);
+        }
+      },
+      onWatchConfirm: (requestId, spectatorId) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        if (!isPlayerHost(liveState, liveMyId)) return;
+
+        const spectator = liveState.spectators?.find(s => s.id === spectatorId);
+        const name = spectator?.name || 'Bir izleyici';
+        const updated = { ...liveState };
+        addLog(updated, `👁️ ${name} oyunu izlemeye başladı! (${liveState.roomId})`, 'info');
+        setGameState(updated);
+        syncRoomState(liveState.roomId || '', updated);
+      },
+      onRequestSync: () => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        const liveState = gameStateRef.current;
+        if (liveState.roomId && liveState.players.length > 0) {
+          syncRoomState(liveState.roomId, liveState);
+        }
+      },
+      onPlayerLeft: (leavingPlayerId) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        setGameState((prev) => {
+          const isMe = isPlayerHost(prev, myPlayerId);
+
+          if (isMe) {
             // I AM THE HOST: A guest player is leaving
-            if (leavingPlayerId === myPlayerId) return prev; // handled locally
+            if (leavingPlayerId === myPlayerId) return prev;
 
             const leavingPlayer = prev.players.find((p) => p.id === leavingPlayerId);
-            if (!leavingPlayer) return prev;
+            if (!leavingPlayer) {
+              // Check if spectator left
+              if (prev.spectators?.some(s => s.id === leavingPlayerId)) {
+                const nextSpectators = prev.spectators.filter(s => s.id !== leavingPlayerId);
+                const updated: GameState = { ...prev, spectators: nextSpectators };
+                syncRoomState(prev.roomId, updated);
+                return updated;
+              }
+              return prev;
+            }
 
             let updated: GameState;
             if (prev.phase === 'LOBBY') {
               updated = {
                 ...prev,
-                hostPlayerId: prev.hostPlayerId || myPlayerId || undefined, // Preserve host
+                hostPlayerId: prev.hostPlayerId || myPlayerId || undefined,
                 players: prev.players.filter((p) => p.id !== leavingPlayerId)
               };
               addLog(updated, `🚪 ${leavingPlayer.name} odadan ayrıldı.`, 'info');
@@ -787,21 +875,12 @@ export const App: React.FC = () => {
               addLog(updated, `🚪 ${leavingPlayer.name} oyundan ayrıldı (AFK moduna geçti).`, 'warning');
             }
 
-            console.log('[Multiplayer Leave Debug]', {
-              event: 'PLAYER_LEFT',
-              roomId: prev.roomId,
-              hostPlayerId: updated.hostPlayerId,
-              leavingPlayerId,
-              playersRemaining: updated.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost }))
-            });
-
             syncRoomState(prev.roomId, updated);
             return updated;
           } else {
             // I AM A GUEST: Check if the HOST left
             const hostId = prev.hostPlayerId || prev.players.find((p) => p.isHost)?.id || prev.players[0]?.id;
             if (hostId && hostId === leavingPlayerId) {
-              // Host actually left! Perform Host Migration to next connected human player
               const remainingHumans = prev.players.filter((p) => p.id !== leavingPlayerId && !p.isBot);
               const nextHost = remainingHumans[0];
 
@@ -830,7 +909,6 @@ export const App: React.FC = () => {
               return updated;
             }
 
-            // Another guest left; remove from local view if in lobby
             if (prev.phase === 'LOBBY') {
               return {
                 ...prev,
@@ -841,8 +919,8 @@ export const App: React.FC = () => {
           }
         });
       },
-      (newHostPlayerId) => {
-        // Handle host migrated event
+      onHostMigrated: (newHostPlayerId) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
         setGameState((prev) => {
           const updatedPlayers = prev.players.map((p) => ({
             ...p,
@@ -858,8 +936,8 @@ export const App: React.FC = () => {
           return updated;
         });
       },
-      (senderPlayerId, actionType, payload) => {
-        // Handle incoming game action from non-host client on authoritative Host
+      onGameAction: (senderPlayerId, actionType, payload) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
         const liveState = gameStateRef.current;
         const liveMyId = myPlayerIdRef.current;
         const isMeHost = isPlayerHost(liveState, liveMyId);
@@ -868,24 +946,14 @@ export const App: React.FC = () => {
         // Security / spectator check: Sender MUST exist, be active inGame, and not be a spectator!
         const sender = liveState.players.find((p) => p.id === senderPlayerId);
         if (!sender || !sender.inGame) {
-          console.warn('[Host onGameAction] Rejected action from spectator/inactive player:', senderPlayerId, actionType, {
-            senderPlayerId,
-            currentPlayers: liveState.players.map(p => ({ id: p.id, name: p.name, inGame: p.inGame }))
-          });
+          console.warn('[Host onGameAction] Rejected action from spectator/inactive player:', senderPlayerId, actionType);
           return;
         }
 
         const currentTurnPlayer = liveState.players[liveState.currentTurnIndex];
 
         if (actionType === 'ROLL_DICE') {
-          if (currentTurnPlayer?.id !== senderPlayerId) {
-            console.warn('[Host onGameAction] Rejected ROLL_DICE: Not sender turn', {
-              senderPlayerId,
-              currentTurnPlayerId: currentTurnPlayer?.id,
-              currentTurnPlayerName: currentTurnPlayer?.name
-            });
-            return;
-          }
+          if (currentTurnPlayer?.id !== senderPlayerId) return;
           if (!isMovingRef.current && !liveState.diceRolled) {
             handleRollDiceAction();
           }
@@ -932,7 +1000,6 @@ export const App: React.FC = () => {
         ) {
           handleToggleMortgageAction(payload.tileId, senderPlayerId);
         } else if (actionType === 'BANKRUPTCY') {
-          // A player can only declare their own bankruptcy
           handleDeclareBankruptcyAction(senderPlayerId);
         } else if (actionType === 'CONFIRM_CHANCE') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
@@ -965,20 +1032,18 @@ export const App: React.FC = () => {
           handleSendMessageAction(payload.text, senderPlayerId);
         }
       },
-      (diceData) => {
-        // Handle incoming DICE_ROLLED event on non-host peers
+      onDiceRolled: (diceData) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
         const liveMyId = myPlayerIdRef.current;
         const liveState = gameStateRef.current;
         const isMeHost = isPlayerHost(liveState, liveMyId);
-        if (isMeHost) return; // Host already initiated animation locally
+        if (isMeHost) return;
 
         const rollingPlayer = liveState.players.find((p) => p.id === diceData.playerId);
         if (!rollingPlayer) return;
 
-        // Play dice roll sound
         soundManager.playDiceRoll();
 
-        // Update local dice and log
         setGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           updated.dice = diceData.dice;
@@ -1000,7 +1065,6 @@ export const App: React.FC = () => {
           return updated;
         });
 
-        // Run smooth client-side local stepping animation on Guest
         runLocalStepAnimation(diceData.playerId, diceData.total, () => {
           if (pendingRemoteStateRef.current) {
             const next = pendingRemoteStateRef.current;
@@ -1010,9 +1074,7 @@ export const App: React.FC = () => {
           }
         });
       },
-      isMeHost,
-      isMeHost ? gameState.sessionId : undefined,
-      (reason) => {
+      onRoomClosed: (reason) => {
         const liveState = gameStateRef.current;
         const liveMyId = myPlayerIdRef.current;
         const isCurrentHost = Boolean(liveMyId && (liveState.hostPlayerId === liveMyId || liveState.players.find(p => p.id === liveMyId)?.isHost));
@@ -1021,7 +1083,7 @@ export const App: React.FC = () => {
         console.log('[Multiplayer] Received ROOM_CLOSED from host:', reason);
         terminateGameSession('ROOM_CLOSED', false);
       }
-    );
+    });
 
     return () => {
       unsubscribe();
@@ -1410,22 +1472,22 @@ export const App: React.FC = () => {
     setUserAccount(null);
   };
 
-  // Join Game as Player
+  // Join Game as Player or Spectator
   const handleJoin = (
     name: string,
     avatar: string,
     color?: string,
     isOnline = true,
     targetRoomCode?: string,
-    isCreating = false
+    isCreating = false,
+    isSpectator = false
   ) => {
     try {
       const finalRoom = (targetRoomCode || gameState.roomId || gameState.settings?.roomCode || `TR-${Math.floor(1000 + Math.random() * 9000)}`).trim().toUpperCase();
       const currentUserId = userAccount?.uid || getPersistentGuestId();
-      // Unique in-room playerId generated per join session
+      // Stable in-room playerId generated deterministically per user
       const cleanUid = currentUserId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
-      const randomSuffix = Math.random().toString(36).substring(2, 7);
-      const newPlayerId = `p_${cleanUid}_${randomSuffix}`;
+      const newPlayerId = isCreating ? `p_${cleanUid}_${Math.random().toString(36).substring(2, 7)}` : `p_${cleanUid}`;
       const startMoney = gameState.settings?.startingMoney || 1500;
       
       const isCreatingRoom = Boolean(isCreating);
@@ -1450,7 +1512,7 @@ export const App: React.FC = () => {
         jailTurns: 0,
         lapsCompleted: 0,
         firstLapPurchases: 0,
-        inGame: true,
+        inGame: !isSpectator,
         isBot: false,
         isHost: isCreatingRoom
       };
@@ -1489,7 +1551,7 @@ export const App: React.FC = () => {
         syncRoomState(finalRoom, freshState);
         debouncedSaveGameState(freshState);
       } else {
-        // Joining Guest: DO NOT create a new session!
+        // Joining Guest or Spectator: DO NOT create a new session!
         // Clear dummy local sessionId and hostPlayerId so Guest seamlessly adopts Host's state on STATE_SYNC
         setGameState((prev) => ({
           ...prev,
@@ -1499,11 +1561,19 @@ export const App: React.FC = () => {
           hostPlayerId: undefined,
           isOnlineGame: isOnline,
           settings: { ...prev.settings, roomCode: finalRoom },
-          players: [newPlayer]
+          players: isSpectator ? prev.players : [newPlayer]
         }));
 
-        // Send join request to room host
-        syncManager.sendJoinRequest(finalRoom, newPlayer);
+        if (isSpectator) {
+          syncManager.sendWatchRequest(finalRoom, {
+            id: newPlayerId,
+            name: newPlayer.name,
+            avatar: newPlayer.avatar,
+            userId: currentUserId
+          });
+        } else {
+          syncManager.sendJoinRequest(finalRoom, newPlayer);
+        }
         syncManager.sendRequestSync(finalRoom);
       }
     } catch (err) {

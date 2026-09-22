@@ -28,7 +28,13 @@ export type SyncMessage =
       targetPosition: number;
       passedGo: boolean;
     }
-  | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; sessionId?: string; player: Player }
+  | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; requestId?: string; player: Player }
+  | { type: 'JOIN_ACCEPT'; senderId: string; roomId: string; requestId?: string; targetPlayerId?: string; targetClientId?: string; sessionId?: string; gameId?: string; assignedPlayerId?: string; hostPlayerId?: string; state: GameState }
+  | { type: 'JOIN_CONFIRM'; senderId: string; roomId: string; requestId?: string; playerId: string; sessionId?: string }
+  | { type: 'JOIN_REJECTED'; senderId: string; roomId: string; requestId?: string; targetPlayerId?: string; targetClientId?: string; reason: string }
+  | { type: 'WATCH_REQUEST'; senderId: string; roomId: string; requestId?: string; spectator: { id: string; name: string; avatar: string; userId?: string } }
+  | { type: 'WATCH_ACCEPT'; senderId: string; roomId: string; requestId?: string; targetSpectatorId?: string; targetClientId?: string; sessionId?: string; gameId?: string; state: GameState }
+  | { type: 'WATCH_CONFIRM'; senderId: string; roomId: string; requestId?: string; spectatorId: string; spectatorName?: string; sessionId?: string }
   | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; sessionId?: string; playerId: string }
   | { type: 'HOST_MIGRATED'; senderId: string; roomId: string; sessionId?: string; newHostPlayerId: string }
   | { type: 'REQUEST_SYNC'; senderId: string; roomId: string; sessionId?: string; playerId?: string }
@@ -425,15 +431,131 @@ class MultiplayerSyncManager {
   }
 
   /**
-   * Send player join request
+   * Send player join request (Guest -> Host)
    */
-  public sendJoinRequest(roomId: string, player: Player, sessionId?: string): void {
+  public sendJoinRequest(roomId: string, player: Player, requestId?: string): string {
+    const reqId = requestId || `join_req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const msg: SyncMessage = {
       type: 'JOIN_REQUEST',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
-      sessionId,
+      requestId: reqId,
       player
+    };
+    this.send(msg);
+    return reqId;
+  }
+
+  /**
+   * Send join accept from host with authoritative session data (Host -> Guest)
+   */
+  public sendJoinAccept(
+    roomId: string,
+    targetPlayerId: string,
+    state: GameState,
+    requestId?: string
+  ): void {
+    const msg: SyncMessage = {
+      type: 'JOIN_ACCEPT',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      requestId: requestId || `req_acc_${Date.now()}`,
+      targetPlayerId,
+      assignedPlayerId: targetPlayerId,
+      sessionId: state.sessionId,
+      gameId: state.gameId,
+      hostPlayerId: state.hostPlayerId,
+      state
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Send join confirmation once authoritative state is adopted (Guest -> Host)
+   */
+  public sendJoinConfirm(roomId: string, playerId: string, sessionId?: string, requestId?: string): void {
+    const msg: SyncMessage = {
+      type: 'JOIN_CONFIRM',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      requestId: requestId || `req_conf_${Date.now()}`,
+      playerId,
+      sessionId: sessionId || this.currentSessionId || undefined
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Send join rejection if room full or game in progress (Host -> Guest)
+   */
+  public sendJoinRejected(roomId: string, targetPlayerId: string, reason: string, requestId?: string): void {
+    const msg: SyncMessage = {
+      type: 'JOIN_REJECTED',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      targetPlayerId,
+      targetClientId: targetPlayerId,
+      requestId: requestId || `req_rej_${Date.now()}`,
+      reason
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Send spectator watch request (Spectator -> Host)
+   */
+  public sendWatchRequest(
+    roomId: string,
+    spectator: { id: string; name: string; avatar: string; userId?: string },
+    requestId?: string
+  ): string {
+    const reqId = requestId || `watch_req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const msg: SyncMessage = {
+      type: 'WATCH_REQUEST',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      requestId: reqId,
+      spectator
+    };
+    this.send(msg);
+    return reqId;
+  }
+
+  /**
+   * Send watch accept with authoritative state (Host -> Spectator)
+   */
+  public sendWatchAccept(
+    roomId: string,
+    targetSpectatorId: string,
+    state: GameState,
+    requestId?: string
+  ): void {
+    const msg: SyncMessage = {
+      type: 'WATCH_ACCEPT',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      requestId: requestId || `watch_acc_${Date.now()}`,
+      targetSpectatorId,
+      targetClientId: targetSpectatorId,
+      sessionId: state.sessionId || this.currentSessionId || '',
+      gameId: state.gameId,
+      state
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Send watch confirmation once state stream is hooked up (Spectator -> Host)
+   */
+  public sendWatchConfirm(roomId: string, spectatorId: string, spectatorName?: string, sessionId?: string, requestId?: string): void {
+    const msg: SyncMessage = {
+      type: 'WATCH_CONFIRM',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      requestId: requestId || `watch_conf_${Date.now()}`,
+      spectatorId,
+      spectatorName,
+      sessionId: sessionId || this.currentSessionId || undefined
     };
     this.send(msg);
   }
@@ -791,7 +913,16 @@ class MultiplayerSyncManager {
     if (msg.roomId && msg.roomId.toUpperCase() !== this.currentRoomId.toUpperCase()) return;
 
     // 1. Handshake & joining messages arrive before session agreement; never filter them by sessionId
-    if (msg.type === 'JOIN_REQUEST' || msg.type === 'REQUEST_SYNC') {
+    if (
+      msg.type === 'JOIN_REQUEST' ||
+      msg.type === 'JOIN_ACCEPT' ||
+      msg.type === 'JOIN_CONFIRM' ||
+      msg.type === 'JOIN_REJECTED' ||
+      msg.type === 'WATCH_REQUEST' ||
+      msg.type === 'WATCH_ACCEPT' ||
+      msg.type === 'WATCH_CONFIRM' ||
+      msg.type === 'REQUEST_SYNC'
+    ) {
       this.listeners.forEach((callback) => {
         try {
           callback(msg);

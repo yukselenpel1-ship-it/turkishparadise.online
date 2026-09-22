@@ -242,6 +242,7 @@ export interface GameState {
   networkStatus?: 'connected' | 'connecting' | 'disconnected';
   turnSecondsRemaining?: number;
   turnStartedAt?: number;
+  spectators?: { id: string; name: string; avatar: string; joinedAt?: number }[];
 }
 
 

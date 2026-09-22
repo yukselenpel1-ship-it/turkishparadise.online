@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 interface PublicRoomsListProps {
-  onJoinRoom: (roomId: string) => void;
+  onJoinRoom: (roomId: string, isSpectating?: boolean) => void;
   onBackToMain: () => void;
   onCreateRoom: () => void;
 }
@@ -184,7 +184,7 @@ export const PublicRoomsList: React.FC<PublicRoomsListProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => onJoinRoom(room.roomId)}
+                    onClick={() => onJoinRoom(room.roomId, isPlaying)}
                     className={`py-1.5 px-3 rounded-xl font-black text-xs transition flex items-center gap-1 shadow-md cursor-pointer active:scale-95 ${
                       isPlaying
                         ? 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40'

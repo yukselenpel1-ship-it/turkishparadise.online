@@ -397,13 +397,32 @@ export interface DiceRolledPayload {
   passedGo: boolean;
 }
 
+export interface ExtendedRoomHandlers {
+  onUpdate: (state: GameState) => void;
+  onJoinRequest?: (player: Player, requestId?: string, senderClientId?: string) => void;
+  onJoinAccept?: (msg: any) => void;
+  onJoinConfirm?: (requestId?: string, playerId?: string, sessionId?: string) => void;
+  onJoinRejected?: (reason: string, requestId?: string) => void;
+  onWatchRequest?: (spectator: { id: string; name: string; avatar: string; userId?: string }, requestId?: string, senderClientId?: string) => void;
+  onWatchAccept?: (msg: any) => void;
+  onWatchConfirm?: (requestId?: string, spectatorId?: string, sessionId?: string) => void;
+  onRequestSync?: () => void;
+  onPlayerLeft?: (playerId: string) => void;
+  onHostMigrated?: (newHostPlayerId: string) => void;
+  onGameAction?: (playerId: string, actionType: string, payload?: any) => void;
+  onDiceRolled?: (data: DiceRolledPayload) => void;
+  isHost?: boolean;
+  sessionId?: string;
+  onRoomClosed?: (reason?: string) => void;
+}
+
 /**
  * Subscribe to real-time room updates across devices worldwide
  */
 export function subscribeToRoom(
   roomId: string,
-  onUpdate: (state: GameState) => void,
-  onJoinRequest?: (player: Player) => void,
+  onUpdateOrHandlers: ((state: GameState) => void) | ExtendedRoomHandlers,
+  onJoinRequest?: (player: Player, requestId?: string, senderClientId?: string) => void,
   onRequestSync?: () => void,
   onPlayerLeft?: (playerId: string) => void,
   onHostMigrated?: (newHostPlayerId: string) => void,
@@ -413,6 +432,21 @@ export function subscribeToRoom(
   sessionId?: string,
   onRoomClosed?: (reason?: string) => void
 ): () => void {
+  const handlers: ExtendedRoomHandlers = typeof onUpdateOrHandlers === 'function'
+    ? {
+        onUpdate: onUpdateOrHandlers,
+        onJoinRequest,
+        onRequestSync,
+        onPlayerLeft,
+        onHostMigrated,
+        onGameAction,
+        onDiceRolled,
+        isHost,
+        sessionId,
+        onRoomClosed
+      }
+    : onUpdateOrHandlers;
+
   const seenActions = new Map<string, number>();
   let lastSeenStateVersion = 0;
   const subscribedAt = Date.now();
@@ -427,27 +461,27 @@ export function subscribeToRoom(
         }
       }
     }
-    onGameAction?.(playerId, actionType, payload);
+    handlers.onGameAction?.(playerId, actionType, payload);
   };
   // 1. Global Sync Manager Subscription (WebRTC + MQTT + BroadcastChannel)
   const unsubscribeSyncManager = syncManager.joinRoom(
     roomId,
     (msg) => {
       if (msg.type === 'ROOM_CLOSED') {
-        onRoomClosed?.(msg.reason);
+        handlers.onRoomClosed?.(msg.reason);
         return;
       }
       if (msg.type === 'STATE_SYNC' && msg.state) {
         if (typeof msg.version === 'number') {
-          if (msg.version < lastSeenStateVersion && !isHost) {
+          if (msg.version < lastSeenStateVersion && !handlers.isHost) {
             console.warn('[Sync] Ignored out-of-order stale STATE_SYNC:', { incomingVersion: msg.version, currentVersion: lastSeenStateVersion });
             return;
           }
           lastSeenStateVersion = Math.max(lastSeenStateVersion, msg.version);
         }
-        onUpdate(msg.state);
-      } else if (msg.type === 'DICE_ROLLED' && onDiceRolled) {
-        onDiceRolled({
+        handlers.onUpdate(msg.state);
+      } else if (msg.type === 'DICE_ROLLED' && handlers.onDiceRolled) {
+        handlers.onDiceRolled({
           playerId: msg.playerId,
           dice: msg.dice,
           total: msg.total,
@@ -457,20 +491,32 @@ export function subscribeToRoom(
           targetPosition: msg.targetPosition,
           passedGo: msg.passedGo
         });
-      } else if (msg.type === 'JOIN_REQUEST' && msg.player && onJoinRequest) {
-        onJoinRequest(msg.player);
-      } else if (msg.type === 'REQUEST_SYNC' && onRequestSync) {
-        onRequestSync();
-      } else if (msg.type === 'LEAVE_NOTICE' && msg.playerId && onPlayerLeft) {
-        onPlayerLeft(msg.playerId);
-      } else if (msg.type === 'HOST_MIGRATED' && msg.newHostPlayerId && onHostMigrated) {
-        onHostMigrated(msg.newHostPlayerId);
-      } else if (msg.type === 'GAME_ACTION' && msg.playerId && msg.actionType && onGameAction) {
+      } else if (msg.type === 'JOIN_REQUEST' && msg.player && handlers.onJoinRequest) {
+        handlers.onJoinRequest(msg.player, msg.requestId, msg.senderId);
+      } else if (msg.type === 'JOIN_ACCEPT' && handlers.onJoinAccept) {
+        handlers.onJoinAccept(msg);
+      } else if (msg.type === 'JOIN_CONFIRM' && handlers.onJoinConfirm) {
+        handlers.onJoinConfirm(msg.requestId, msg.playerId, msg.sessionId);
+      } else if (msg.type === 'JOIN_REJECTED' && handlers.onJoinRejected) {
+        handlers.onJoinRejected(msg.reason, msg.requestId);
+      } else if (msg.type === 'WATCH_REQUEST' && msg.spectator && handlers.onWatchRequest) {
+        handlers.onWatchRequest(msg.spectator, msg.requestId, msg.senderId);
+      } else if (msg.type === 'WATCH_ACCEPT' && handlers.onWatchAccept) {
+        handlers.onWatchAccept(msg);
+      } else if (msg.type === 'WATCH_CONFIRM' && handlers.onWatchConfirm) {
+        handlers.onWatchConfirm(msg.requestId, msg.spectatorId, msg.sessionId);
+      } else if (msg.type === 'REQUEST_SYNC' && handlers.onRequestSync) {
+        handlers.onRequestSync();
+      } else if (msg.type === 'LEAVE_NOTICE' && msg.playerId && handlers.onPlayerLeft) {
+        handlers.onPlayerLeft(msg.playerId);
+      } else if (msg.type === 'HOST_MIGRATED' && msg.newHostPlayerId && handlers.onHostMigrated) {
+        handlers.onHostMigrated(msg.newHostPlayerId);
+      } else if (msg.type === 'GAME_ACTION' && msg.playerId && msg.actionType && handlers.onGameAction) {
         receiveAction(msg.playerId, msg.actionType, msg.payload, msg.actionId);
       }
     },
-    isHost,
-    sessionId
+    Boolean(handlers.isHost),
+    handlers.sessionId
   );
 
   // 2. Firebase Realtime DB Listener (if configured)
@@ -482,10 +528,10 @@ export function subscribeToRoom(
       onValue(roomRef, (snapshot) => {
         const val = snapshot.val();
         if (val) {
-          onUpdate(val);
+          handlers.onUpdate(val);
         }
       });
-      if (isHost && onGameAction) {
+      if (handlers.isHost && handlers.onGameAction) {
         diceActionRef = ref(database, `rooms/${roomId}/diceAction`);
         onValue(diceActionRef, (snapshot) => {
           const action = snapshot.val();

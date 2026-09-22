@@ -54,7 +54,7 @@ interface LobbyProps {
   onLogout: () => void;
   onUpdateUserAccount?: (account: UserAccount) => void;
   onUpdateSettings: (newSettings: GameSettings) => void;
-  onJoin: (name: string, avatar: string, color: string, isOnline?: boolean, targetRoomCode?: string, isCreating?: boolean) => void;
+  onJoin: (name: string, avatar: string, color: string, isOnline?: boolean, targetRoomCode?: string, isCreating?: boolean, isSpectator?: boolean) => void;
   onJoinRoom?: (roomId: string) => void;
   onAddBot: (difficulty?: BotDifficulty) => void;
   onRemovePlayer?: (playerId: string) => void;
@@ -904,10 +904,10 @@ export const Lobby: React.FC<LobbyProps> = ({
             ) : mode === 'rooms' ? (
               /* Public / Live Rooms Directory Mode */
               <PublicRoomsList
-                onJoinRoom={(targetRoomCode) => {
+                onJoinRoom={(targetRoomCode, isSpectating) => {
                   const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
                   setRoomCode(targetRoomCode);
-                  onJoin(finalName, selectedAvatar, selectedColor, true, targetRoomCode, false);
+                  onJoin(finalName, selectedAvatar, selectedColor, true, targetRoomCode, false, isSpectating);
                 }}
                 onBackToMain={() => setMode('main')}
                 onCreateRoom={() => setMode('main')}
