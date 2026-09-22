@@ -99,3 +99,18 @@ header img, header svg, .game-header img, .game-header svg {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.8);
 }
+
+/* Site Logo Crisp 44px Rule */
+.site-logo-dice {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+
+  /* bulanıklık oluşturan şeyleri kaldır */
+  filter: none;
+  transform: none;
+  image-rendering: auto;
+}
+

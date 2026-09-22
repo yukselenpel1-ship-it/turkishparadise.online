@@ -33,7 +33,7 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
         <img
           src="/dice-logo.png"
           alt="Turkish Paradise 3D Zar Logo"
-          className="w-full h-full object-contain pointer-events-none drop-shadow-[0_4px_12px_rgba(245,158,11,0.4)]"
+          className="site-logo-dice pointer-events-none"
           loading="eager"
         />
       </div>
