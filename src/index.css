@@ -67,14 +67,19 @@ header img, header svg, .game-header img, .game-header svg {
   image-rendering: crisp-edges;
 }
 
-/* PC-Only Mouse Hover Animation for Logo */
+/* PC-Only Mouse Hover Animation for Dice Logo Icon */
 @media (hover: hover) and (pointer: fine) {
-  .pc-logo-hover {
+  .pc-dice-icon-hover {
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     cursor: pointer;
   }
-  .pc-logo-hover:hover {
-    transform: scale(1.05);
+  .pc-dice-icon-hover:hover,
+  .group:hover .pc-dice-icon-hover {
+    transform: scale(1.08);
+  }
+  .pc-dice-icon-hover img {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
   }
 }
 

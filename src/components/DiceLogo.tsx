@@ -22,10 +22,10 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
 
   return (
     <div
-      className={`inline-flex items-center gap-2 sm:gap-2.5 select-none group shrink-0 pc-logo-hover ${className}`}
+      className={`inline-flex items-center gap-2 sm:gap-2.5 select-none group shrink-0 ${className}`}
     >
-      {/* 3D Dice Logo */}
-      <div className={`relative ${sizeStyles} flex items-center justify-center shrink-0`}>
+      {/* 3D Dice Logo - Only this icon scales slightly on PC mouse hover */}
+      <div className={`relative ${sizeStyles} flex items-center justify-center shrink-0 pc-dice-icon-hover`}>
         {/* Ambient subtle glow */}
         <div className="absolute inset-0 bg-amber-400/15 rounded-full pointer-events-none" />
 
