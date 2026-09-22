@@ -282,7 +282,12 @@ class MultiplayerSyncManager {
           this.subscribedTopics.delete(cleanPattern);
           if (this.mqttClient && this.isMqttConnected) {
             try {
-              this.mqttClient.unsubscribe(cleanPattern);
+              if (
+                cleanPattern !== 'turkishparadise/global/public_rooms' &&
+                cleanPattern !== 'turkishparadise/global/friends'
+              ) {
+                this.mqttClient.unsubscribe(cleanPattern);
+              }
             } catch (e) {}
           }
         }
@@ -335,19 +340,14 @@ class MultiplayerSyncManager {
 
   /**
    * Prepare for joining a room as guest:
-   * 1. Set currentRoomId immediately
-   * 2. Subscribe to the room MQTT topic NOW (before sendHandshake) so JOIN_ACCEPT is not missed
-   * 3. Also register the room topic in subscribedTopics for re-subscribe on reconnect
+   * Sets currentRoomId and subscribes to MQTT room topic IMMEDIATELY,
+   * so JOIN_ACCEPT responses are not missed when they arrive before joinRoom() is called.
    */
-  public prepareForRoom(roomId: string, onMessage?: MessageCallback): void {
+  public prepareForRoom(roomId: string): void {
     const cleanRoomId = roomId.trim().toUpperCase();
     this.currentRoomId = cleanRoomId;
     this.isHost = false;
     this.currentSessionId = null;
-
-    if (onMessage) {
-      this.listeners.add(onMessage);
-    }
 
     // Register room topic immediately so it survives reconnects
     const roomTopic = `turkishparadise/rooms/${cleanRoomId.toLowerCase()}`;
@@ -355,7 +355,7 @@ class MultiplayerSyncManager {
 
     this.ensureMqttConnection();
 
-    // Subscribe to room topic NOW — don't wait for joinRoom() to be called
+    // Subscribe NOW — don't wait for the next 'connect' event
     if (this.mqttClient && this.isMqttConnected) {
       try {
         this.mqttClient.subscribe(roomTopic, { qos: 1 });

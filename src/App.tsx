@@ -173,6 +173,10 @@ export const App: React.FC = () => {
   const sessionGenerationRef = useRef<number>(0);
   const pendingJoinsRef = useRef<Map<string, { player: Player; expiresAt: number; requestId: string }>>(new Map());
   const pendingJoinRequestIdRef = useRef<string | null>(null);
+  const userAccountRef = useRef<UserAccount | null>(userAccount);
+  useEffect(() => {
+    userAccountRef.current = userAccount;
+  }, [userAccount]);
 
   /**
    * Centralized Hard Game Session Termination
@@ -485,7 +489,7 @@ export const App: React.FC = () => {
         const activeRoomId = liveState.roomId || liveState.settings?.roomCode || roomId;
         return {
           roomId: activeRoomId,
-          hostName: hostPlayer?.name || userAccount?.displayName || 'Kurucu',
+          hostName: hostPlayer?.name || userAccountRef.current?.displayName || 'Kurucu',
           hostAvatar: hostPlayer?.avatar || '👑',
           playerCount: liveState.players.length,
           maxPlayers: 6,
@@ -524,8 +528,7 @@ export const App: React.FC = () => {
     gameState.settings?.startingMoney,
     gameState.roomId,
     gameState.settings?.roomCode,
-    myPlayerId,
-    userAccount?.displayName
+    myPlayerId
   ]);
 
   // 3. Keep myPlayerId persisted in sessionStorage/localStorage

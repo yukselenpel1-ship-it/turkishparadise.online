@@ -108,6 +108,121 @@ export function createPublicRoomInfoFromState(state: GameState, isPublic = true)
   };
 }
 
+// Set of active UI callbacks listening to public rooms updates
+const subscribers = new Set<(rooms: PublicRoomInfo[]) => void>();
+
+function emitCleanRooms(): void {
+  const now = Date.now();
+  const activeRooms: PublicRoomInfo[] = [];
+
+  roomsMap.forEach((room, id) => {
+    // Strictly enforce TTL (<= 10s), public status, non-ended phase, and at least 1 player
+    if (
+      now - room.updatedAt <= ROOM_TTL_MS &&
+      room.isPublic &&
+      room.phase !== 'ENDED' &&
+      room.playerCount > 0
+    ) {
+      activeRooms.push(room);
+    } else {
+      roomsMap.delete(id);
+    }
+  });
+
+  // Sort by: LOBBY first, then player count descending, then newest
+  activeRooms.sort((a, b) => {
+    if (a.phase === 'LOBBY' && b.phase !== 'LOBBY') return -1;
+    if (a.phase !== 'LOBBY' && b.phase === 'LOBBY') return 1;
+    if (b.playerCount !== a.playerCount) return b.playerCount - a.playerCount;
+    return b.updatedAt - a.updatedAt;
+  });
+
+  const snapshot = [...activeRooms];
+  subscribers.forEach((cb) => {
+    try {
+      cb(snapshot);
+    } catch (e) {
+      console.warn('[PublicRooms] Subscriber notification error:', e);
+    }
+  });
+}
+
+// 1. Permanent Module-Level Global MQTT Listener (Always active across all tabs & hosts)
+syncManager.subscribeTopic(PUBLIC_ROOMS_GLOBAL_TOPIC, (payload) => {
+  if (!payload || typeof payload !== 'object') return;
+
+  if (payload.type === 'ROOM_ANNOUNCE' && payload.room && payload.room.roomId) {
+    const room = payload.room as PublicRoomInfo;
+    const isFresh = !room.updatedAt || Date.now() - room.updatedAt <= ROOM_TTL_MS;
+
+    if (isFresh && room.isPublic && room.phase !== 'ENDED' && room.playerCount > 0) {
+      roomsMap.set(room.roomId, {
+        ...room,
+        updatedAt: Date.now(),
+      });
+    } else {
+      roomsMap.delete(room.roomId);
+    }
+    emitCleanRooms();
+  } else if ((payload.type === 'PUBLIC_ROOM_REMOVED' || payload.type === 'ROOM_CLOSED') && payload.roomId) {
+    roomsMap.delete(payload.roomId);
+    emitCleanRooms();
+  } else if (payload.type === 'DISCOVERY_PING') {
+    // If this client is an active host of a public room, answer the discovery ping immediately
+    if (activeHostRoomProvider) {
+      try {
+        const myRoom = activeHostRoomProvider();
+        if (
+          myRoom &&
+          myRoom.roomId &&
+          myRoom.isPublic &&
+          myRoom.phase !== 'ENDED' &&
+          myRoom.playerCount > 0
+        ) {
+          publishPublicRoom(myRoom);
+        }
+      } catch (e) {}
+    }
+  }
+});
+
+// 2. Permanent Firebase Database listener if configured (additive merge only)
+if (isFirebaseConfigured && database) {
+  try {
+    const publicRoomsRef = ref(database, 'public_rooms');
+    onValue(publicRoomsRef, (snapshot: any) => {
+      const val = snapshot.val();
+      if (val && typeof val === 'object') {
+        const now = Date.now();
+        Object.values(val).forEach((room: any) => {
+          if (
+            room &&
+            room.roomId &&
+            room.isPublic &&
+            room.phase !== 'ENDED' &&
+            room.playerCount > 0 &&
+            now - (room.updatedAt || 0) <= ROOM_TTL_MS
+          ) {
+            const existing = roomsMap.get(room.roomId);
+            if (!existing || (room.updatedAt && room.updatedAt > existing.updatedAt)) {
+              roomsMap.set(room.roomId, { ...room, updatedAt: room.updatedAt || now });
+            }
+          }
+        });
+        emitCleanRooms();
+      }
+    });
+  } catch (e) {}
+}
+
+// 3. Periodic background cleanup & discovery interval (every 2.5 seconds)
+setInterval(() => {
+  emitCleanRooms();
+  if (subscribers.size > 0) {
+    requestPublicRoomsRefresh();
+  }
+}, 2500);
+
 /**
  * Subscribe to real-time public rooms updates across all platforms (PC, Mobile, Guest, Google)
  */
@@ -117,123 +232,17 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
     localStorage.removeItem('tp_public_rooms_cache');
   } catch (e) {}
 
-  const emitCleanRooms = () => {
-    const now = Date.now();
-    const activeRooms: PublicRoomInfo[] = [];
+  subscribers.add(callback);
 
-    roomsMap.forEach((room, id) => {
-      // Strictly enforce TTL (<= 7s), public status, non-ended phase, and at least 1 player
-      if (
-        now - room.updatedAt <= ROOM_TTL_MS &&
-        room.isPublic &&
-        room.phase !== 'ENDED' &&
-        room.playerCount > 0
-      ) {
-        activeRooms.push(room);
-      } else {
-        roomsMap.delete(id);
-      }
-    });
-
-    // Sort by: LOBBY first, then player count descending, then newest
-    activeRooms.sort((a, b) => {
-      if (a.phase === 'LOBBY' && b.phase !== 'LOBBY') return -1;
-      if (a.phase !== 'LOBBY' && b.phase === 'LOBBY') return 1;
-      if (b.playerCount !== a.playerCount) return b.playerCount - a.playerCount;
-      return b.updatedAt - a.updatedAt;
-    });
-
-    callback([...activeRooms]);
-  };
-
-  // Initial clean emit
+  // Emit current cached rooms immediately
   emitCleanRooms();
 
-  // 1. Global Public Rooms Channel Listener (Instant Ping-Pong & Announcements)
-  const unsubscribeGlobal = syncManager.subscribeTopic(PUBLIC_ROOMS_GLOBAL_TOPIC, (payload) => {
-    if (!payload || typeof payload !== 'object') return;
-
-    if (payload.type === 'ROOM_ANNOUNCE' && payload.room && payload.room.roomId) {
-      const room = payload.room as PublicRoomInfo;
-      const isFresh = !room.updatedAt || Date.now() - room.updatedAt <= ROOM_TTL_MS;
-
-      if (isFresh && room.isPublic && room.phase !== 'ENDED' && room.playerCount > 0) {
-        roomsMap.set(room.roomId, {
-          ...room,
-          updatedAt: Date.now(),
-        });
-      } else {
-        roomsMap.delete(room.roomId);
-      }
-      emitCleanRooms();
-    } else if ((payload.type === 'PUBLIC_ROOM_REMOVED' || payload.type === 'ROOM_CLOSED') && payload.roomId) {
-      roomsMap.delete(payload.roomId);
-      emitCleanRooms();
-    } else if (payload.type === 'DISCOVERY_PING') {
-      // If this client is an active host of a public room, answer the discovery ping immediately
-      if (activeHostRoomProvider) {
-        try {
-          const myRoom = activeHostRoomProvider();
-          if (
-            myRoom &&
-            myRoom.roomId &&
-            myRoom.isPublic &&
-            myRoom.phase !== 'ENDED' &&
-            myRoom.playerCount > 0
-          ) {
-            publishPublicRoom(myRoom);
-          }
-        } catch (e) {}
-      }
-    }
-  });
-
-  // 2. Firebase Database listener if configured (additive merge only - never delete active MQTT rooms)
-  let unsubscribeFirebase = () => {};
-  if (isFirebaseConfigured && database) {
-    try {
-      const publicRoomsRef = ref(database, 'public_rooms');
-      const listener = (snapshot: any) => {
-        const val = snapshot.val();
-        if (val && typeof val === 'object') {
-          const now = Date.now();
-          Object.values(val).forEach((room: any) => {
-            if (
-              room &&
-              room.roomId &&
-              room.isPublic &&
-              room.phase !== 'ENDED' &&
-              room.playerCount > 0 &&
-              now - (room.updatedAt || 0) <= ROOM_TTL_MS
-            ) {
-              const existing = roomsMap.get(room.roomId);
-              if (!existing || (room.updatedAt && room.updatedAt > existing.updatedAt)) {
-                roomsMap.set(room.roomId, { ...room, updatedAt: room.updatedAt || now });
-              }
-            }
-          });
-          emitCleanRooms();
-        }
-      };
-      onValue(publicRoomsRef, listener);
-      unsubscribeFirebase = () => off(publicRoomsRef, 'value', listener);
-    } catch (e) {}
-  }
-
-  // Request fresh discovery pings immediately on subscription
+  // Send discovery refresh burst (0ms, 400ms, 1200ms)
   requestPublicRoomsRefresh();
-  setTimeout(requestPublicRoomsRefresh, 600);
-  setTimeout(requestPublicRoomsRefresh, 1800);
-
-  // Periodic discovery ping & cleanup interval (every 2.5 seconds)
-  const discoveryInterval = setInterval(() => {
-    emitCleanRooms();
-    requestPublicRoomsRefresh();
-  }, 2500);
+  setTimeout(requestPublicRoomsRefresh, 400);
+  setTimeout(requestPublicRoomsRefresh, 1200);
 
   return () => {
-    clearInterval(discoveryInterval);
-    unsubscribeGlobal();
-    unsubscribeFirebase();
+    subscribers.delete(callback);
   };
 }
