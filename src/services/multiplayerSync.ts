@@ -217,7 +217,8 @@ class MultiplayerSyncManager {
   public joinRoom(roomId: string, onMessage: MessageCallback, isHostRole = false, sessionId?: string): () => void {
     const cleanRoomId = roomId.trim().toUpperCase();
     this.currentRoomId = cleanRoomId;
-    this.currentSessionId = sessionId || null;
+    // Host sets authoritative sessionId; Guest leaves null until adopted from Host's STATE_SYNC
+    this.currentSessionId = isHostRole ? (sessionId || null) : null;
     this.isHost = isHostRole;
     this.listeners.add(onMessage);
 
@@ -240,6 +241,10 @@ class MultiplayerSyncManager {
     return () => {
       this.listeners.delete(onMessage);
     };
+  }
+
+  public setSessionId(sessionId: string | null): void {
+    this.currentSessionId = sessionId;
   }
 
   /**
@@ -447,9 +452,13 @@ class MultiplayerSyncManager {
   }
 
   /**
-   * Broadcast room closed / session terminated notification to all room peers
+   * Broadcast room closed / session terminated notification to all room peers (HOST ONLY)
    */
   public sendRoomClosed(roomId: string, sessionId?: string, reason = 'HOST_CLOSED'): void {
+    if (!this.isHost) {
+      console.warn('[Sync] Non-host attempted to send ROOM_CLOSED; blocked.');
+      return;
+    }
     const cleanRoom = roomId.trim().toUpperCase();
     const msg: SyncMessage = {
       type: 'ROOM_CLOSED',
@@ -780,10 +789,34 @@ class MultiplayerSyncManager {
   public notifyListeners(msg: SyncMessage): void {
     if (!this.currentRoomId) return;
     if (msg.roomId && msg.roomId.toUpperCase() !== this.currentRoomId.toUpperCase()) return;
-    // 🛡️ Session Guard: Reject packets targeting a different session
-    if (this.currentSessionId && msg.sessionId && msg.sessionId !== this.currentSessionId) {
+
+    // 1. Handshake & joining messages arrive before session agreement; never filter them by sessionId
+    if (msg.type === 'JOIN_REQUEST' || msg.type === 'REQUEST_SYNC') {
+      this.listeners.forEach((callback) => {
+        try {
+          callback(msg);
+        } catch (err) {
+          console.error('[Sync] Listener callback error:', err);
+        }
+      });
       return;
     }
+
+    // 2. Authoritative host never gets closed by remote ROOM_CLOSED
+    if (msg.type === 'ROOM_CLOSED' && this.isHost) {
+      return;
+    }
+
+    // 3. 🛡️ Session Guard: For state and in-game action sync, if both this client and message have sessionId and they mismatch, drop packet
+    if (this.currentSessionId && msg.sessionId && msg.sessionId !== this.currentSessionId) {
+      console.warn('[Sync] Dropped packet from mismatched session:', {
+        type: msg.type,
+        currentSession: this.currentSessionId,
+        msgSession: msg.sessionId
+      });
+      return;
+    }
+
     this.listeners.forEach((callback) => {
       try {
         callback(msg);

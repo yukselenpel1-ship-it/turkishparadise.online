@@ -172,7 +172,7 @@ export const App: React.FC = () => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
     const targetRoom = liveState.roomId || liveState.settings?.roomCode;
-    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const isMeHost = Boolean(liveMyId && (liveState.hostPlayerId === liveMyId || liveState.players.find(p => p.id === liveMyId)?.isHost));
 
     // 1. If host, unpublish public room beacon and broadcast ROOM_CLOSED
     if (targetRoom) {
@@ -181,8 +181,11 @@ export const App: React.FC = () => {
         if (notifyPeers) {
           syncManager.sendRoomClosed(targetRoom, liveState.sessionId, reason);
         }
+      } else if (liveMyId && notifyPeers) {
+        // Guest only sends a leave notice for their own seat
+        syncManager.sendLeaveNotice(targetRoom, liveMyId, liveState.sessionId);
       }
-      // Hard reset all sync manager state (close WebRTC, unsubscribe MQTT topic, clear listeners)
+      // Hard reset local sync manager state (close WebRTC, unsubscribe MQTT topic, clear listeners)
       syncManager.hardResetSession(targetRoom, liveMyId || undefined);
     }
 
@@ -564,7 +567,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!gameState.roomId) return;
 
-    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const isMeHost = Boolean(myPlayerId && (gameState.hostPlayerId === myPlayerId || gameState.players.find(p => p.id === myPlayerId)?.isHost));
     const activeGeneration = sessionGenerationRef.current;
 
     const unsubscribe = subscribeToRoom(
@@ -573,21 +576,21 @@ export const App: React.FC = () => {
         if (!remoteState || remoteState.roomId !== gameState.roomId) return;
         if (activeGeneration !== sessionGenerationRef.current) return;
 
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        const isCurrentlyHost = Boolean(liveMyId && (liveState.hostPlayerId === liveMyId || liveState.players.find(p => p.id === liveMyId)?.isHost));
+
         // 🛡️ SESSION INTEGRITY GUARD:
-        // Reject stale packets from another session / old game
-        if (gameState.sessionId && remoteState.sessionId && remoteState.sessionId !== gameState.sessionId) {
-          console.warn('[Session Guard] Dropped packet from mismatched session:', {
+        // Host enforces its authoritative sessionId; drop rogue state with mismatch sessionId
+        if (isCurrentlyHost && liveState.sessionId && remoteState.sessionId && remoteState.sessionId !== liveState.sessionId) {
+          console.warn('[Session Guard] Host dropped packet from mismatched session:', {
             currentRoom: gameState.roomId,
-            currentSession: gameState.sessionId,
+            currentSession: liveState.sessionId,
             remoteSession: remoteState.sessionId,
             remoteGameId: remoteState.gameId
           });
           return;
         }
-
-        const liveMyId = myPlayerIdRef.current;
-        const liveState = gameStateRef.current;
-        const isCurrentlyHost = isPlayerHost(liveState, liveMyId);
 
         // 🛡️ HOST PROTECTION SHIELD:
         // If I am already established as Host in this room, never accept an external state
@@ -614,6 +617,11 @@ export const App: React.FC = () => {
         if (isMovingRef.current) {
           pendingRemoteStateRef.current = remoteState;
           return;
+        }
+
+        // Guest adopts authoritative session ID
+        if (!isCurrentlyHost && remoteState.sessionId) {
+          syncManager.setSessionId(remoteState.sessionId);
         }
 
         setGameState(remoteState);
@@ -1003,8 +1011,13 @@ export const App: React.FC = () => {
         });
       },
       isMeHost,
-      gameState.sessionId,
+      isMeHost ? gameState.sessionId : undefined,
       (reason) => {
+        const liveState = gameStateRef.current;
+        const liveMyId = myPlayerIdRef.current;
+        const isCurrentHost = Boolean(liveMyId && (liveState.hostPlayerId === liveMyId || liveState.players.find(p => p.id === liveMyId)?.isHost));
+        if (isCurrentHost) return;
+
         console.log('[Multiplayer] Received ROOM_CLOSED from host:', reason);
         terminateGameSession('ROOM_CLOSED', false);
       }
@@ -1476,12 +1489,17 @@ export const App: React.FC = () => {
         syncRoomState(finalRoom, freshState);
         debouncedSaveGameState(freshState);
       } else {
-        // Joiner sets local roomId and sends JOIN_REQUEST + REQUEST_SYNC to Host
+        // Joining Guest: DO NOT create a new session!
+        // Clear dummy local sessionId and hostPlayerId so Guest seamlessly adopts Host's state on STATE_SYNC
         setGameState((prev) => ({
           ...prev,
           roomId: finalRoom,
+          sessionId: undefined,
+          gameId: undefined,
+          hostPlayerId: undefined,
           isOnlineGame: isOnline,
-          settings: { ...prev.settings, roomCode: finalRoom }
+          settings: { ...prev.settings, roomCode: finalRoom },
+          players: [newPlayer]
         }));
 
         // Send join request to room host

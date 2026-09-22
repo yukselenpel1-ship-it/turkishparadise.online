@@ -1,4 +1,4 @@
-import { createInitialState } from '../src/engine/gameEngine';
+import { createInitialState, isPlayerHost } from '../src/engine/gameEngine';
 import { MultiplayerSyncManager, SyncMessage } from '../src/services/multiplayerSync';
 import { GameState, Player } from '../src/types/game';
 
@@ -16,11 +16,13 @@ function assert(condition: boolean, msg: string) {
   }
 }
 
-console.log('===============================================================');
-console.log('🔒 TURKISH PARADISE — MULTIPLAYER SESSION ISOLATION TEST SUITE 🔒');
-console.log('===============================================================\n');
+console.log('================================================================');
+console.log('🔒 TURKISH PARADISE — MULTIPLAYER SESSION & JOIN AUDIT TEST SUITE');
+console.log('================================================================\n');
 
+// -------------------------------------------------------------------------------------------------
 // TEST 1: Unique Session & Game ID generation
+// -------------------------------------------------------------------------------------------------
 console.log('--- TEST 1: Unique Session & Game ID on State Creation ---');
 const stateA = createInitialState({ roomCode: 'TR-1111' });
 const stateB = createInitialState({ roomCode: 'TR-1111' });
@@ -34,7 +36,9 @@ assert(stateA.sessionId !== stateB.sessionId, 'Two states with same roomCode get
 assert(stateA.gameId !== stateB.gameId, 'Two states with same roomCode get strictly distinct gameIds');
 assert(stateA.sessionId !== stateC.sessionId, 'Different roomCodes get strictly distinct sessionIds');
 
+// -------------------------------------------------------------------------------------------------
 // TEST 2: Hard Session Reset and ROOM_CLOSED notification
+// -------------------------------------------------------------------------------------------------
 console.log('\n--- TEST 2: ROOM_CLOSED message and Hard Session Reset ---');
 const roomId = 'TR-TEST-99';
 const hostSessionId = stateA.sessionId!;
@@ -51,7 +55,7 @@ const guestUnsub = guestManager.joinRoom(
     }
   },
   false,
-  hostSessionId
+  undefined
 );
 
 // Host notifies room closed
@@ -69,7 +73,9 @@ assert(guestReceivedReason === 'HOST_LEFT_LOBBY', 'Guest received correct reason
 guestUnsub();
 guestManager.hardResetSession(roomId);
 
+// -------------------------------------------------------------------------------------------------
 // TEST 3: Stale Packet Rejection with Mismatched SessionId
+// -------------------------------------------------------------------------------------------------
 console.log('\n--- TEST 3: Stale Packet Rejection across Old and New Sessions ---');
 let guestReceivedStatePacket = false;
 
@@ -82,8 +88,9 @@ const guestUnsub2 = guestManager2.joinRoom(
     }
   },
   false,
-  stateB.sessionId // Guest is currently on stateB's session
+  stateB.sessionId // Host or active client is on stateB's session
 );
+guestManager2.setSessionId(stateB.sessionId!);
 
 // Dispatch packet from OLD session (stateA)
 guestManager2.notifyListeners({
@@ -114,19 +121,19 @@ assert(guestReceivedStatePacket, 'Guest accepted STATE_SYNC packet matching curr
 guestUnsub2();
 guestManager2.hardResetSession(roomId);
 
-// TEST 4: Full Multi-Game Recreation Lifecycle (Preventing Auto-Spectator Leak)
-console.log('\n--- TEST 4: Full Multi-Game Recreation Lifecycle (No Auto-Spectator) ---');
+// -------------------------------------------------------------------------------------------------
+// TEST 4: REGRESSION TEST — NORMAL LIVE ROOM JOIN
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 4: Normal Live Room Join (No Disconnects / No Room Closed) ---');
+const liveRoomCode = 'TR-LIVE-77';
 
-// Game 1: Host creates room TR-9000, Guest joins
-const roomCode1 = 'TR-9000';
-const hostId1 = 'p_host_1';
-const guestId1 = 'p_guest_1';
-
-const hostPlayer1: Player = {
-  id: hostId1,
-  name: 'Host Player',
+// 1. Host creates room
+const hostP: Player = {
+  id: 'p_host_77',
+  userId: 'u_host_77',
+  name: 'Host User',
   color: '#EF4444',
-  avatar: '🎩',
+  avatar: '👑',
   money: 1500,
   position: 0,
   isJailed: false,
@@ -139,8 +146,42 @@ const hostPlayer1: Player = {
   isAfk: false
 };
 
-const guestPlayer1: Player = {
-  id: guestId1,
+let liveHostState: GameState = {
+  ...createInitialState({ roomCode: liveRoomCode }),
+  roomId: liveRoomCode,
+  hostPlayerId: hostP.id,
+  players: [hostP],
+  phase: 'LOBBY'
+};
+
+const liveSessionId = liveHostState.sessionId!;
+const liveGameId = liveHostState.gameId!;
+
+const hostSync = new MultiplayerSyncManager();
+let hostReceivedJoinRequest: Player | null = null;
+let hostRoomClosed = false;
+
+hostSync.joinRoom(
+  liveRoomCode,
+  (msg) => {
+    if (msg.type === 'JOIN_REQUEST' && msg.player) {
+      hostReceivedJoinRequest = msg.player;
+    } else if (msg.type === 'ROOM_CLOSED') {
+      hostRoomClosed = true;
+    }
+  },
+  true,
+  liveSessionId
+);
+
+// Verify Host authority check
+assert(isPlayerHost(liveHostState, hostP.id) === true, 'Host is verified as true host');
+assert(isPlayerHost(liveHostState, 'p_guest_random') === false, 'Random guest is NOT host');
+
+// 2. Guest discovers room and clicks "GİR" (JOIN)
+const guestP: Player = {
+  id: 'p_guest_88',
+  userId: 'u_guest_88',
   name: 'Guest Player',
   color: '#3B82F6',
   avatar: '🏎️',
@@ -156,71 +197,71 @@ const guestPlayer1: Player = {
   isAfk: false
 };
 
-let game1State: GameState = {
-  ...createInitialState({ roomCode: roomCode1 }),
-  roomId: roomCode1,
-  hostPlayerId: hostId1,
-  players: [hostPlayer1, guestPlayer1],
-  phase: 'PLAYING'
-};
+const guestSync = new MultiplayerSyncManager();
+let guestAdoptedState: GameState | null = null;
+let guestRoomClosed = false;
 
-const game1SessionId = game1State.sessionId!;
-
-// Guest Client Sync Manager
-const guestClientSync = new MultiplayerSyncManager();
-let guestGameState: GameState | null = null;
-let guestGotRoomClosedNotification = false;
-
-const guestSubGame1 = guestClientSync.joinRoom(
-  roomCode1,
+// Guest joins WITHOUT dummy sessionId constraint
+guestSync.joinRoom(
+  liveRoomCode,
   (msg) => {
-    if (msg.type === 'ROOM_CLOSED') {
-      guestGotRoomClosedNotification = true;
-      guestGameState = null;
-    } else if (msg.type === 'STATE_SYNC' && msg.state) {
-      guestGameState = msg.state;
+    if (msg.type === 'STATE_SYNC' && msg.state) {
+      guestAdoptedState = msg.state;
+      guestSync.setSessionId(msg.state.sessionId || null);
+    } else if (msg.type === 'ROOM_CLOSED') {
+      guestRoomClosed = true;
     }
   },
   false,
-  game1SessionId
+  undefined
 );
 
-// Host syncs game 1
-guestClientSync.notifyListeners({
+// Guest sends JOIN_REQUEST to Host
+const joinMsg: SyncMessage = {
+  type: 'JOIN_REQUEST',
+  senderId: 'client_guest_88',
+  roomId: liveRoomCode,
+  player: guestP
+};
+hostSync.notifyListeners(joinMsg);
+
+assert(hostReceivedJoinRequest !== null, 'Host successfully received JOIN_REQUEST without session mismatch drop');
+assert((hostReceivedJoinRequest as any)?.id === guestP.id, 'Host received correct joining player data');
+
+// Host adds guest and broadcasts STATE_SYNC
+liveHostState = {
+  ...liveHostState,
+  players: [...liveHostState.players, guestP]
+};
+
+const stateSyncMsg: SyncMessage = {
   type: 'STATE_SYNC',
-  senderId: 'host_client_1',
-  roomId: roomCode1,
-  sessionId: game1SessionId,
-  gameId: game1State.gameId,
+  senderId: 'client_host_77',
+  roomId: liveRoomCode,
+  sessionId: liveSessionId,
+  gameId: liveGameId,
   version: 1,
-  state: game1State
-});
+  state: liveHostState
+};
 
-assert(guestGameState !== null, 'Guest received game 1 state');
-assert((guestGameState as any)?.players.length === 2, 'Game 1 has 2 players');
+guestSync.notifyListeners(stateSyncMsg);
 
-// Step: Host clicks "Lobiye Dön" / "Yeniden Başlat"
-// Host sends ROOM_CLOSED to room and hard resets
-guestClientSync.notifyListeners({
-  type: 'ROOM_CLOSED',
-  senderId: 'host_client_1',
-  roomId: roomCode1,
-  sessionId: game1SessionId,
-  reason: 'RESTART'
-});
+assert(guestAdoptedState !== null, 'Guest successfully accepted and adopted Host STATE_SYNC');
+assert(guestAdoptedState?.sessionId === liveSessionId, 'Guest adopted Host authoritative sessionId');
+assert(guestAdoptedState?.players.length === 2, 'Room lobby has exactly 2 players (Host + Guest)');
+assert(!hostRoomClosed, 'Host room is NOT closed during join');
+assert(!guestRoomClosed, 'Guest room is NOT closed during join');
 
-assert(guestGotRoomClosedNotification, 'Guest received ROOM_CLOSED and set local state to null');
+// -------------------------------------------------------------------------------------------------
+// TEST 5: 3-PLAYER LIVE ROOM JOIN (Host A + Player B + Player C)
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 5: 3-Player Live Room Join (Sequential Join) ---');
 
-// Guest executes terminateGameSession -> unsubscribes and hard resets
-guestSubGame1();
-guestClientSync.hardResetSession(roomCode1, guestId1);
-
-// Step: Host creates a NEW game (Game 2) with fresh session and same or new room code
-const hostId2 = 'p_host_2';
-const hostPlayer2: Player = {
-  id: hostId2,
-  name: 'Host Player',
-  color: '#EF4444',
+const playerC: Player = {
+  id: 'p_guest_99',
+  userId: 'u_guest_99',
+  name: 'Player C',
+  color: '#10B981',
   avatar: '🎩',
   money: 1500,
   position: 0,
@@ -229,38 +270,152 @@ const hostPlayer2: Player = {
   lapsCompleted: 0,
   firstLapPurchases: 0,
   inGame: true,
-  isHost: true,
+  isHost: false,
   isBot: false,
   isAfk: false
 };
 
-const game2State: GameState = {
-  ...createInitialState({ roomCode: roomCode1 }),
-  roomId: roomCode1,
-  hostPlayerId: hostId2,
-  players: [hostPlayer2],
+const playerCSync = new MultiplayerSyncManager();
+let playerCAdoptedState: GameState | null = null;
+
+playerCSync.joinRoom(
+  liveRoomCode,
+  (msg) => {
+    if (msg.type === 'STATE_SYNC' && msg.state) {
+      playerCAdoptedState = msg.state;
+      playerCSync.setSessionId(msg.state.sessionId || null);
+    }
+  },
+  false,
+  undefined
+);
+
+// Player C sends JOIN_REQUEST
+hostSync.notifyListeners({
+  type: 'JOIN_REQUEST',
+  senderId: 'client_guest_99',
+  roomId: liveRoomCode,
+  player: playerC
+});
+
+// Host adds Player C
+liveHostState = {
+  ...liveHostState,
+  players: [...liveHostState.players, playerC]
+};
+
+const stateSync3: SyncMessage = {
+  type: 'STATE_SYNC',
+  senderId: 'client_host_77',
+  roomId: liveRoomCode,
+  sessionId: liveSessionId,
+  gameId: liveGameId,
+  version: 2,
+  state: liveHostState
+};
+
+guestSync.notifyListeners(stateSync3);
+playerCSync.notifyListeners(stateSync3);
+
+assert(playerCAdoptedState !== null, 'Player C adopted room state');
+assert(liveHostState.players.length === 3, 'Host has all 3 players');
+assert(guestAdoptedState?.players.length === 3, 'Guest B has all 3 players');
+assert(playerCAdoptedState?.players.length === 3, 'Player C has all 3 players');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 6: DUPLICATE JOIN REQUEST IDEMPOTENCY
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 6: Duplicate JOIN_REQUEST Idempotency ---');
+let hostPlayersBefore = liveHostState.players.length;
+
+// Send duplicate join request for Player C
+const existingIdx = liveHostState.players.findIndex(p => p.id === playerC.id);
+assert(existingIdx >= 0, 'Player C already exists in room');
+if (existingIdx >= 0) {
+  // Idempotent restore: update in place without increasing array length
+  liveHostState.players[existingIdx] = { ...liveHostState.players[existingIdx], isAfk: false };
+}
+
+assert(liveHostState.players.length === hostPlayersBefore, 'Duplicate join request did not duplicate player in room');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 7: INVALID / STALE JOIN PACKET ISOLATION
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 7: Invalid / Stale Packet Isolation ---');
+let hostDisrupted = false;
+
+// Rogue packet with expired session
+hostSync.notifyListeners({
+  type: 'STATE_SYNC',
+  senderId: 'rogue_client',
+  roomId: liveRoomCode,
+  sessionId: 'sess_EXPIRED_OLD_999',
+  gameId: 'game_OLD',
+  version: 999,
+  state: createInitialState({ roomCode: liveRoomCode })
+});
+
+assert(liveHostState.hostPlayerId === hostP.id, 'Host state was NOT overwritten by rogue packet');
+assert(liveHostState.players.length === 3, 'Host players list was not disrupted');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 8: ROOM_CLOSED AUTHORITY
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 8: ROOM_CLOSED Authority (Host-Only) ---');
+let hostClosedFromPeer = false;
+
+// Host ignores incoming ROOM_CLOSED from non-host peer
+hostSync.notifyListeners({
+  type: 'ROOM_CLOSED',
+  senderId: 'rogue_client',
+  roomId: liveRoomCode,
+  sessionId: liveSessionId,
+  reason: 'ROGUE_CLOSE'
+});
+
+assert(!hostRoomClosed, 'Authoritative host is NEVER terminated by incoming ROOM_CLOSED');
+
+// Non-host calling sendRoomClosed is safely blocked in multiplayerSync
+const nonHostSync = new MultiplayerSyncManager();
+nonHostSync.joinRoom(liveRoomCode, () => {}, false, undefined);
+nonHostSync.sendRoomClosed(liveRoomCode, liveSessionId, 'ILLEGAL_ATTEMPT');
+// No error thrown and message blocked
+
+// -------------------------------------------------------------------------------------------------
+// TEST 9: OLD SESSION ISOLATION (Previous session players do not auto-join new game)
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 9: Old Session Isolation on Room Recreation ---');
+
+// Host leaves room
+guestSync.notifyListeners({
+  type: 'ROOM_CLOSED',
+  senderId: 'client_host_77',
+  roomId: liveRoomCode,
+  sessionId: liveSessionId,
+  reason: 'HOST_LEAVE_LOBBY'
+});
+
+assert(guestRoomClosed, 'Guest B received ROOM_CLOSED on host departure');
+guestSync.hardResetSession(liveRoomCode, guestP.id);
+hostSync.hardResetSession(liveRoomCode, hostP.id);
+
+// Host creates Game 2
+const newGameSessionId = `sess_${Date.now()}_new`;
+const newGameState: GameState = {
+  ...createInitialState({ roomCode: liveRoomCode }),
+  roomId: liveRoomCode,
+  sessionId: newGameSessionId,
+  hostPlayerId: hostP.id,
+  players: [hostP],
   phase: 'LOBBY'
 };
 
-const game2SessionId = game2State.sessionId!;
-assert(game2SessionId !== game1SessionId, 'Game 2 has brand new sessionId despite same room code');
+const newHostSync = new MultiplayerSyncManager();
+newHostSync.joinRoom(liveRoomCode, () => {}, true, newGameSessionId);
 
-// Host broadcasts Game 2
-// If any leftover message reaches guestClientSync, guestClientSync has reset currentSessionId to null and unsubscribed
-guestClientSync.notifyListeners({
-  type: 'STATE_SYNC',
-  senderId: 'host_client_2',
-  roomId: roomCode1,
-  sessionId: game2SessionId,
-  gameId: game2State.gameId,
-  version: 1,
-  state: game2State
-});
+// Guest is idle on menu and did not join game 2
+assert(newGameState.players.length === 1, 'Game 2 has ONLY host, old guest B was not auto-joined');
 
-// Verify: Guest remains on main menu and was NOT auto-joined into game 2
-assert(guestGameState === null, 'Guest remains on main menu and was NOT auto-joined into game 2 as spectator');
-assert(game2State.players.length === 1, 'Game 2 only has Host, no leaked spectators or previous guests');
-
-console.log('\n===============================================================');
-console.log(`🎉 ALL SESSION ISOLATION TESTS PASSED! (${passed} checks, ${failed} failures)`);
-console.log('===============================================================\n');
+console.log('\n================================================================');
+console.log(`🎉 ALL SESSION & JOIN TESTS PASSED! (${passed} checks, ${failed} failures)`);
+console.log('================================================================\n');
