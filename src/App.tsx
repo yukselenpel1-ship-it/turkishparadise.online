@@ -1727,8 +1727,8 @@ export const App: React.FC = () => {
         // 1. Send immediately
         sendHandshake();
 
-        // 2. Auto-retry burst (250ms, 650ms, 1200ms) to guarantee single-click join
-        const retryDelays = [250, 650, 1200];
+        // 2. Auto-retry burst (200ms, 500ms, 1000ms, 1800ms, 3000ms, 4800ms) to guarantee cross-device connection
+        const retryDelays = [200, 500, 1000, 1800, 3000, 4800];
         retryDelays.forEach((delay) => {
           setTimeout(() => {
             const currentLive = gameStateRef.current;
@@ -1736,6 +1736,8 @@ export const App: React.FC = () => {
               currentLive.roomId === finalRoom &&
               (currentLive.players.length > 1 ||
                 currentLive.phase === 'PLAYING' ||
+                currentLive.sessionId ||
+                currentLive.hostPlayerId ||
                 (isSpectator && currentLive.spectators?.some(s => s.id === newSpectatorId || s.participantKey === participantKey)))
             ) {
               return;
@@ -1744,19 +1746,24 @@ export const App: React.FC = () => {
           }, delay);
         });
 
-        // 3. Handshake timeout check: If room is not responding after 3.5s, exit with friendly message
+        // 3. Handshake timeout check: If room is not responding after 7.5s, exit with friendly message
         setTimeout(() => {
           const currentLive = gameStateRef.current;
+          const isJoined = Boolean(
+            currentLive.sessionId ||
+            currentLive.hostPlayerId ||
+            currentLive.players.length > 1 ||
+            (isSpectator && currentLive.spectators && currentLive.spectators.length > 0)
+          );
           if (
             currentLive.roomId === finalRoom &&
             !isCreatingRoom &&
-            !currentLive.sessionId &&
-            (!isSpectator ? currentLive.players.length <= 1 : !currentLive.hostPlayerId)
+            !isJoined
           ) {
             alert('Oda artık aktif değil veya kurucu ayrıldı.');
             terminateGameSession('ROOM_INACTIVE', false);
           }
-        }, 3500);
+        }, 7500);
       }
     } catch (err) {
       console.error('[handleJoin] Error joining/creating room:', err);
@@ -2659,15 +2666,6 @@ export const App: React.FC = () => {
             </p>
           </div>
         </div>
-      )}
-
-      {/* Profile & Stats Modal */}
-      {isProfileModalOpen && userAccount && (
-        <ProfileModal
-          userAccount={userAccount}
-          onClose={() => setIsProfileModalOpen(false)}
-          onLogout={handleLogout}
-        />
       )}
 
       {/* Property Details Modal */}

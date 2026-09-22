@@ -7,11 +7,8 @@ import { getClientId, getTabId, getParticipantKey, logIdentityTelemetry } from '
 // Unique client session ID
 export const LOCAL_CLIENT_ID = `client_${Math.random().toString(36).substring(2, 11)}`;
 
-// Public WebSocket MQTT Brokers (Free, Global, SSL encrypted, zero token needed)
-const BROKER_URLS = [
-  'wss://broker.hivemq.com:8884/mqtt',
-  'wss://broker.emqx.io:8084/mqtt'
-];
+// Public WebSocket MQTT Broker (Free, Global, SSL encrypted, zero token needed)
+const PRIMARY_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
 
 export type SyncMessage =
   | { type: 'STATE_SYNC'; senderId: string; roomId: string; sessionId?: string; gameId?: string; version: number; state: GameState }
@@ -899,15 +896,22 @@ class MultiplayerSyncManager {
   }
 
   private ensureMqttConnection(): void {
+    if (this.currentRoomId) {
+      const topic = `turkishparadise/rooms/${this.currentRoomId.toLowerCase()}`;
+      this.subscribedTopics.add(topic);
+    }
+
     if (this.mqttClient && (this.isMqttConnected || this.mqttClient.reconnecting)) {
-      if (this.currentRoomId) {
+      if (this.currentRoomId && this.mqttClient) {
         const topic = `turkishparadise/rooms/${this.currentRoomId.toLowerCase()}`;
-        this.mqttClient.subscribe(topic, { qos: 0 });
+        try {
+          this.mqttClient.subscribe(topic, { qos: 1 });
+        } catch (e) {}
       }
       return;
     }
 
-    const brokerUrl = BROKER_URLS[this.brokerIndex % BROKER_URLS.length];
+    const brokerUrl = PRIMARY_BROKER_URL;
     const clientId = `tp_${LOCAL_CLIENT_ID}_${Math.floor(Math.random() * 1000)}`;
 
     try {
@@ -977,9 +981,8 @@ class MultiplayerSyncManager {
       });
 
       this.mqttClient.on('error', (err) => {
-        console.warn(`[MQTT] Connection error with ${brokerUrl}:`, err);
+        console.warn(`[MQTT] Connection notice (${brokerUrl}):`, err);
         this.isMqttConnected = false;
-        this.brokerIndex++;
       });
 
       this.mqttClient.on('offline', () => {

@@ -1349,6 +1349,14 @@ export const Lobby: React.FC<LobbyProps> = ({
           onLogout={onLogout}
           onUpdateUserAccount={onUpdateUserAccount}
           onGoogleLogin={onGoogleLogin}
+          onJoinRoom={(targetRoom) => {
+            setIsProfileModalOpen(false);
+            if (onJoinRoom) {
+              onJoinRoom(targetRoom);
+            } else {
+              onJoin(userAccount.displayName || 'Oyuncu', '🎩', '#3b82f6', true, targetRoom, false, false);
+            }
+          }}
           roomId={roomCode}
           initialTab={profileInitialTab}
         />

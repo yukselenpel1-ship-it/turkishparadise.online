@@ -783,6 +783,18 @@ export function subscribeToFriendsAndRequests(
   // 3. Subscribe to Cloud Retained Topics (Instant sync across Mobile, PC, and all devices)
   const unsubs: Array<() => void> = [];
 
+  function isSameFriendRecord(f: FriendUser, updateUid?: string, updateCode?: string): boolean {
+    if (!f) return false;
+    const fUid = (f.uid || '').trim().toLowerCase();
+    const fCode = (f.friendCode || '').trim().toUpperCase().replace(/^TP-/, '');
+    const uUid = (updateUid || '').trim().toLowerCase();
+    const uCode = (updateCode || '').trim().toUpperCase().replace(/^TP-/, '');
+
+    if (uUid && fUid && (fUid === uUid || fUid.includes(uUid) || uUid.includes(fUid))) return true;
+    if (uCode && fCode && (fCode === uCode || fCode === `TP-${uCode}` || uCode === `TP-${fCode}`)) return true;
+    return false;
+  }
+
   // Retained presence topics across all friends
   unsubs.push(
     syncManager.subscribeTopic('turkishparadise/presence/v1/#', (presencePayload) => {
@@ -791,7 +803,7 @@ export function subscribeToFriendsAndRequests(
         const currentFriends = getFriends(uid);
         let updated = false;
         const nextFriends = currentFriends.map((f) => {
-          if (f.uid === presencePayload.userId || (presencePayload.friendCode && f.friendCode === presencePayload.friendCode)) {
+          if (isSameFriendRecord(f, presencePayload.userId, presencePayload.friendCode)) {
             updated = true;
             return {
               ...f,
@@ -945,7 +957,7 @@ export function subscribeToFriendsAndRequests(
           const currentFriends = getFriends(uid);
           let updated = false;
           const nextFriends = currentFriends.map((f) => {
-            if (f.uid === data.userId || (data.friendCode && f.friendCode === data.friendCode)) {
+            if (isSameFriendRecord(f, data.userId, data.friendCode)) {
               updated = true;
               return {
                 ...f,
