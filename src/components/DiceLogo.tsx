@@ -15,9 +15,9 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
   const { language } = useLanguage();
 
   const sizeStyles = {
-    sm: 'w-7 h-7 sm:w-8 sm:h-8',
-    md: 'w-8 h-8 sm:w-10 sm:h-10',
-    lg: 'w-12 h-12 sm:w-14 sm:h-14'
+    sm: 'w-8 h-8 sm:w-9 sm:h-9',
+    md: 'w-10 h-10 sm:w-12 sm:h-12',
+    lg: 'w-14 h-14 sm:w-18 sm:h-18'
   }[size];
 
   return (
@@ -27,13 +27,13 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
       {/* 3D Dice Logo - Only this icon scales slightly on PC mouse hover */}
       <div className={`relative ${sizeStyles} flex items-center justify-center shrink-0 pc-dice-icon-hover`}>
         {/* Ambient subtle glow */}
-        <div className="absolute inset-0 bg-amber-400/15 rounded-full pointer-events-none" />
+        <div className="absolute inset-0 bg-amber-400/20 rounded-full blur-sm pointer-events-none" />
 
         {/* 3D Dice Image */}
         <img
           src="/dice-logo.png"
           alt="Turkish Paradise 3D Zar Logo"
-          className="w-full h-full object-contain pointer-events-none"
+          className="w-full h-full object-contain pointer-events-none drop-shadow-[0_4px_12px_rgba(245,158,11,0.4)]"
           loading="eager"
         />
       </div>

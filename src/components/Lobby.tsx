@@ -585,9 +585,14 @@ export const Lobby: React.FC<LobbyProps> = ({
             {hasJoined ? (
               /* Compact, elegant Room Lobby Header */
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-3 mb-3.5 w-full">
-                <div className="flex items-center gap-2 sm:gap-2.5 text-left">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-sm shadow-md shadow-amber-500/30 shrink-0">
-                    🎲
+                <div className="flex items-center gap-2.5 sm:gap-3 text-left">
+                  <div className="relative w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center shrink-0 pc-dice-icon-hover">
+                    <img
+                      src="/dice-logo.png"
+                      alt="Turkish Paradise 3D Zar Logo"
+                      className="w-full h-full object-contain pointer-events-none drop-shadow-[0_3px_10px_rgba(245,158,11,0.45)]"
+                      loading="eager"
+                    />
                   </div>
                   <div>
                     <h2 className="font-['Cinzel',serif] font-black text-sm sm:text-base text-white leading-none">
@@ -607,8 +612,14 @@ export const Lobby: React.FC<LobbyProps> = ({
             ) : (
               /* Landing Page Card Header */
               <div className="text-center mb-4 sm:mb-5 flex flex-col items-center">
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-base sm:text-lg shadow-lg shadow-amber-500/30 mb-1">
-                  🎲
+                <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center shrink-0 mb-1.5 pc-dice-icon-hover">
+                  <div className="absolute inset-0 bg-amber-400/20 rounded-full blur-md pointer-events-none" />
+                  <img
+                    src="/dice-logo.png"
+                    alt="Turkish Paradise 3D Zar Logo"
+                    className="w-full h-full object-contain pointer-events-none drop-shadow-[0_6px_18px_rgba(245,158,11,0.5)]"
+                    loading="eager"
+                  />
                 </div>
                 
                 <span className="font-['Cinzel',serif] font-bold text-[11px] sm:text-xs tracking-[0.25em] text-slate-300 uppercase">
@@ -1229,7 +1240,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                     className="w-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-xl shadow-xl shadow-amber-500/20 transition transform active:scale-95 text-base tracking-wide flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <span>{t('createAndJoinRoom')}</span>
-                    <span className="text-lg">🎲</span>
+                    <img src="/dice-logo.png" alt="" className="w-5 h-5 object-contain pointer-events-none drop-shadow-sm inline-block" />
                   </button>
 
                   {/* Secondary Quick Action Buttons */}
