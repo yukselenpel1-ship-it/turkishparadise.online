@@ -327,7 +327,7 @@ export const Lobby: React.FC<LobbyProps> = ({
       </div>
 
       {/* 1. Top Navbar Header */}
-      <header className="w-full max-w-7xl mx-auto px-3 sm:px-8 py-2.5 sm:py-5 flex items-center justify-between relative z-50">
+      <header className="w-full max-w-7xl mx-auto px-3 sm:px-8 pt-[max(calc(0.75rem+env(safe-area-inset-top,0px)),1rem)] pb-2.5 sm:py-5 flex items-center justify-between relative z-50">
         
         {/* Interactive 3D Brand Logo: TURKISH PARADISE */}
         <DiceLogo size="md" />
@@ -1312,7 +1312,7 @@ export const Lobby: React.FC<LobbyProps> = ({
       </main>
 
       {/* 3. Footer */}
-      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 pt-8 pb-12 sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:text-xs font-semibold text-slate-500 relative z-20 mt-auto text-center sm:text-left">
+      <footer className="w-full max-w-7xl mx-auto px-4 sm:px-8 pt-8 pb-[max(calc(1.5rem+env(safe-area-inset-bottom,0px)),2rem)] sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:text-xs font-semibold text-slate-500 relative z-20 mt-auto text-center sm:text-left">
         <span>© 2026 Turkish Paradise - {language === 'en' ? 'All Rights Reserved. Turkey-Themed Web Board Game.' : 'Tüm Hakları Saklıdır. Türkiye Temalı Web Masa Oyunu.'}</span>
         <div className="flex items-center gap-3">
           <button

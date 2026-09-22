@@ -40,8 +40,8 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
   }, [card, autoConfirmSeconds]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="bg-slate-900 border-2 border-amber-500/60 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl space-y-4 relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(calc(1rem+env(safe-area-inset-top,0px)),1rem)] pb-[max(calc(1rem+env(safe-area-inset-bottom,0px)),1rem)] bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+      <div className="bg-slate-900 border-2 border-amber-500/60 rounded-3xl max-w-sm w-full max-h-[calc(90dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] overflow-y-auto p-6 text-center shadow-2xl space-y-4 relative">
         
         {/* Top Timer Progress Bar */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-800">

@@ -2056,7 +2056,7 @@ export const App: React.FC = () => {
       ) : (
         <>
           {/* Top Navbar Header during Game */}
-          <header className="h-11 sm:h-12 px-1.5 sm:px-4 flex items-center justify-between shrink-0 bg-[#070c18]/95 border-b border-amber-500/30 backdrop-blur-md z-50 shadow-lg">
+          <header className="min-h-[calc(2.75rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] px-1.5 sm:px-4 flex items-center justify-between shrink-0 bg-[#070c18]/95 border-b border-amber-500/30 backdrop-blur-md z-50 shadow-lg">
             <div className="flex items-center gap-1 sm:gap-2 min-w-0">
               <DiceLogo size="sm" />
               <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0">
@@ -2217,7 +2217,7 @@ export const App: React.FC = () => {
           </main>
 
           {/* Mobile Bottom Navigation Bar (Visible only on < md screens) */}
-          <div className="md:hidden shrink-0 h-12 bg-slate-900/95 border-t border-slate-800/90 px-3 flex items-center justify-around z-40 backdrop-blur-md pb-safe">
+          <div className="md:hidden shrink-0 min-h-[calc(3.25rem+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] bg-slate-900/95 border-t border-slate-800/90 px-3 flex items-center justify-around z-40 backdrop-blur-md">
             <button
               onClick={() => setMobileSheet(mobileSheet === 'players' ? null : 'players')}
               className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer ${

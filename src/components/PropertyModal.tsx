@@ -50,8 +50,8 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
   const ownerStationsCount = owner ? allStations.filter(t => t.ownerId === owner.id).length : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in select-none">
-      <div className="bg-[#0b1325] border border-slate-700/80 rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(calc(1rem+env(safe-area-inset-top,0px)),1rem)] pb-[max(calc(1rem+env(safe-area-inset-bottom,0px)),1rem)] bg-slate-950/80 backdrop-blur-md animate-fade-in select-none">
+      <div className="bg-[#0b1325] border border-slate-700/80 rounded-3xl max-w-sm w-full max-h-[calc(90dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex flex-col overflow-hidden shadow-2xl">
         
         {/* Header Banner */}
         <div className="p-4 text-center font-bold relative bg-slate-900 border-b border-slate-800">

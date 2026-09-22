@@ -31,8 +31,8 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
     .filter(Boolean) as BoardTile[];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in select-none font-['Plus_Jakarta_Sans',sans-serif]">
-      <div className="bg-[#0b1325] border border-amber-500/40 rounded-3xl max-w-lg w-full p-6 text-left shadow-2xl relative overflow-hidden ring-1 ring-amber-500/20 space-y-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(calc(1rem+env(safe-area-inset-top,0px)),1rem)] pb-[max(calc(1rem+env(safe-area-inset-bottom,0px)),1rem)] bg-slate-950/85 backdrop-blur-md animate-fade-in select-none font-['Plus_Jakarta_Sans',sans-serif]">
+      <div className="bg-[#0b1325] border border-amber-500/40 rounded-3xl max-w-lg w-full max-h-[calc(90dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] overflow-y-auto p-4 sm:p-6 text-left shadow-2xl relative ring-1 ring-amber-500/20 space-y-4">
         
         {/* Top Glow Accent */}
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />

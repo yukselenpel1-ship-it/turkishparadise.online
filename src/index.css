@@ -10,6 +10,41 @@
   }
 }
 
+/* iOS / PWA / Mobile Safe Area Utilities */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+.pt-safe {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+}
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+}
+.pl-safe {
+  padding-left: max(env(safe-area-inset-left, 0px), 0px);
+}
+.pr-safe {
+  padding-right: max(env(safe-area-inset-right, 0px), 0px);
+}
+.p-safe {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+  padding-left: max(env(safe-area-inset-left, 0px), 0px);
+  padding-right: max(env(safe-area-inset-right, 0px), 0px);
+}
+
+.safe-top-header {
+  padding-top: calc(0.75rem + env(safe-area-inset-top, 0px));
+}
+
+.safe-bottom-bar {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

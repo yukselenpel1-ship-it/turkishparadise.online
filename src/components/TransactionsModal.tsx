@@ -80,11 +80,11 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(calc(1rem+env(safe-area-inset-top,0px)),1rem)] pb-[max(calc(1rem+env(safe-area-inset-bottom,0px)),1rem)] bg-slate-950/80 backdrop-blur-md animate-fade-in select-none"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl bg-[#091122] border border-slate-700/80 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden flex flex-col max-h-[88vh] text-left"
+        className="w-full max-w-2xl bg-[#091122] border border-slate-700/80 rounded-3xl p-4 sm:p-6 shadow-2xl relative overflow-hidden flex flex-col max-h-[calc(88dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] text-left"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}

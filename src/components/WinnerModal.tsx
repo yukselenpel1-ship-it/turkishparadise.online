@@ -20,8 +20,8 @@ export const WinnerModal: React.FC<WinnerModalProps> = ({
   const isMeWinner = currentPlayer ? currentPlayer.id === winner.id : false;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md animate-fade-in font-['Plus_Jakarta_Sans',sans-serif] select-none">
-      <div className="bg-[#0b1325] border-2 border-amber-500/80 rounded-3xl max-w-md w-full p-6 sm:p-8 text-center shadow-2xl space-y-5 relative overflow-hidden ring-2 ring-amber-500/30">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(calc(1rem+env(safe-area-inset-top,0px)),1rem)] pb-[max(calc(1rem+env(safe-area-inset-bottom,0px)),1rem)] bg-slate-950/90 backdrop-blur-md animate-fade-in font-['Plus_Jakarta_Sans',sans-serif] select-none">
+      <div className="bg-[#0b1325] border-2 border-amber-500/80 rounded-3xl max-w-md w-full max-h-[calc(90dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] overflow-y-auto p-6 sm:p-8 text-center shadow-2xl space-y-5 relative ring-2 ring-amber-500/30">
         
         {/* Glow Effect */}
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
