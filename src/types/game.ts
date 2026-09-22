@@ -75,6 +75,9 @@ export interface ChatMessage {
 export interface Player {
   id: string;
   userId?: string;
+  clientId?: string;
+  tabId?: string;
+  participantKey?: string;
   connectionId?: string;
   name: string;
   color: string;
@@ -242,7 +245,7 @@ export interface GameState {
   networkStatus?: 'connected' | 'connecting' | 'disconnected';
   turnSecondsRemaining?: number;
   turnStartedAt?: number;
-  spectators?: { id: string; name: string; avatar: string; joinedAt?: number }[];
+  spectators?: { id: string; name: string; avatar: string; userId?: string; clientId?: string; tabId?: string; participantKey?: string; joinedAt?: number }[];
 }
 
 

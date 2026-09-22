@@ -2,6 +2,8 @@ import mqtt, { MqttClient } from 'mqtt';
 import Peer, { DataConnection } from 'peerjs';
 import { GameState, Player, ChatMessage, TradeOffer } from '../types/game';
 
+import { getClientId, getTabId, getParticipantKey, logIdentityTelemetry } from './identityService';
+
 // Unique client session ID
 export const LOCAL_CLIENT_ID = `client_${Math.random().toString(36).substring(2, 11)}`;
 
@@ -28,16 +30,90 @@ export type SyncMessage =
       targetPosition: number;
       passedGo: boolean;
     }
-  | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; requestId?: string; player: Player }
-  | { type: 'JOIN_ACCEPT'; senderId: string; roomId: string; requestId?: string; targetPlayerId?: string; targetClientId?: string; sessionId?: string; gameId?: string; assignedPlayerId?: string; hostPlayerId?: string; state: GameState }
-  | { type: 'JOIN_CONFIRM'; senderId: string; roomId: string; requestId?: string; playerId: string; sessionId?: string }
-  | { type: 'JOIN_REJECTED'; senderId: string; roomId: string; requestId?: string; targetPlayerId?: string; targetClientId?: string; reason: string }
-  | { type: 'WATCH_REQUEST'; senderId: string; roomId: string; requestId?: string; spectator: { id: string; name: string; avatar: string; userId?: string } }
-  | { type: 'WATCH_ACCEPT'; senderId: string; roomId: string; requestId?: string; targetSpectatorId?: string; targetClientId?: string; sessionId?: string; gameId?: string; state: GameState }
-  | { type: 'WATCH_CONFIRM'; senderId: string; roomId: string; requestId?: string; spectatorId: string; spectatorName?: string; sessionId?: string }
-  | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; sessionId?: string; playerId: string }
+  | {
+      type: 'JOIN_REQUEST';
+      senderId: string;
+      roomId: string;
+      requestId?: string;
+      clientId?: string;
+      tabId?: string;
+      participantKey?: string;
+      player: Player;
+    }
+  | {
+      type: 'JOIN_ACCEPT';
+      senderId: string;
+      roomId: string;
+      requestId?: string;
+      targetPlayerId?: string;
+      targetClientId?: string;
+      targetParticipantKey?: string;
+      sessionId?: string;
+      gameId?: string;
+      assignedPlayerId?: string;
+      hostPlayerId?: string;
+      state: GameState;
+    }
+  | {
+      type: 'JOIN_CONFIRM';
+      senderId: string;
+      roomId: string;
+      requestId?: string;
+      clientId?: string;
+      tabId?: string;
+      participantKey?: string;
+      playerId: string;
+      sessionId?: string;
+      gameId?: string;
+    }
+  | {
+      type: 'JOIN_REJECTED';
+      senderId: string;
+      roomId: string;
+      requestId?: string;
+      targetPlayerId?: string;
+      targetClientId?: string;
+      targetParticipantKey?: string;
+      reason: string;
+    }
+  | {
+      type: 'WATCH_REQUEST';
+      senderId: string;
+      roomId: string;
+      requestId?: string;
+      clientId?: string;
+      tabId?: string;
+      participantKey?: string;
+      spectator: { id: string; name: string; avatar: string; userId?: string; clientId?: string; tabId?: string; participantKey?: string };
+    }
+  | {
+      type: 'WATCH_ACCEPT';
+      senderId: string;
+      roomId: string;
+      requestId?: string;
+      targetSpectatorId?: string;
+      targetClientId?: string;
+      targetParticipantKey?: string;
+      sessionId?: string;
+      gameId?: string;
+      state: GameState;
+    }
+  | {
+      type: 'WATCH_CONFIRM';
+      senderId: string;
+      roomId: string;
+      requestId?: string;
+      clientId?: string;
+      tabId?: string;
+      participantKey?: string;
+      spectatorId: string;
+      spectatorName?: string;
+      sessionId?: string;
+      gameId?: string;
+    }
+  | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; sessionId?: string; playerId: string; participantKey?: string }
   | { type: 'HOST_MIGRATED'; senderId: string; roomId: string; sessionId?: string; newHostPlayerId: string }
-  | { type: 'REQUEST_SYNC'; senderId: string; roomId: string; sessionId?: string; playerId?: string }
+  | { type: 'REQUEST_SYNC'; senderId: string; roomId: string; sessionId?: string; playerId?: string; participantKey?: string }
   | { type: 'CHAT_MESSAGE'; senderId: string; roomId: string; sessionId?: string; message: ChatMessage }
   | { type: 'TRADE_OFFER'; senderId: string; roomId: string; sessionId?: string; offer: TradeOffer }
   | { type: 'GAME_ACTION'; senderId: string; roomId: string; sessionId?: string; gameId?: string; playerId: string; actionType: string; payload?: any; actionId?: string }
@@ -441,12 +517,23 @@ class MultiplayerSyncManager {
    */
   public sendJoinRequest(roomId: string, player: Player, requestId?: string): string {
     const reqId = requestId || `join_req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const cId = player.clientId || getClientId();
+    const tId = player.tabId || getTabId();
+    const pKey = player.participantKey || getParticipantKey();
     const msg: SyncMessage = {
       type: 'JOIN_REQUEST',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       requestId: reqId,
-      player
+      clientId: cId,
+      tabId: tId,
+      participantKey: pKey,
+      player: {
+        ...player,
+        clientId: cId,
+        tabId: tId,
+        participantKey: pKey
+      }
     };
     this.send(msg);
     return reqId;
@@ -459,7 +546,8 @@ class MultiplayerSyncManager {
     roomId: string,
     targetPlayerId: string,
     state: GameState,
-    requestId?: string
+    requestId?: string,
+    targetParticipantKey?: string
   ): void {
     const msg: SyncMessage = {
       type: 'JOIN_ACCEPT',
@@ -467,6 +555,8 @@ class MultiplayerSyncManager {
       roomId: roomId.trim().toUpperCase(),
       requestId: requestId || `req_acc_${Date.now()}`,
       targetPlayerId,
+      targetClientId: targetPlayerId,
+      targetParticipantKey,
       assignedPlayerId: targetPlayerId,
       sessionId: state.sessionId,
       gameId: state.gameId,
@@ -479,12 +569,18 @@ class MultiplayerSyncManager {
   /**
    * Send join confirmation once authoritative state is adopted (Guest -> Host)
    */
-  public sendJoinConfirm(roomId: string, playerId: string, sessionId?: string, requestId?: string): void {
+  public sendJoinConfirm(roomId: string, playerId: string, sessionId?: string, requestId?: string, participantKey?: string): void {
+    const cId = getClientId();
+    const tId = getTabId();
+    const pKey = participantKey || getParticipantKey();
     const msg: SyncMessage = {
       type: 'JOIN_CONFIRM',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       requestId: requestId || `req_conf_${Date.now()}`,
+      clientId: cId,
+      tabId: tId,
+      participantKey: pKey,
       playerId,
       sessionId: sessionId || this.currentSessionId || undefined
     };
@@ -494,13 +590,14 @@ class MultiplayerSyncManager {
   /**
    * Send join rejection if room full or game in progress (Host -> Guest)
    */
-  public sendJoinRejected(roomId: string, targetPlayerId: string, reason: string, requestId?: string): void {
+  public sendJoinRejected(roomId: string, targetPlayerId: string, reason: string, requestId?: string, targetParticipantKey?: string): void {
     const msg: SyncMessage = {
       type: 'JOIN_REJECTED',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       targetPlayerId,
       targetClientId: targetPlayerId,
+      targetParticipantKey,
       requestId: requestId || `req_rej_${Date.now()}`,
       reason
     };
@@ -512,16 +609,27 @@ class MultiplayerSyncManager {
    */
   public sendWatchRequest(
     roomId: string,
-    spectator: { id: string; name: string; avatar: string; userId?: string },
+    spectator: { id: string; name: string; avatar: string; userId?: string; clientId?: string; tabId?: string; participantKey?: string },
     requestId?: string
   ): string {
     const reqId = requestId || `watch_req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const cId = spectator.clientId || getClientId();
+    const tId = spectator.tabId || getTabId();
+    const pKey = spectator.participantKey || getParticipantKey();
     const msg: SyncMessage = {
       type: 'WATCH_REQUEST',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       requestId: reqId,
-      spectator
+      clientId: cId,
+      tabId: tId,
+      participantKey: pKey,
+      spectator: {
+        ...spectator,
+        clientId: cId,
+        tabId: tId,
+        participantKey: pKey
+      }
     };
     this.send(msg);
     return reqId;
@@ -534,7 +642,8 @@ class MultiplayerSyncManager {
     roomId: string,
     targetSpectatorId: string,
     state: GameState,
-    requestId?: string
+    requestId?: string,
+    targetParticipantKey?: string
   ): void {
     const msg: SyncMessage = {
       type: 'WATCH_ACCEPT',
@@ -543,6 +652,7 @@ class MultiplayerSyncManager {
       requestId: requestId || `watch_acc_${Date.now()}`,
       targetSpectatorId,
       targetClientId: targetSpectatorId,
+      targetParticipantKey,
       sessionId: state.sessionId || this.currentSessionId || '',
       gameId: state.gameId,
       state
@@ -553,12 +663,18 @@ class MultiplayerSyncManager {
   /**
    * Send watch confirmation once state stream is hooked up (Spectator -> Host)
    */
-  public sendWatchConfirm(roomId: string, spectatorId: string, spectatorName?: string, sessionId?: string, requestId?: string): void {
+  public sendWatchConfirm(roomId: string, spectatorId: string, spectatorName?: string, sessionId?: string, requestId?: string, participantKey?: string): void {
+    const cId = getClientId();
+    const tId = getTabId();
+    const pKey = participantKey || getParticipantKey();
     const msg: SyncMessage = {
       type: 'WATCH_CONFIRM',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       requestId: requestId || `watch_conf_${Date.now()}`,
+      clientId: cId,
+      tabId: tId,
+      participantKey: pKey,
       spectatorId,
       spectatorName,
       sessionId: sessionId || this.currentSessionId || undefined

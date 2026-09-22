@@ -401,11 +401,11 @@ export interface ExtendedRoomHandlers {
   onUpdate: (state: GameState) => void;
   onJoinRequest?: (player: Player, requestId?: string, senderClientId?: string) => void;
   onJoinAccept?: (msg: any) => void;
-  onJoinConfirm?: (requestId?: string, playerId?: string, sessionId?: string) => void;
-  onJoinRejected?: (reason: string, requestId?: string) => void;
-  onWatchRequest?: (spectator: { id: string; name: string; avatar: string; userId?: string }, requestId?: string, senderClientId?: string) => void;
+  onJoinConfirm?: (requestId?: string, playerId?: string, sessionId?: string, participantKey?: string) => void;
+  onJoinRejected?: (reason: string, requestId?: string, targetParticipantKey?: string) => void;
+  onWatchRequest?: (spectator: { id: string; name: string; avatar: string; userId?: string; clientId?: string; tabId?: string; participantKey?: string }, requestId?: string, senderClientId?: string) => void;
   onWatchAccept?: (msg: any) => void;
-  onWatchConfirm?: (requestId?: string, spectatorId?: string, sessionId?: string) => void;
+  onWatchConfirm?: (requestId?: string, spectatorId?: string, sessionId?: string, participantKey?: string) => void;
   onRequestSync?: () => void;
   onPlayerLeft?: (playerId: string) => void;
   onHostMigrated?: (newHostPlayerId: string) => void;
@@ -496,15 +496,15 @@ export function subscribeToRoom(
       } else if (msg.type === 'JOIN_ACCEPT' && handlers.onJoinAccept) {
         handlers.onJoinAccept(msg);
       } else if (msg.type === 'JOIN_CONFIRM' && handlers.onJoinConfirm) {
-        handlers.onJoinConfirm(msg.requestId, msg.playerId, msg.sessionId);
+        handlers.onJoinConfirm(msg.requestId, msg.playerId, msg.sessionId, msg.participantKey);
       } else if (msg.type === 'JOIN_REJECTED' && handlers.onJoinRejected) {
-        handlers.onJoinRejected(msg.reason, msg.requestId);
+        handlers.onJoinRejected(msg.reason, msg.requestId, msg.targetParticipantKey);
       } else if (msg.type === 'WATCH_REQUEST' && msg.spectator && handlers.onWatchRequest) {
         handlers.onWatchRequest(msg.spectator, msg.requestId, msg.senderId);
       } else if (msg.type === 'WATCH_ACCEPT' && handlers.onWatchAccept) {
         handlers.onWatchAccept(msg);
       } else if (msg.type === 'WATCH_CONFIRM' && handlers.onWatchConfirm) {
-        handlers.onWatchConfirm(msg.requestId, msg.spectatorId, msg.sessionId);
+        handlers.onWatchConfirm(msg.requestId, msg.spectatorId, msg.sessionId, msg.participantKey);
       } else if (msg.type === 'REQUEST_SYNC' && handlers.onRequestSync) {
         handlers.onRequestSync();
       } else if (msg.type === 'LEAVE_NOTICE' && msg.playerId && handlers.onPlayerLeft) {

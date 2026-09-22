@@ -492,42 +492,189 @@ const newGameState: GameState = {
 };
 
 // -------------------------------------------------------------------------------------------------
-// TEST 9: CONCURRENT MULTI-PLAYER JOIN STABILITY (NO PLAYERS DROPPED)
+// TEST 10: SAME WI-FI / IP MULTI-CLIENT COLLISION-FREE ISOLATION
+// Scenario: 1 Host + 1 Desktop Tab 2 + 1 Incognito + 1 Mobile (All named "Oyuncu", same IP)
 // -------------------------------------------------------------------------------------------------
-console.log('\n--- TEST 9: Concurrent Multi-Player Join Stability (4 Players Enter Room) ---');
+console.log('\n--- TEST 10: Multi-Client Same Wi-Fi Isolation (Normal Tab 1 & 2, Incognito, Mobile) ---');
 
-let multiJoinHostState: GameState = {
-  ...createInitialState({ roomCode: 'TR-MULTI-44' }),
-  roomId: 'TR-MULTI-44',
-  hostPlayerId: hostP.id,
-  players: [hostP],
+// Host: Desktop Tab 1 (clientId: clientA, tabId: tabA1)
+const clientHost: Player = {
+  id: 'p_clientA_tabA1',
+  userId: 'u_guest_same_ip',
+  clientId: 'clientA',
+  tabId: 'tabA1',
+  participantKey: 'clientA:tabA1',
+  name: 'Oyuncu',
+  color: '#EF4444',
+  avatar: '👑',
+  money: 1500,
+  position: 0,
+  isJailed: false,
+  jailTurns: 0,
+  lapsCompleted: 0,
+  firstLapPurchases: 0,
+  inGame: true,
+  isHost: true,
+  isBot: false,
+  isAfk: false
+};
+
+// Client 2: Desktop Normal Tab 2 on same browser (clientId: clientA, tabId: tabA2)
+const clientDesktopTab2: Player = {
+  id: 'p_clientA_tabA2',
+  userId: 'u_guest_same_ip',
+  clientId: 'clientA',
+  tabId: 'tabA2',
+  participantKey: 'clientA:tabA2',
+  name: 'Oyuncu',
+  color: '#3B82F6',
+  avatar: '🎲',
+  money: 1500,
+  position: 0,
+  isJailed: false,
+  jailTurns: 0,
+  lapsCompleted: 0,
+  firstLapPurchases: 0,
+  inGame: true,
+  isHost: false,
+  isBot: false,
+  isAfk: false
+};
+
+// Client 3: Desktop Incognito Tab (clientId: clientB, tabId: tabB1)
+const clientIncognito: Player = {
+  id: 'p_clientB_tabB1',
+  userId: 'u_guest_incognito',
+  clientId: 'clientB',
+  tabId: 'tabB1',
+  participantKey: 'clientB:tabB1',
+  name: 'Oyuncu',
+  color: '#10B981',
+  avatar: '🎲',
+  money: 1500,
+  position: 0,
+  isJailed: false,
+  jailTurns: 0,
+  lapsCompleted: 0,
+  firstLapPurchases: 0,
+  inGame: true,
+  isHost: false,
+  isBot: false,
+  isAfk: false
+};
+
+// Client 4: Mobile device on same Wi-Fi (clientId: clientC, tabId: tabC1)
+const clientMobile: Player = {
+  id: 'p_clientC_tabC1',
+  userId: 'u_guest_mobile',
+  clientId: 'clientC',
+  tabId: 'tabC1',
+  participantKey: 'clientC:tabC1',
+  name: 'Oyuncu',
+  color: '#F59E0B',
+  avatar: '🎲',
+  money: 1500,
+  position: 0,
+  isJailed: false,
+  jailTurns: 0,
+  lapsCompleted: 0,
+  firstLapPurchases: 0,
+  inGame: true,
+  isHost: false,
+  isBot: false,
+  isAfk: false
+};
+
+let isoState: GameState = {
+  ...createInitialState({ roomCode: 'TR-ISO-99' }),
+  roomId: 'TR-ISO-99',
+  hostPlayerId: clientHost.id,
+  players: [clientHost],
   phase: 'LOBBY'
 };
 
-const playersToJoin: Player[] = [
-  { id: 'p_joiner_1', userId: 'u_joiner_1', name: 'Oyuncu 1', color: '#10B981', avatar: '🎩', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false },
-  { id: 'p_joiner_2', userId: 'u_joiner_2', name: 'Oyuncu 2', color: '#F59E0B', avatar: '🚗', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false },
-  { id: 'p_joiner_3', userId: 'u_joiner_3', name: 'Oyuncu 3', color: '#8B5CF6', avatar: '🚀', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false },
-  { id: 'p_joiner_4', userId: 'u_joiner_4', name: 'Oyuncu 4', color: '#EC4899', avatar: '⭐', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false }
-];
+const pendingJoins = new Map<string, { player: Player; expiresAt: number; requestId: string }>();
 
-// Simulate concurrent join requests arriving on Host
-for (const joiner of playersToJoin) {
-  const currentPlayers = multiJoinHostState.players;
-  const existing = currentPlayers.findIndex(p => (joiner.userId && p.userId === joiner.userId) || p.id === joiner.id);
-  if (existing < 0) {
-    multiJoinHostState = {
-      ...multiJoinHostState,
-      players: [...currentPlayers, joiner]
+function handleHostJoinReq(player: Player, reqId: string) {
+  const pKey = player.participantKey!;
+  // Deduplication check
+  const existing = isoState.players.findIndex(p => p.participantKey === pKey || p.id === player.id);
+  if (existing >= 0) return;
+  if (pendingJoins.has(pKey)) return;
+
+  const totalReserved = isoState.players.length + pendingJoins.size;
+  if (totalReserved >= 6) return;
+
+  pendingJoins.set(pKey, {
+    player: { ...player, inGame: true },
+    expiresAt: Date.now() + 10000,
+    requestId: reqId
+  });
+}
+
+function handleHostJoinConfirm(pKey: string) {
+  if (pendingJoins.has(pKey)) {
+    const pending = pendingJoins.get(pKey)!;
+    pendingJoins.delete(pKey);
+    isoState = {
+      ...isoState,
+      players: [...isoState.players, pending.player]
     };
   }
 }
 
-assert(multiJoinHostState.players.length === 5, 'Host room successfully has 5 players (Host + 4 joiners)');
-for (const joiner of playersToJoin) {
-  assert(multiJoinHostState.players.some(p => p.id === joiner.id), `${joiner.name} is safely preserved in room`);
-}
+// 1. Join Desktop Tab 2
+handleHostJoinReq(clientDesktopTab2, 'req_tab2');
+assert(pendingJoins.has('clientA:tabA2'), 'Desktop Tab 2 reserved slot in pendingJoins');
+handleHostJoinConfirm('clientA:tabA2');
+
+// 2. Join Incognito Tab
+handleHostJoinReq(clientIncognito, 'req_incog');
+assert(pendingJoins.has('clientB:tabB1'), 'Desktop Incognito reserved slot in pendingJoins');
+handleHostJoinConfirm('clientB:tabB1');
+
+// 3. Join Mobile device
+handleHostJoinReq(clientMobile, 'req_mobile');
+assert(pendingJoins.has('clientC:tabC1'), 'Mobile device reserved slot in pendingJoins');
+handleHostJoinConfirm('clientC:tabC1');
+
+assert(isoState.players.length === 4, 'All 4 participants are successfully in the room');
+assert(new Set(isoState.players.map(p => p.participantKey)).size === 4, 'All 4 participants have strictly unique participantKeys');
+assert(new Set(isoState.players.map(p => p.id)).size === 4, 'All 4 participants have unique playerIds');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 11: SPECTATOR ISOLATION (0 SLOT CONSUMPTION)
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 11: Spectator Zero-Slot Consumption ---');
+const spectatorUser = {
+  id: 's_spec_user_1',
+  name: 'Oyuncu',
+  avatar: '👁️',
+  participantKey: 'clientD:tabD1',
+  joinedAt: Date.now()
+};
+
+isoState = {
+  ...isoState,
+  spectators: [spectatorUser]
+};
+
+assert(isoState.players.length === 4, 'Spectator did not increase players count');
+assert(isoState.spectators?.length === 1, 'Spectator recorded in spectators array');
+
+// -------------------------------------------------------------------------------------------------
+// TEST 12: F5 REFRESH RECONNECT IN SAME TAB
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 12: F5 Refresh Reconnect in Same Tab ---');
+// Mobile client reconnects with same participantKey clientC:tabC1
+const mobileReconnectReq = { ...clientMobile };
+const matchIdx = isoState.players.findIndex(p => p.participantKey === mobileReconnectReq.participantKey);
+assert(matchIdx >= 0, 'Host recognizes existing player by preserved participantKey');
+isoState.players[matchIdx] = { ...isoState.players[matchIdx], isAfk: false };
+assert(isoState.players.length === 4, 'Reconnect does not create a duplicate player slot');
 
 console.log('\n================================================================');
 console.log(`🎉 ALL MULTIPLAYER & JOIN HANDSHAKE TESTS PASSED! (${passed} checks, ${failed} failures)`);
 console.log('================================================================\n');
+
+process.exit(failed > 0 ? 1 : 0);

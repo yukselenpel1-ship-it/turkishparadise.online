@@ -52,6 +52,15 @@ import {
 import { soundManager } from './services/soundEffects';
 import { updateUserPresence, subscribeToFriendRequests, subscribeToFriendsAndRequests, syncUserWithBackend } from './services/friendService';
 import { publishPublicRoom, unpublishPublicRoom, setActiveHostRoomProvider } from './services/publicRoomsService';
+import {
+  getClientId,
+  getTabId,
+  getParticipantKey,
+  createPlayerId,
+  createSpectatorId,
+  createRequestId,
+  logIdentityTelemetry
+} from './services/identityService';
 import { Lobby } from './components/Lobby';
 import { Board } from './components/Board';
 import { PlayerList } from './components/PlayerList';
@@ -162,6 +171,7 @@ export const App: React.FC = () => {
   const activeStepIntervalRef = useRef<any>(null);
   const saveStorageTimeoutRef = useRef<any>(null);
   const sessionGenerationRef = useRef<number>(0);
+  const pendingJoinsRef = useRef<Map<string, { player: Player; expiresAt: number; requestId: string }>>(new Map());
 
   /**
    * Centralized Hard Game Session Termination
@@ -169,6 +179,7 @@ export const App: React.FC = () => {
    * notifies peers with ROOM_CLOSED, clears storage, and resets state.
    */
   const terminateGameSession = (reason: string = 'SESSION_TERMINATED', notifyPeers = true) => {
+    pendingJoinsRef.current.clear();
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
     const targetRoom = liveState.roomId || liveState.settings?.roomCode;
@@ -642,13 +653,20 @@ export const App: React.FC = () => {
         const liveState = gameStateRef.current;
         const isHost = isPlayerHost(liveState, liveMyId);
         if (!isHost) return;
-        if (newPlayer.id === liveMyId || (newPlayer.userId && newPlayer.userId === userAccount?.uid)) return;
+
+        const myPKey = getParticipantKey();
+        const pKey = newPlayer.participantKey || (newPlayer.clientId && newPlayer.tabId ? `${newPlayer.clientId}:${newPlayer.tabId}` : newPlayer.id);
+
+        // Avoid processing own join request
+        if (newPlayer.id === liveMyId || (newPlayer.participantKey && newPlayer.participantKey === myPKey)) return;
 
         const currentPlayers = liveState.players;
 
-        // Deduplication: Check if player already exists by userId or id
+        // Deduplication: Check if player already exists in active players list
         const existingIdx = currentPlayers.findIndex((p) =>
-          (newPlayer.userId && p.userId === newPlayer.userId) || p.id === newPlayer.id
+          (p.participantKey && p.participantKey === pKey) ||
+          (p.clientId && p.tabId && newPlayer.clientId && newPlayer.tabId && p.clientId === newPlayer.clientId && p.tabId === newPlayer.tabId) ||
+          p.id === newPlayer.id
         );
 
         if (existingIdx >= 0) {
@@ -667,28 +685,47 @@ export const App: React.FC = () => {
           setGameState(updated);
           addLog(updated, `✨ ${existingPlayer.name} tekrar bağlandı!`, 'success');
           syncRoomState(liveState.roomId || '', updated);
-          syncManager.sendJoinAccept(liveState.roomId || '', newPlayer.id, updated, requestId);
+          syncManager.sendJoinAccept(liveState.roomId || '', existingPlayer.id, updated, requestId, pKey);
+          return;
+        }
+
+        // Clean up expired pending joins
+        const now = Date.now();
+        for (const [key, pending] of pendingJoinsRef.current.entries()) {
+          if (now > pending.expiresAt) {
+            pendingJoinsRef.current.delete(key);
+          }
+        }
+
+        // Check if already in pendingJoins reservation
+        if (pendingJoinsRef.current.has(pKey)) {
+          const pending = pendingJoinsRef.current.get(pKey)!;
+          pending.expiresAt = now + 10000;
+          syncManager.sendJoinAccept(liveState.roomId || '', pending.player.id, liveState, requestId, pKey);
           return;
         }
 
         // Capacity & Phase Checks
         if (liveState.phase !== 'LOBBY') {
-          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oyun zaten başladı! İzleyici olarak katılabilirsiniz.', requestId);
+          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oyun zaten başladı! İzleyici olarak katılabilirsiniz.', requestId, pKey);
           return;
         }
-        const activeCount = currentPlayers.filter(p => p.inGame).length;
-        if (activeCount >= 6) {
-          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda dolu (Maksimum 6 oyuncu)!', requestId);
+        const totalReserved = currentPlayers.length + pendingJoinsRef.current.size;
+        if (totalReserved >= 6) {
+          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda dolu (Maksimum 6 oyuncu)!', requestId, pKey);
           return;
         }
-        if (currentPlayers.length >= 16) {
-          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda kapasitesi dolu!', requestId);
+        if (totalReserved >= 16) {
+          syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda kapasitesi dolu!', requestId, pKey);
           return;
         }
 
         // Auto-resolve color conflict
         const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
-        const takenColors = currentPlayers.map((p) => p.color);
+        const takenColors = [
+          ...currentPlayers.map((p) => p.color),
+          ...Array.from(pendingJoinsRef.current.values()).map(v => v.player.color)
+        ];
         let assignedColor = newPlayer.color;
         if (!assignedColor || takenColors.includes(assignedColor)) {
           const freeColor = allColors.find((c) => !takenColors.includes(c));
@@ -697,7 +734,10 @@ export const App: React.FC = () => {
 
         // Auto-resolve avatar conflict
         const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
-        const takenAvatars = currentPlayers.map((p) => p.avatar);
+        const takenAvatars = [
+          ...currentPlayers.map((p) => p.avatar),
+          ...Array.from(pendingJoinsRef.current.values()).map(v => v.player.avatar)
+        ];
         let assignedAvatar = newPlayer.avatar;
         if (!assignedAvatar || takenAvatars.includes(assignedAvatar)) {
           const freeAvatar = allAvatars.find((a) => !takenAvatars.includes(a));
@@ -707,6 +747,10 @@ export const App: React.FC = () => {
         const startMoney = liveState.settings?.startingMoney || 1500;
         const playerToAdd: Player = {
           ...newPlayer,
+          id: newPlayer.id || createPlayerId(pKey),
+          participantKey: pKey,
+          clientId: newPlayer.clientId || getClientId(),
+          tabId: newPlayer.tabId || getTabId(),
           color: assignedColor,
           avatar: assignedAvatar,
           money: startMoney,
@@ -721,24 +765,38 @@ export const App: React.FC = () => {
           isBot: false
         };
 
-        const updated: GameState = {
-          ...liveState,
-          hostPlayerId: liveState.hostPlayerId || liveMyId || undefined,
-          players: [...currentPlayers, playerToAdd]
-        };
+        pendingJoinsRef.current.set(pKey, {
+          player: playerToAdd,
+          expiresAt: now + 10000,
+          requestId: requestId || ''
+        });
 
-        gameStateRef.current = updated;
-        setGameState(updated);
-        addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${liveState.roomId})`, 'success');
-        syncRoomState(liveState.roomId || '', updated);
-        syncManager.sendJoinAccept(liveState.roomId || '', newPlayer.id, updated, requestId);
+        logIdentityTelemetry('HOST_JOIN_RESERVED', {
+          pKey,
+          playerId: playerToAdd.id,
+          totalReserved: totalReserved + 1
+        });
+
+        syncManager.sendJoinAccept(liveState.roomId || '', playerToAdd.id, liveState, requestId, pKey);
       },
       onJoinAccept: (msg) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
         const liveMyId = myPlayerIdRef.current;
-        const currentUid = userAccount?.uid || getPersistentGuestId();
-        const isTargetMe = msg.targetPlayerId === liveMyId || msg.targetPlayerId?.includes(currentUid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
+        const myPKey = getParticipantKey();
+        const isTargetMe =
+          (msg.targetParticipantKey && msg.targetParticipantKey === myPKey) ||
+          msg.targetPlayerId === liveMyId ||
+          msg.assignedPlayerId === liveMyId;
         if (!isTargetMe || !msg.state) return;
+
+        const assignedId = msg.assignedPlayerId || msg.targetPlayerId || liveMyId;
+        if (assignedId && assignedId !== liveMyId) {
+          setMyPlayerId(assignedId);
+          try {
+            sessionStorage.setItem(SESSION_PLAYER_ID_KEY, assignedId);
+            localStorage.setItem(SESSION_PLAYER_ID_KEY, assignedId);
+          } catch (e) {}
+        }
 
         const remoteState = msg.state as GameState;
         if (remoteState.sessionId) {
@@ -748,29 +806,59 @@ export const App: React.FC = () => {
         setGameState(remoteState);
         debouncedSaveGameState(remoteState);
 
-        if (liveMyId && remoteState.roomId) {
-          syncManager.sendJoinConfirm(remoteState.roomId, liveMyId, remoteState.sessionId, msg.requestId);
+        if (assignedId && remoteState.roomId) {
+          syncManager.sendJoinConfirm(remoteState.roomId, assignedId, remoteState.sessionId, msg.requestId, myPKey);
         }
       },
-      onJoinConfirm: (requestId, playerId) => {
+      onJoinConfirm: (requestId, playerId, sessionId, participantKey) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
         const liveMyId = myPlayerIdRef.current;
         const liveState = gameStateRef.current;
         if (!isPlayerHost(liveState, liveMyId)) return;
 
-        const p = liveState.players.find(x => x.id === playerId);
-        if (p && p.isAfk) {
-          const updated = {
-            ...liveState,
-            players: liveState.players.map(x => x.id === playerId ? { ...x, isAfk: false } : x)
-          };
-          gameStateRef.current = updated;
-          setGameState(updated);
-          syncRoomState(liveState.roomId || '', updated);
+        const pKey = participantKey || (playerId ? Array.from(pendingJoinsRef.current.keys()).find(k => pendingJoinsRef.current.get(k)?.player.id === playerId) : undefined);
+
+        if (pKey && pendingJoinsRef.current.has(pKey)) {
+          const pending = pendingJoinsRef.current.get(pKey)!;
+          pendingJoinsRef.current.delete(pKey);
+
+          const alreadyIn = liveState.players.some(p => p.id === pending.player.id || p.participantKey === pKey);
+          if (!alreadyIn) {
+            const updated: GameState = {
+              ...liveState,
+              hostPlayerId: liveState.hostPlayerId || liveMyId || undefined,
+              players: [...liveState.players, pending.player]
+            };
+            gameStateRef.current = updated;
+            setGameState(updated);
+            addLog(updated, `🎉 ${pending.player.name} odaya katıldı! (${liveState.roomId})`, 'success');
+            syncRoomState(liveState.roomId || '', updated);
+            logIdentityTelemetry('PLAYER_JOIN_CONFIRMED', {
+              playerId: pending.player.id,
+              pKey,
+              totalPlayers: updated.players.length
+            });
+            return;
+          }
+        }
+
+        if (playerId) {
+          const p = liveState.players.find(x => x.id === playerId || (pKey && x.participantKey === pKey));
+          if (p && p.isAfk) {
+            const updated = {
+              ...liveState,
+              players: liveState.players.map(x => (x.id === p.id) ? { ...x, isAfk: false } : x)
+            };
+            gameStateRef.current = updated;
+            setGameState(updated);
+            syncRoomState(liveState.roomId || '', updated);
+          }
         }
       },
-      onJoinRejected: (reason) => {
+      onJoinRejected: (reason, requestId, targetParticipantKey) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
+        const myPKey = getParticipantKey();
+        if (targetParticipantKey && targetParticipantKey !== myPKey) return;
         alert(`Odaya katılınamadı: ${reason || 'Oda kurucusu katılımı reddetti.'}`);
         terminateGameSession('JOIN_REJECTED', false);
       },
@@ -780,13 +868,27 @@ export const App: React.FC = () => {
         const liveState = gameStateRef.current;
         if (!isPlayerHost(liveState, liveMyId)) return;
 
+        const pKey = spectator.participantKey || (spectator.clientId && spectator.tabId ? `${spectator.clientId}:${spectator.tabId}` : spectator.id);
         const existingSpectators = liveState.spectators || [];
         let nextSpectators = [...existingSpectators];
-        if (!nextSpectators.some(s => s.id === spectator.id)) {
+        const existingIdx = nextSpectators.findIndex(s => s.id === spectator.id || (s.participantKey && s.participantKey === pKey));
+
+        if (existingIdx >= 0) {
+          nextSpectators[existingIdx] = {
+            ...nextSpectators[existingIdx],
+            name: spectator.name || nextSpectators[existingIdx].name,
+            avatar: spectator.avatar || nextSpectators[existingIdx].avatar,
+            participantKey: pKey
+          };
+        } else {
           nextSpectators.push({
             id: spectator.id,
             name: spectator.name || 'İzleyici',
             avatar: spectator.avatar || '👁️',
+            userId: spectator.userId,
+            clientId: spectator.clientId,
+            tabId: spectator.tabId,
+            participantKey: pKey,
             joinedAt: Date.now()
           });
         }
@@ -799,13 +901,15 @@ export const App: React.FC = () => {
         gameStateRef.current = updated;
         setGameState(updated);
         syncRoomState(liveState.roomId || '', updated);
-        syncManager.sendWatchAccept(liveState.roomId || '', spectator.id, updated, requestId);
+        syncManager.sendWatchAccept(liveState.roomId || '', spectator.id, updated, requestId, pKey);
       },
       onWatchAccept: (msg) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
         const liveMyId = myPlayerIdRef.current;
-        const currentUid = userAccount?.uid || getPersistentGuestId();
-        const isTargetMe = msg.targetSpectatorId === liveMyId || msg.targetSpectatorId?.includes(currentUid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
+        const myPKey = getParticipantKey();
+        const isTargetMe =
+          (msg.targetParticipantKey && msg.targetParticipantKey === myPKey) ||
+          msg.targetSpectatorId === liveMyId;
         if (!isTargetMe || !msg.state) return;
 
         const remoteState = msg.state as GameState;
@@ -817,17 +921,18 @@ export const App: React.FC = () => {
         debouncedSaveGameState(remoteState);
 
         const spectatorName = userAccount?.displayName || 'İzleyici';
-        if (liveMyId && remoteState.roomId) {
-          syncManager.sendWatchConfirm(remoteState.roomId, liveMyId, spectatorName, remoteState.sessionId, msg.requestId);
+        const finalSpectatorId = msg.targetSpectatorId || liveMyId || createSpectatorId(myPKey);
+        if (remoteState.roomId) {
+          syncManager.sendWatchConfirm(remoteState.roomId, finalSpectatorId, spectatorName, remoteState.sessionId, msg.requestId, myPKey);
         }
       },
-      onWatchConfirm: (requestId, spectatorId) => {
+      onWatchConfirm: (requestId, spectatorId, sessionId, participantKey) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
         const liveMyId = myPlayerIdRef.current;
         const liveState = gameStateRef.current;
         if (!isPlayerHost(liveState, liveMyId)) return;
 
-        const spectator = liveState.spectators?.find(s => s.id === spectatorId);
+        const spectator = liveState.spectators?.find(s => s.id === spectatorId || (participantKey && s.participantKey === participantKey));
         const name = spectator?.name || 'Bir izleyici';
         const updated = { ...liveState };
         addLog(updated, `👁️ ${name} oyunu izlemeye başladı! (${liveState.roomId})`, 'info');
@@ -1498,12 +1603,20 @@ export const App: React.FC = () => {
     try {
       const finalRoom = (targetRoomCode || gameState.roomId || gameState.settings?.roomCode || `TR-${Math.floor(1000 + Math.random() * 9000)}`).trim().toUpperCase();
       const currentUserId = userAccount?.uid || getPersistentGuestId();
-      // Stable in-room playerId generated deterministically per user
       const cleanUid = currentUserId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
-      const newPlayerId = isCreating ? `p_${cleanUid}_${Math.random().toString(36).substring(2, 7)}` : `p_${cleanUid}`;
-      const startMoney = gameState.settings?.startingMoney || 1500;
       
+      const clientId = getClientId();
+      const tabId = getTabId();
+      const participantKey = getParticipantKey();
       const isCreatingRoom = Boolean(isCreating);
+
+      const newPlayerId = isCreatingRoom
+        ? `p_${cleanUid}_${Math.random().toString(36).substring(2, 7)}`
+        : createPlayerId(participantKey);
+      const newSpectatorId = createSpectatorId(participantKey);
+      const activeId = isSpectator ? newSpectatorId : newPlayerId;
+
+      const startMoney = gameState.settings?.startingMoney || 1500;
 
       // Determine unique color
       const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
@@ -1514,8 +1627,11 @@ export const App: React.FC = () => {
       let chosenAvatar = avatar || PLAYER_AVATARS[0];
 
       const newPlayer: Player = {
-        id: newPlayerId,
+        id: activeId,
         userId: currentUserId,
+        clientId,
+        tabId,
+        participantKey,
         name: name || userAccount?.displayName || 'Oyuncu',
         avatar: chosenAvatar,
         color: chosenColor,
@@ -1530,11 +1646,11 @@ export const App: React.FC = () => {
         isHost: isCreatingRoom
       };
 
-      setMyPlayerId(newPlayerId);
+      setMyPlayerId(activeId);
 
       try {
-        sessionStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
-        localStorage.setItem(SESSION_PLAYER_ID_KEY, newPlayerId);
+        sessionStorage.setItem(SESSION_PLAYER_ID_KEY, activeId);
+        localStorage.setItem(SESSION_PLAYER_ID_KEY, activeId);
         sessionStorage.setItem(SESSION_PLAYER_NAME_KEY, newPlayer.name);
         sessionStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
         localStorage.setItem(SESSION_ROOM_ID_KEY, finalRoom);
@@ -1544,6 +1660,7 @@ export const App: React.FC = () => {
         // Ensure prior session networks are hard reset and session generation advanced
         syncManager.hardResetSession(finalRoom, newPlayerId);
         sessionGenerationRef.current++;
+        pendingJoinsRef.current.clear();
 
         // Create fresh room state and broadcast as authoritative Host
         const freshState: GameState = {
@@ -1582,10 +1699,13 @@ export const App: React.FC = () => {
         const sendHandshake = () => {
           if (isSpectator) {
             syncManager.sendWatchRequest(finalRoom, {
-              id: newPlayerId,
+              id: newSpectatorId,
               name: newPlayer.name,
               avatar: newPlayer.avatar,
-              userId: currentUserId
+              userId: currentUserId,
+              clientId,
+              tabId,
+              participantKey
             });
           } else {
             syncManager.sendJoinRequest(finalRoom, newPlayer);
@@ -1596,8 +1716,7 @@ export const App: React.FC = () => {
         // 1. Send immediately
         sendHandshake();
 
-        // 2. Auto-retry burst (250ms, 650ms, 1200ms) to guarantee 100% single-click join
-        // even during socket spinup or broker subscription latency
+        // 2. Auto-retry burst (250ms, 650ms, 1200ms) to guarantee single-click join
         const retryDelays = [250, 650, 1200];
         retryDelays.forEach((delay) => {
           setTimeout(() => {
@@ -1606,7 +1725,7 @@ export const App: React.FC = () => {
               currentLive.roomId === finalRoom &&
               (currentLive.players.length > 1 ||
                 currentLive.phase === 'PLAYING' ||
-                (isSpectator && currentLive.spectators?.some(s => s.id === newPlayerId)))
+                (isSpectator && currentLive.spectators?.some(s => s.id === newSpectatorId || s.participantKey === participantKey)))
             ) {
               return;
             }
