@@ -411,13 +411,19 @@ export function subscribeToRoom(
   onDiceRolled?: (data: DiceRolledPayload) => void,
   isHost = false
 ): () => void {
-  const seenActions = new Set<string>();
+  const seenActions = new Map<string, number>();
+  let lastSeenStateVersion = 0;
   const subscribedAt = Date.now();
   const receiveAction = (playerId: string, actionType: string, payload?: any, actionId?: string) => {
     if (actionId) {
       if (seenActions.has(actionId)) return;
-      seenActions.add(actionId);
-      if (seenActions.size > 200) seenActions.clear();
+      seenActions.set(actionId, Date.now());
+      if (seenActions.size > 500) {
+        const now = Date.now();
+        for (const [id, ts] of seenActions.entries()) {
+          if (now - ts > 30000) seenActions.delete(id);
+        }
+      }
     }
     onGameAction?.(playerId, actionType, payload);
   };
@@ -426,6 +432,13 @@ export function subscribeToRoom(
     roomId,
     (msg) => {
       if (msg.type === 'STATE_SYNC' && msg.state) {
+        if (typeof msg.version === 'number') {
+          if (msg.version < lastSeenStateVersion && !isHost) {
+            console.warn('[Sync] Ignored out-of-order stale STATE_SYNC:', { incomingVersion: msg.version, currentVersion: lastSeenStateVersion });
+            return;
+          }
+          lastSeenStateVersion = Math.max(lastSeenStateVersion, msg.version);
+        }
         onUpdate(msg.state);
       } else if (msg.type === 'DICE_ROLLED' && onDiceRolled) {
         onDiceRolled({

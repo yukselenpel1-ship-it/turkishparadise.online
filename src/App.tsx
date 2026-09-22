@@ -812,26 +812,61 @@ export const App: React.FC = () => {
         } else if (actionType === 'PAY_JAIL') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
           handlePayJailBailAction();
-        } else if (actionType === 'BUILD_HOUSE' && payload?.tileId) {
+        } else if (
+          actionType === 'BUILD_HOUSE' &&
+          typeof payload?.tileId === 'number' &&
+          Number.isInteger(payload.tileId) &&
+          payload.tileId >= 0 &&
+          payload.tileId < 38
+        ) {
           handleBuildHouseAction(payload.tileId, senderPlayerId);
-        } else if (actionType === 'SELL_HOUSE' && payload?.tileId) {
+        } else if (
+          actionType === 'SELL_HOUSE' &&
+          typeof payload?.tileId === 'number' &&
+          Number.isInteger(payload.tileId) &&
+          payload.tileId >= 0 &&
+          payload.tileId < 38
+        ) {
           handleSellHouseAction(payload.tileId, senderPlayerId);
-        } else if (actionType === 'MORTGAGE' && payload?.tileId) {
+        } else if (
+          actionType === 'MORTGAGE' &&
+          typeof payload?.tileId === 'number' &&
+          Number.isInteger(payload.tileId) &&
+          payload.tileId >= 0 &&
+          payload.tileId < 38
+        ) {
           handleToggleMortgageAction(payload.tileId, senderPlayerId);
         } else if (actionType === 'BANKRUPTCY') {
-          handleDeclareBankruptcyAction(payload?.playerId || senderPlayerId);
+          // A player can only declare their own bankruptcy
+          handleDeclareBankruptcyAction(senderPlayerId);
         } else if (actionType === 'CONFIRM_CHANCE') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
-          handleConfirmChanceCard();
-        } else if (actionType === 'SELL_TO_BANK' && payload?.tileId) {
+          if (liveState.pendingAction === 'CHANCE_CARD') {
+            handleConfirmChanceCard();
+          }
+        } else if (
+          actionType === 'SELL_TO_BANK' &&
+          typeof payload?.tileId === 'number' &&
+          Number.isInteger(payload.tileId) &&
+          payload.tileId >= 0 &&
+          payload.tileId < 38
+        ) {
           handleSellToBankAction(payload.tileId, senderPlayerId);
-        } else if (actionType === 'TRADE_OFFER' && payload) {
+        } else if (actionType === 'TRADE_OFFER' && payload && payload.fromPlayerId === senderPlayerId) {
           handleExecuteTradeAction(payload);
         } else if (actionType === 'ACCEPT_TRADE') {
-          handleAcceptIncomingTrade();
+          if (liveState.incomingTradeOffer && liveState.incomingTradeOffer.toPlayerId === senderPlayerId) {
+            handleAcceptIncomingTrade();
+          }
         } else if (actionType === 'DECLINE_TRADE') {
-          handleDeclineIncomingTrade();
-        } else if (actionType === 'CHAT_MESSAGE' && payload?.text) {
+          if (
+            liveState.incomingTradeOffer &&
+            (liveState.incomingTradeOffer.toPlayerId === senderPlayerId ||
+              liveState.incomingTradeOffer.fromPlayerId === senderPlayerId)
+          ) {
+            handleDeclineIncomingTrade();
+          }
+        } else if (actionType === 'CHAT_MESSAGE' && payload?.text && typeof payload.text === 'string') {
           handleSendMessageAction(payload.text, senderPlayerId);
         }
       },

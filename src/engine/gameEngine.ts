@@ -369,15 +369,36 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
   const fromPlayer = newState.players.find(p => p.id === offer.fromPlayerId);
   const toPlayer = newState.players.find(p => p.id === offer.toPlayerId);
 
-  if (!fromPlayer || !toPlayer) return newState;
+  if (!fromPlayer || !toPlayer) {
+    if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
+    return newState;
+  }
+
+  // Sanitize numerical money inputs
+  if (
+    typeof offer.offeredMoney !== 'number' ||
+    isNaN(offer.offeredMoney) ||
+    !isFinite(offer.offeredMoney) ||
+    offer.offeredMoney < 0 ||
+    typeof offer.requestedMoney !== 'number' ||
+    isNaN(offer.requestedMoney) ||
+    !isFinite(offer.requestedMoney) ||
+    offer.requestedMoney < 0
+  ) {
+    addLog(newState, `❌ Geçersiz takas tutarı girildi.`, 'warning');
+    if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
+    return newState;
+  }
 
   // Verify solvency of both participants
   if (offer.offeredMoney > 0 && fromPlayer.money < offer.offeredMoney) {
     addLog(newState, `❌ Takas iptal: ${fromPlayer.name} teklif ettiği ${offer.offeredMoney}₺ nakit paraya sahip değil!`, 'warning');
+    if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
     return newState;
   }
   if (offer.requestedMoney > 0 && toPlayer.money < offer.requestedMoney) {
     addLog(newState, `❌ Takas iptal: ${toPlayer.name} talep edilen ${offer.requestedMoney}₺ nakit paraya sahip değil!`, 'warning');
+    if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
     return newState;
   }
 
@@ -386,6 +407,7 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
     const tile = newState.board.find(b => b.id === id);
     if (!tile || tile.ownerId !== fromPlayer.id) {
       addLog(newState, `❌ Takas iptal: Teklif edilen "${tile?.name || 'Mülk'}" artık ${fromPlayer.name} mülkiyetinde değil!`, 'warning');
+      if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
       return newState;
     }
   }
@@ -393,6 +415,7 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
     const tile = newState.board.find(b => b.id === id);
     if (!tile || tile.ownerId !== toPlayer.id) {
       addLog(newState, `❌ Takas iptal: İstenen "${tile?.name || 'Mülk'}" artık ${toPlayer.name} mülkiyetinde değil!`, 'warning');
+      if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
       return newState;
     }
   }
@@ -404,6 +427,7 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
       const groupTiles = newState.board.filter(t => t.colorGroup === tile.colorGroup);
       if (groupTiles.some(t => t.houses > 0)) {
         addLog(newState, `❌ Takas yapılamaz: "${tile.name}" grubundaki tüm ev ve oteller satılmadan mülk takas edilemez!`, 'warning');
+        if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
         return newState;
       }
     }
@@ -415,6 +439,7 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
     if (!evalResult.accepted) {
       addLog(newState, `❌ ${evalResult.reason}`, 'warning');
       addChatMessage(newState, toPlayer, evalResult.reason);
+      if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
       return newState;
     } else {
       addLog(newState, `💬 ${evalResult.reason}`, 'success');
