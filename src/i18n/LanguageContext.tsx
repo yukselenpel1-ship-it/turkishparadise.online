@@ -153,7 +153,7 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ compact = fa
           <div
             className={`absolute ${
               align === 'left' ? 'left-0' : 'right-0'
-            } top-full mt-2 w-44 rounded-2xl bg-[#091122]/98 border border-slate-700/80 shadow-[0_20px_50px_rgba(0,0,0,0.85)] z-[99999] p-1.5 backdrop-blur-xl animate-fade-in divide-y divide-slate-800/80 select-none`}
+            } top-full mt-2 w-44 rounded-2xl bg-[#091122] border border-slate-700/80 shadow-[0_20px_50px_rgba(0,0,0,0.85)] z-[99999] p-1.5 animate-fade-in divide-y divide-slate-800/80 select-none`}
           >
             <button
               type="button"

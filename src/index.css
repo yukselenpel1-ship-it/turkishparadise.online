@@ -45,6 +45,28 @@
   padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* iOS / PWA / WebKit Crisp Rendering Rules */
+header, .game-header, .safe-top-header, .safe-bottom-bar {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-transform: none;
+  transform: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+header *, .game-header * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+header img, header svg, .game-header img, .game-header svg {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

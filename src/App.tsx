@@ -2029,10 +2029,10 @@ export const App: React.FC = () => {
   const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
 
   return (
-    <div className={`w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none ${
+    <div className={`w-full max-w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none ${
       gameState.phase === 'LOBBY'
         ? 'min-h-[100dvh] overflow-y-auto overflow-x-hidden'
-        : 'h-[100dvh] w-screen overflow-hidden'
+        : 'h-[100dvh] overflow-hidden'
     }`}>
       {gameState.phase === 'LOBBY' ? (
         <Lobby
@@ -2056,11 +2056,11 @@ export const App: React.FC = () => {
       ) : (
         <>
           {/* Top Navbar Header during Game */}
-          <header className="min-h-[calc(2.75rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] px-1.5 sm:px-4 flex items-center justify-between shrink-0 bg-[#070c18]/95 border-b border-amber-500/30 backdrop-blur-md z-50 shadow-lg">
+          <header className="game-header w-full min-h-[calc(2.75rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] px-2 sm:px-4 flex items-center justify-between shrink-0 bg-[#070c18] border-b border-amber-500/30 z-50 shadow-md">
             <div className="flex items-center gap-1 sm:gap-2 min-w-0">
               <DiceLogo size="sm" />
               <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 sm:px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0">
-                <Wifi className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 animate-pulse" />
+                <Wifi className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400" />
                 <span className="hidden xs:inline">{t('liveBadge')}</span>
               </span>
               <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono bg-slate-800/80 px-1.5 sm:px-2 py-0.5 rounded-full border border-slate-700 hidden sm:inline-block">
@@ -2137,7 +2137,7 @@ export const App: React.FC = () => {
                 title={soundEnabled ? t('soundOff') : t('soundOn')}
               >
                 {soundEnabled ? (
-                  <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0 animate-pulse" />
+                  <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
                 ) : (
                   <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0" />
                 )}
@@ -2217,7 +2217,7 @@ export const App: React.FC = () => {
           </main>
 
           {/* Mobile Bottom Navigation Bar (Visible only on < md screens) */}
-          <div className="md:hidden shrink-0 min-h-[calc(3.25rem+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] bg-slate-900/95 border-t border-slate-800/90 px-3 flex items-center justify-around z-40 backdrop-blur-md">
+          <div className="md:hidden shrink-0 min-h-[calc(3.25rem+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] bg-[#070c18] border-t border-slate-800 px-3 flex items-center justify-around z-40 shadow-md">
             <button
               onClick={() => setMobileSheet(mobileSheet === 'players' ? null : 'players')}
               className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer ${
