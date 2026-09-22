@@ -815,6 +815,14 @@ export const App: React.FC = () => {
           handleConfirmChanceCard();
         } else if (actionType === 'SELL_TO_BANK' && payload?.tileId) {
           handleSellToBankAction(payload.tileId, senderPlayerId);
+        } else if (actionType === 'TRADE_OFFER' && payload) {
+          handleExecuteTradeAction(payload);
+        } else if (actionType === 'ACCEPT_TRADE') {
+          handleAcceptIncomingTrade();
+        } else if (actionType === 'DECLINE_TRADE') {
+          handleDeclineIncomingTrade();
+        } else if (actionType === 'CHAT_MESSAGE' && payload?.text) {
+          handleSendMessageAction(payload.text, senderPlayerId);
         }
       },
       (diceData) => {
@@ -1204,6 +1212,19 @@ export const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [gameState.incomingTradeOffer, gameState.phase, gameState.players, isMoving, myPlayerId]);
+
+  // 3.6 Host fallback timer for Chance Card: auto-confirm after 10.5s if active player doesn't respond
+  useEffect(() => {
+    if (gameState.phase !== 'PLAYING' || gameState.pendingAction !== 'CHANCE_CARD' || isMoving) return;
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) return;
+
+    const timer = setTimeout(() => {
+      handleConfirmChanceCard();
+    }, 10500);
+
+    return () => clearTimeout(timer);
+  }, [gameState.phase, gameState.pendingAction, isMoving, myPlayerId]);
 
   // Human Player Takes Back Control from AFK Bot
   const handleTakeBackControl = () => {
@@ -1820,8 +1841,20 @@ export const App: React.FC = () => {
 
   // Trade Offer Action (Human-to-Bot or Human-to-Human)
   const handleExecuteTradeAction = (offer: TradeOffer) => {
-    const targetPlayer = gameState.players.find((p) => p.id === offer.toPlayerId);
-    const senderPlayer = gameState.players.find((p) => p.id === offer.fromPlayerId);
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    if (!isMeHost) {
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
+      if (!myPlayer || !myPlayer.inGame) return;
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'TRADE_OFFER', offer);
+      }
+      return;
+    }
+
+    const targetPlayer = liveState.players.find((p) => p.id === offer.toPlayerId);
+    const senderPlayer = liveState.players.find((p) => p.id === offer.fromPlayerId);
     if (!targetPlayer || !senderPlayer) return;
 
     if (Boolean(targetPlayer.isBot) === true) {
@@ -1855,7 +1888,18 @@ export const App: React.FC = () => {
 
   // Handle Accept Incoming Trade from Bot or Human Player
   const handleAcceptIncomingTrade = () => {
-    if (!gameState.incomingTradeOffer) return;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    if (!isMeHost) {
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
+      if (!myPlayer || !myPlayer.inGame) return;
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'ACCEPT_TRADE');
+      }
+      return;
+    }
+    if (!liveState.incomingTradeOffer) return;
     updateAndBroadcastGameState((prev) => {
       if (!prev.incomingTradeOffer) return prev;
       return executeTrade(prev, prev.incomingTradeOffer);
@@ -1864,6 +1908,17 @@ export const App: React.FC = () => {
 
   // Handle Decline Incoming Trade from Bot or Human Player
   const handleDeclineIncomingTrade = () => {
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    if (!isMeHost) {
+      const myPlayer = liveState.players.find((p) => p.id === liveMyId);
+      if (!myPlayer || !myPlayer.inGame) return;
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'DECLINE_TRADE');
+      }
+      return;
+    }
     updateAndBroadcastGameState((prev) => {
       const fromPlayer = prev.players.find((p) => p.id === prev.incomingTradeOffer?.fromPlayerId);
       const toPlayer = prev.players.find((p) => p.id === prev.incomingTradeOffer?.toPlayerId);
@@ -1889,8 +1944,18 @@ export const App: React.FC = () => {
   };
 
   // Send Chat Message
-  const handleSendMessageAction = (text: string) => {
-    const mePlayer = gameState.players.find((p) => p.id === myPlayerId);
+  const handleSendMessageAction = (text: string, senderPlayerId?: string) => {
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    const activeSenderId = senderPlayerId || liveMyId;
+    if (!isMeHost && !senderPlayerId) {
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'CHAT_MESSAGE', { text });
+      }
+      return;
+    }
+    const mePlayer = liveState.players.find((p) => p.id === activeSenderId);
     if (!mePlayer) return;
     updateAndBroadcastGameState((prev) => addChatMessage(prev, mePlayer, text));
   };
@@ -2244,6 +2309,14 @@ export const App: React.FC = () => {
           onSellHouse={() => handleSellHouseAction(selectedTile.id)}
           onToggleMortgage={() => handleToggleMortgageAction(selectedTile.id)}
           onSellToBank={handleSellToBankAction}
+          onStartTrade={(tile) => {
+            setTradeSelectedTile(tile);
+            if (tile.ownerId && tile.ownerId !== me.id) {
+              setTradeTargetPlayerId(tile.ownerId);
+            }
+            setSelectedTile(null);
+            setIsTradeModalOpen(true);
+          }}
           canBuy={gameState.pendingAction === 'BUY_PROPERTY' && me.id === gameState.players[gameState.currentTurnIndex]?.id && me.position === selectedTile.id}
         />
       )}

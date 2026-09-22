@@ -1355,8 +1355,10 @@ export function nextTurn(state: GameState): GameState {
   }
 
   let nextIndex = (newState.currentTurnIndex + 1) % newState.players.length;
-  while (!newState.players[nextIndex].inGame) {
+  let loopCount = 0;
+  while (!newState.players[nextIndex]?.inGame && loopCount < newState.players.length) {
     nextIndex = (nextIndex + 1) % newState.players.length;
+    loopCount++;
   }
 
   newState.currentTurnIndex = nextIndex;

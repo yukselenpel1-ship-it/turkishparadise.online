@@ -208,6 +208,8 @@ export const Lobby: React.FC<LobbyProps> = ({
       } else if (urlRoom && urlRoom.trim()) {
         const cleanCode = urlRoom.trim().toUpperCase();
         setRoomCode(cleanCode);
+        setIsInviteLink(true);
+        setMode('friend');
       }
     } catch (e) {}
   }, []);
