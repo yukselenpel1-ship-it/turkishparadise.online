@@ -249,6 +249,12 @@ class MultiplayerSyncManager {
     };
   }
 
+  public prepareForRoom(roomId: string): void {
+    const cleanRoomId = roomId.trim().toUpperCase();
+    this.currentRoomId = cleanRoomId;
+    this.ensureMqttConnection();
+  }
+
   public setSessionId(sessionId: string | null): void {
     this.currentSessionId = sessionId;
   }
@@ -909,10 +915,7 @@ class MultiplayerSyncManager {
   }
 
   public notifyListeners(msg: SyncMessage): void {
-    if (!this.currentRoomId) return;
-    if (msg.roomId && msg.roomId.toUpperCase() !== this.currentRoomId.toUpperCase()) return;
-
-    // 1. Handshake & joining messages arrive before session agreement; never filter them by sessionId
+    // 1. Handshake & joining messages arrive before session agreement or during room transitions; never drop them
     if (
       msg.type === 'JOIN_REQUEST' ||
       msg.type === 'JOIN_ACCEPT' ||
@@ -932,6 +935,9 @@ class MultiplayerSyncManager {
       });
       return;
     }
+
+    if (!this.currentRoomId) return;
+    if (msg.roomId && msg.roomId.toUpperCase() !== this.currentRoomId.toUpperCase()) return;
 
     // 2. Authoritative host never gets closed by remote ROOM_CLOSED
     if (msg.type === 'ROOM_CLOSED' && this.isHost) {

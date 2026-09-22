@@ -1552,7 +1552,9 @@ export const App: React.FC = () => {
         debouncedSaveGameState(freshState);
       } else {
         // Joining Guest or Spectator: DO NOT create a new session!
-        // Clear dummy local sessionId and hostPlayerId so Guest seamlessly adopts Host's state on STATE_SYNC
+        // Prepare sync manager room immediately and clear dummy local session so Guest seamlessly adopts Host's state
+        syncManager.prepareForRoom(finalRoom);
+
         setGameState((prev) => ({
           ...prev,
           roomId: finalRoom,
@@ -1564,17 +1566,40 @@ export const App: React.FC = () => {
           players: isSpectator ? prev.players : [newPlayer]
         }));
 
-        if (isSpectator) {
-          syncManager.sendWatchRequest(finalRoom, {
-            id: newPlayerId,
-            name: newPlayer.name,
-            avatar: newPlayer.avatar,
-            userId: currentUserId
-          });
-        } else {
-          syncManager.sendJoinRequest(finalRoom, newPlayer);
-        }
-        syncManager.sendRequestSync(finalRoom);
+        const sendHandshake = () => {
+          if (isSpectator) {
+            syncManager.sendWatchRequest(finalRoom, {
+              id: newPlayerId,
+              name: newPlayer.name,
+              avatar: newPlayer.avatar,
+              userId: currentUserId
+            });
+          } else {
+            syncManager.sendJoinRequest(finalRoom, newPlayer);
+          }
+          syncManager.sendRequestSync(finalRoom);
+        };
+
+        // 1. Send immediately
+        sendHandshake();
+
+        // 2. Auto-retry burst (250ms, 650ms, 1200ms) to guarantee 100% single-click join
+        // even during socket spinup or broker subscription latency
+        const retryDelays = [250, 650, 1200];
+        retryDelays.forEach((delay) => {
+          setTimeout(() => {
+            const currentLive = gameStateRef.current;
+            if (
+              currentLive.roomId === finalRoom &&
+              (currentLive.players.length > 1 ||
+                currentLive.phase === 'PLAYING' ||
+                (isSpectator && currentLive.spectators?.some(s => s.id === newPlayerId)))
+            ) {
+              return;
+            }
+            sendHandshake();
+          }, delay);
+        });
       }
     } catch (err) {
       console.error('[handleJoin] Error joining/creating room:', err);

@@ -297,6 +297,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   const handleFriendSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
+    setMode('main');
     onJoin(finalName, selectedAvatar, selectedColor, true, roomCode.trim().toUpperCase(), false);
   };
 
@@ -907,6 +908,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                 onJoinRoom={(targetRoomCode, isSpectating) => {
                   const finalName = name.trim() || userAccount?.displayName || `Oyuncu_${Math.floor(100 + Math.random() * 900)}`;
                   setRoomCode(targetRoomCode);
+                  setMode('main');
                   onJoin(finalName, selectedAvatar, selectedColor, true, targetRoomCode, false, isSpectating);
                 }}
                 onBackToMain={() => setMode('main')}
