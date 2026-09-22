@@ -67,6 +67,17 @@ header img, header svg, .game-header img, .game-header svg {
   image-rendering: crisp-edges;
 }
 
+/* PC-Only Mouse Hover Animation for Logo */
+@media (hover: hover) and (pointer: fine) {
+  .pc-logo-hover {
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+  }
+  .pc-logo-hover:hover {
+    transform: scale(1.05);
+  }
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
