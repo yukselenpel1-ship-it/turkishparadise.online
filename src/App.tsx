@@ -479,17 +479,19 @@ export const App: React.FC = () => {
 
     if (isMeHost && roomId && gameState.players.length > 0 && isPublic && gameState.phase !== 'ENDED') {
       const getRoomInfo = () => {
-        const hostPlayer = gameState.players.find(p => p.isHost) || gameState.players[0];
+        const liveState = gameStateRef.current;
+        const hostPlayer = liveState.players.find(p => p.isHost) || liveState.players[0];
+        const activeRoomId = liveState.roomId || liveState.settings?.roomCode || roomId;
         return {
-          roomId,
+          roomId: activeRoomId,
           hostName: hostPlayer?.name || userAccount?.displayName || 'Kurucu',
           hostAvatar: hostPlayer?.avatar || '👑',
-          playerCount: gameState.players.length,
+          playerCount: liveState.players.length,
           maxPlayers: 6,
-          botCount: gameState.players.filter(p => p.isBot).length,
-          phase: gameState.phase,
-          startingMoney: gameState.settings?.startingMoney || 1500,
-          isPublic: true,
+          botCount: liveState.players.filter(p => p.isBot).length,
+          phase: liveState.phase,
+          startingMoney: liveState.settings?.startingMoney || 1500,
+          isPublic: liveState.settings?.isPublic !== false,
           updatedAt: Date.now()
         };
       };

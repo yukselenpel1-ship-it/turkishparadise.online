@@ -148,11 +148,15 @@ export const Lobby: React.FC<LobbyProps> = ({
   }, [settings.isPublic]);
 
   const handleTogglePublishPublicRoom = () => {
+    const targetRoomCode = settings.roomCode || roomCode;
     const nextPublic = !isPublicRoom;
-    onUpdateSettings({ ...settings, isPublic: nextPublic });
+    
+    // Update settings cleanly
+    onUpdateSettings({ ...settings, isPublic: nextPublic, roomCode: targetRoomCode });
+
     const hostPlayer = players.find((p) => p.isHost) || players[0];
     const roomInfo = {
-      roomId: settings.roomCode || roomCode,
+      roomId: targetRoomCode,
       hostName: hostPlayer?.name || userAccount?.displayName || 'Kurucu',
       hostAvatar: hostPlayer?.avatar || '👑',
       playerCount: players.length,
@@ -163,12 +167,12 @@ export const Lobby: React.FC<LobbyProps> = ({
       isPublic: nextPublic,
       updatedAt: Date.now(),
     };
+
     if (nextPublic) {
       publishPublicRoom(roomInfo);
       setIsRoomPublished(true);
-      setTimeout(() => setIsRoomPublished(false), 4000);
     } else {
-      unpublishPublicRoom(settings.roomCode || roomCode);
+      unpublishPublicRoom(targetRoomCode);
       setIsRoomPublished(false);
     }
   };

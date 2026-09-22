@@ -64,10 +64,13 @@ export function unpublishPublicRoom(roomId: string): void {
     senderId: LOCAL_CLIENT_ID,
   });
 
-  // 2. Remove from Firebase Realtime Database
+  // 2. Remove from Firebase Realtime Database and cancel onDisconnect hook
   if (isFirebaseConfigured && database) {
     try {
       const roomRef = ref(database, `public_rooms/${roomId}`);
+      try {
+        onDisconnect(roomRef).cancel();
+      } catch (e) {}
       remove(roomRef).catch((e) => console.warn('[Firebase] Public room remove failed:', e));
     } catch (e) {}
   }
@@ -194,6 +197,7 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
         const val = snapshot.val();
         if (val && typeof val === 'object') {
           const now = Date.now();
+          const firebaseRoomIds = new Set<string>();
           Object.values(val).forEach((room: any) => {
             if (
               room &&
@@ -203,9 +207,21 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
               room.playerCount > 0 &&
               now - (room.updatedAt || 0) <= ROOM_TTL_MS
             ) {
+              firebaseRoomIds.add(room.roomId);
               roomsMap.set(room.roomId, { ...room, updatedAt: room.updatedAt || now });
             }
           });
+
+          // Synchronize roomsMap: remove any rooms that are no longer in Firebase
+          roomsMap.forEach((_, id) => {
+            if (!firebaseRoomIds.has(id)) {
+              roomsMap.delete(id);
+            }
+          });
+          emitCleanRooms();
+        } else {
+          // Firebase returns null when database is empty -> clear roomsMap
+          roomsMap.clear();
           emitCleanRooms();
         }
       };
