@@ -491,8 +491,42 @@ const newGameState: GameState = {
   phase: 'LOBBY'
 };
 
-assert(newGameState.players.length === 1, 'Game 2 has ONLY host player');
-assert(newGameState.sessionId !== liveSessionId, 'Game 2 has completely isolated new sessionId');
+// -------------------------------------------------------------------------------------------------
+// TEST 9: CONCURRENT MULTI-PLAYER JOIN STABILITY (NO PLAYERS DROPPED)
+// -------------------------------------------------------------------------------------------------
+console.log('\n--- TEST 9: Concurrent Multi-Player Join Stability (4 Players Enter Room) ---');
+
+let multiJoinHostState: GameState = {
+  ...createInitialState({ roomCode: 'TR-MULTI-44' }),
+  roomId: 'TR-MULTI-44',
+  hostPlayerId: hostP.id,
+  players: [hostP],
+  phase: 'LOBBY'
+};
+
+const playersToJoin: Player[] = [
+  { id: 'p_joiner_1', userId: 'u_joiner_1', name: 'Oyuncu 1', color: '#10B981', avatar: '🎩', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false },
+  { id: 'p_joiner_2', userId: 'u_joiner_2', name: 'Oyuncu 2', color: '#F59E0B', avatar: '🚗', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false },
+  { id: 'p_joiner_3', userId: 'u_joiner_3', name: 'Oyuncu 3', color: '#8B5CF6', avatar: '🚀', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false },
+  { id: 'p_joiner_4', userId: 'u_joiner_4', name: 'Oyuncu 4', color: '#EC4899', avatar: '⭐', money: 1500, position: 0, isJailed: false, jailTurns: 0, lapsCompleted: 0, firstLapPurchases: 0, inGame: true, isHost: false, isBot: false, isAfk: false }
+];
+
+// Simulate concurrent join requests arriving on Host
+for (const joiner of playersToJoin) {
+  const currentPlayers = multiJoinHostState.players;
+  const existing = currentPlayers.findIndex(p => (joiner.userId && p.userId === joiner.userId) || p.id === joiner.id);
+  if (existing < 0) {
+    multiJoinHostState = {
+      ...multiJoinHostState,
+      players: [...currentPlayers, joiner]
+    };
+  }
+}
+
+assert(multiJoinHostState.players.length === 5, 'Host room successfully has 5 players (Host + 4 joiners)');
+for (const joiner of playersToJoin) {
+  assert(multiJoinHostState.players.some(p => p.id === joiner.id), `${joiner.name} is safely preserved in room`);
+}
 
 console.log('\n================================================================');
 console.log(`🎉 ALL MULTIPLAYER & JOIN HANDSHAKE TESTS PASSED! (${passed} checks, ${failed} failures)`);

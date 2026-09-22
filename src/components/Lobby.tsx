@@ -251,7 +251,7 @@ export const Lobby: React.FC<LobbyProps> = ({
       if (players.length <= 1) {
         setIsRoomInactive(true);
       }
-    }, 5500);
+    }, 18000);
 
     return () => clearTimeout(timer);
   }, [hasJoined, isHost, players, myPlayerId]);

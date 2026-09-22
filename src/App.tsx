@@ -543,7 +543,7 @@ export const App: React.FC = () => {
     }
   }, [userAccount, gameState.roomId, gameState.settings?.roomCode, gameState.phase]);
 
-  // 3.8 Window / Tab close listener to broadcast LEAVE_NOTICE to peers and unpublish public room
+  // 3.8 Window / Tab close listener to broadcast LEAVE_NOTICE only on explicit desktop close
   useEffect(() => {
     const handleBeforeUnload = () => {
       const liveState = gameStateRef.current;
@@ -556,10 +556,8 @@ export const App: React.FC = () => {
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('pagehide', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('pagehide', handleBeforeUnload);
     };
   }, []);
 
@@ -625,6 +623,7 @@ export const App: React.FC = () => {
           syncManager.setSessionId(remoteState.sessionId);
         }
 
+        gameStateRef.current = remoteState;
         setGameState(remoteState);
         debouncedSaveGameState(remoteState);
 
@@ -645,15 +644,17 @@ export const App: React.FC = () => {
         if (!isHost) return;
         if (newPlayer.id === liveMyId || (newPlayer.userId && newPlayer.userId === userAccount?.uid)) return;
 
+        const currentPlayers = liveState.players;
+
         // Deduplication: Check if player already exists by userId or id
-        const existingIdx = liveState.players.findIndex((p) =>
+        const existingIdx = currentPlayers.findIndex((p) =>
           (newPlayer.userId && p.userId === newPlayer.userId) || p.id === newPlayer.id
         );
 
         if (existingIdx >= 0) {
           // Idempotent restore: reconnect player in their existing slot
-          const existingPlayer = liveState.players[existingIdx];
-          const updatedPlayers = [...liveState.players];
+          const existingPlayer = currentPlayers[existingIdx];
+          const updatedPlayers = [...currentPlayers];
           updatedPlayers[existingIdx] = {
             ...existingPlayer,
             isAfk: false
@@ -662,6 +663,7 @@ export const App: React.FC = () => {
             ...liveState,
             players: updatedPlayers
           };
+          gameStateRef.current = updated;
           setGameState(updated);
           addLog(updated, `✨ ${existingPlayer.name} tekrar bağlandı!`, 'success');
           syncRoomState(liveState.roomId || '', updated);
@@ -674,19 +676,19 @@ export const App: React.FC = () => {
           syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oyun zaten başladı! İzleyici olarak katılabilirsiniz.', requestId);
           return;
         }
-        const activeCount = liveState.players.filter(p => p.inGame).length;
+        const activeCount = currentPlayers.filter(p => p.inGame).length;
         if (activeCount >= 6) {
           syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda dolu (Maksimum 6 oyuncu)!', requestId);
           return;
         }
-        if (liveState.players.length >= 16) {
+        if (currentPlayers.length >= 16) {
           syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oda kapasitesi dolu!', requestId);
           return;
         }
 
         // Auto-resolve color conflict
         const allColors = [...PLAYER_COLORS, ...FALLBACK_PLAYER_COLORS];
-        const takenColors = liveState.players.map((p) => p.color);
+        const takenColors = currentPlayers.map((p) => p.color);
         let assignedColor = newPlayer.color;
         if (!assignedColor || takenColors.includes(assignedColor)) {
           const freeColor = allColors.find((c) => !takenColors.includes(c));
@@ -695,7 +697,7 @@ export const App: React.FC = () => {
 
         // Auto-resolve avatar conflict
         const allAvatars = [...PLAYER_AVATARS, ...FALLBACK_PLAYER_AVATARS];
-        const takenAvatars = liveState.players.map((p) => p.avatar);
+        const takenAvatars = currentPlayers.map((p) => p.avatar);
         let assignedAvatar = newPlayer.avatar;
         if (!assignedAvatar || takenAvatars.includes(assignedAvatar)) {
           const freeAvatar = allAvatars.find((a) => !takenAvatars.includes(a));
@@ -722,9 +724,10 @@ export const App: React.FC = () => {
         const updated: GameState = {
           ...liveState,
           hostPlayerId: liveState.hostPlayerId || liveMyId || undefined,
-          players: [...liveState.players, playerToAdd]
+          players: [...currentPlayers, playerToAdd]
         };
 
+        gameStateRef.current = updated;
         setGameState(updated);
         addLog(updated, `🎉 ${playerToAdd.name} odaya katıldı! (${liveState.roomId})`, 'success');
         syncRoomState(liveState.roomId || '', updated);
@@ -741,6 +744,7 @@ export const App: React.FC = () => {
         if (remoteState.sessionId) {
           syncManager.setSessionId(remoteState.sessionId);
         }
+        gameStateRef.current = remoteState;
         setGameState(remoteState);
         debouncedSaveGameState(remoteState);
 
@@ -760,6 +764,7 @@ export const App: React.FC = () => {
             ...liveState,
             players: liveState.players.map(x => x.id === playerId ? { ...x, isAfk: false } : x)
           };
+          gameStateRef.current = updated;
           setGameState(updated);
           syncRoomState(liveState.roomId || '', updated);
         }
@@ -791,6 +796,7 @@ export const App: React.FC = () => {
           spectators: nextSpectators
         };
 
+        gameStateRef.current = updated;
         setGameState(updated);
         syncRoomState(liveState.roomId || '', updated);
         syncManager.sendWatchAccept(liveState.roomId || '', spectator.id, updated, requestId);
@@ -806,6 +812,7 @@ export const App: React.FC = () => {
         if (remoteState.sessionId) {
           syncManager.setSessionId(remoteState.sessionId);
         }
+        gameStateRef.current = remoteState;
         setGameState(remoteState);
         debouncedSaveGameState(remoteState);
 
@@ -824,6 +831,7 @@ export const App: React.FC = () => {
         const name = spectator?.name || 'Bir izleyici';
         const updated = { ...liveState };
         addLog(updated, `👁️ ${name} oyunu izlemeye başladı! (${liveState.roomId})`, 'info');
+        gameStateRef.current = updated;
         setGameState(updated);
         syncRoomState(liveState.roomId || '', updated);
       },
@@ -836,105 +844,110 @@ export const App: React.FC = () => {
       },
       onPlayerLeft: (leavingPlayerId) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
-        setGameState((prev) => {
-          const isMe = isPlayerHost(prev, myPlayerId);
+        const liveMyId = myPlayerIdRef.current;
+        const liveState = gameStateRef.current;
+        const isMe = isPlayerHost(liveState, liveMyId);
 
-          if (isMe) {
-            // I AM THE HOST: A guest player is leaving
-            if (leavingPlayerId === myPlayerId) return prev;
+        if (isMe) {
+          // I AM THE HOST: A guest player is leaving
+          if (leavingPlayerId === liveMyId) return;
 
-            const leavingPlayer = prev.players.find((p) => p.id === leavingPlayerId);
-            if (!leavingPlayer) {
-              // Check if spectator left
-              if (prev.spectators?.some(s => s.id === leavingPlayerId)) {
-                const nextSpectators = prev.spectators.filter(s => s.id !== leavingPlayerId);
-                const updated: GameState = { ...prev, spectators: nextSpectators };
-                syncRoomState(prev.roomId, updated);
-                return updated;
-              }
-              return prev;
+          const leavingPlayer = liveState.players.find((p) => p.id === leavingPlayerId);
+          if (!leavingPlayer) {
+            // Check if spectator left
+            if (liveState.spectators?.some(s => s.id === leavingPlayerId)) {
+              const nextSpectators = liveState.spectators.filter(s => s.id !== leavingPlayerId);
+              const updated: GameState = { ...liveState, spectators: nextSpectators };
+              gameStateRef.current = updated;
+              setGameState(updated);
+              syncRoomState(liveState.roomId || '', updated);
             }
-
-            let updated: GameState;
-            if (prev.phase === 'LOBBY') {
-              updated = {
-                ...prev,
-                hostPlayerId: prev.hostPlayerId || myPlayerId || undefined,
-                players: prev.players.filter((p) => p.id !== leavingPlayerId)
-              };
-              addLog(updated, `🚪 ${leavingPlayer.name} odadan ayrıldı.`, 'info');
-            } else {
-              const updatedPlayers = prev.players.map((p) =>
-                p.id === leavingPlayerId ? { ...p, isAfk: true } : p
-              );
-              updated = {
-                ...prev,
-                hostPlayerId: prev.hostPlayerId || myPlayerId || undefined,
-                players: updatedPlayers
-              };
-              addLog(updated, `🚪 ${leavingPlayer.name} oyundan ayrıldı (AFK moduna geçti).`, 'warning');
-            }
-
-            syncRoomState(prev.roomId, updated);
-            return updated;
-          } else {
-            // I AM A GUEST: Check if the HOST left
-            const hostId = prev.hostPlayerId || prev.players.find((p) => p.isHost)?.id || prev.players[0]?.id;
-            if (hostId && hostId === leavingPlayerId) {
-              const remainingHumans = prev.players.filter((p) => p.id !== leavingPlayerId && !p.isBot);
-              const nextHost = remainingHumans[0];
-
-              if (!nextHost) return prev;
-
-              const updatedPlayers = prev.players
-                .filter((p) => prev.phase === 'LOBBY' ? p.id !== leavingPlayerId : true)
-                .map((p) => ({
-                  ...p,
-                  isAfk: p.id === leavingPlayerId ? true : p.isAfk,
-                  isHost: p.id === nextHost.id
-                }));
-
-              const leavingName = prev.players.find(p => p.id === leavingPlayerId)?.name || 'Kurucu';
-              const updated: GameState = {
-                ...prev,
-                hostPlayerId: nextHost.id,
-                players: updatedPlayers
-              };
-              addLog(updated, `👑 Oda Kurucusu (${leavingName}) ayrıldı. Yeni Kurucu: ${nextHost.name}!`, 'warning');
-
-              if (nextHost.id === myPlayerId) {
-                syncManager.sendHostMigrated(prev.roomId, nextHost.id);
-                syncRoomState(prev.roomId, updated);
-              }
-              return updated;
-            }
-
-            if (prev.phase === 'LOBBY') {
-              return {
-                ...prev,
-                players: prev.players.filter((p) => p.id !== leavingPlayerId)
-              };
-            }
-            return prev;
+            return;
           }
-        });
+
+          let updated: GameState;
+          if (liveState.phase === 'LOBBY') {
+            updated = {
+              ...liveState,
+              hostPlayerId: liveState.hostPlayerId || liveMyId || undefined,
+              players: liveState.players.filter((p) => p.id !== leavingPlayerId)
+            };
+            addLog(updated, `🚪 ${leavingPlayer.name} odadan ayrıldı.`, 'info');
+          } else {
+            const updatedPlayers = liveState.players.map((p) =>
+              p.id === leavingPlayerId ? { ...p, isAfk: true } : p
+            );
+            updated = {
+              ...liveState,
+              hostPlayerId: liveState.hostPlayerId || liveMyId || undefined,
+              players: updatedPlayers
+            };
+            addLog(updated, `🚪 ${leavingPlayer.name} oyundan ayrıldı (AFK moduna geçti).`, 'warning');
+          }
+
+          gameStateRef.current = updated;
+          setGameState(updated);
+          syncRoomState(liveState.roomId || '', updated);
+        } else {
+          // I AM A GUEST: Check if the HOST left
+          const hostId = liveState.hostPlayerId || liveState.players.find((p) => p.isHost)?.id || liveState.players[0]?.id;
+          if (hostId && hostId === leavingPlayerId) {
+            const remainingHumans = liveState.players.filter((p) => p.id !== leavingPlayerId && !p.isBot);
+            const nextHost = remainingHumans[0];
+
+            if (!nextHost) return;
+
+            const updatedPlayers = liveState.players
+              .filter((p) => liveState.phase === 'LOBBY' ? p.id !== leavingPlayerId : true)
+              .map((p) => ({
+                ...p,
+                isAfk: p.id === leavingPlayerId ? true : p.isAfk,
+                isHost: p.id === nextHost.id
+              }));
+
+            const leavingName = liveState.players.find(p => p.id === leavingPlayerId)?.name || 'Kurucu';
+            const updated: GameState = {
+              ...liveState,
+              hostPlayerId: nextHost.id,
+              players: updatedPlayers
+            };
+            addLog(updated, `👑 Oda Kurucusu (${leavingName}) ayrıldı. Yeni Kurucu: ${nextHost.name}!`, 'warning');
+
+            gameStateRef.current = updated;
+            setGameState(updated);
+            if (nextHost.id === myPlayerId) {
+              syncManager.sendHostMigrated(liveState.roomId || '', nextHost.id);
+              syncRoomState(liveState.roomId || '', updated);
+            }
+            return;
+          }
+
+          if (liveState.phase === 'LOBBY') {
+            const updated = {
+              ...liveState,
+              players: liveState.players.filter((p) => p.id !== leavingPlayerId)
+            };
+            gameStateRef.current = updated;
+            setGameState(updated);
+          }
+        }
       },
       onHostMigrated: (newHostPlayerId) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
-        setGameState((prev) => {
-          const updatedPlayers = prev.players.map((p) => ({
-            ...p,
-            isHost: p.id === newHostPlayerId
-          }));
-          const newHostName = prev.players.find(p => p.id === newHostPlayerId)?.name || 'Oyuncu';
-          const updated: GameState = {
-            ...prev,
-            hostPlayerId: newHostPlayerId,
-            players: updatedPlayers
-          };
-          addLog(updated, `👑 Oda kuruculuğu ${newHostName} oyuncusuna devredildi.`, 'info');
-          return updated;
-        });
+        const liveState = gameStateRef.current;
+        const updatedPlayers = liveState.players.map((p) => ({
+          ...p,
+          isHost: p.id === newHostPlayerId
+        }));
+        const newHostName = liveState.players.find(p => p.id === newHostPlayerId)?.name || 'Oyuncu';
+        const updated: GameState = {
+          ...liveState,
+          hostPlayerId: newHostPlayerId,
+          players: updatedPlayers
+        };
+        addLog(updated, `👑 Oda kuruculuğu ${newHostName} oyuncusuna devredildi.`, 'info');
+        gameStateRef.current = updated;
+        setGameState(updated);
       },
       onGameAction: (senderPlayerId, actionType, payload) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
