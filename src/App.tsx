@@ -980,6 +980,24 @@ export const App: React.FC = () => {
     }
   }, [gameState.currentTurnIndex, gameState.phase, gameState.players, isMoving, myPlayerId]);
 
+  // 6.55 Auto-confirm Chance/Chest Card after 10 seconds if active player does not click
+  useEffect(() => {
+    if (gameState.phase !== 'PLAYING' || gameState.pendingAction !== 'CHANCE_CARD' || isMoving) return;
+
+    const isMeHost = isPlayerHost(gameState, myPlayerId);
+    if (!isMeHost) return;
+
+    const currentPlayer = gameState.players[gameState.currentTurnIndex];
+    // Bots and AFK already have their fast 1.2s handler in the bot loop.
+    // For active human players, set a 10.5s host auto-confirm fallback:
+    if (currentPlayer && !currentPlayer.isBot && !currentPlayer.isAfk) {
+      const timer = setTimeout(() => {
+        handleConfirmChanceCard();
+      }, 10500);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.pendingAction, gameState.phase, gameState.currentTurnIndex, isMoving, myPlayerId]);
+
   // 6.6 Automatic Game Outcome Stats Tracking (Wins, Losses, Bankruptcy, Matches Played)
   const recordedMatchKeyRef = useRef<string>('');
 
