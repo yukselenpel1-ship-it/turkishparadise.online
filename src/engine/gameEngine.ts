@@ -53,8 +53,13 @@ export function createInitialState(settings?: Partial<GameSettings>): GameState 
     isPublic: settings?.isPublic ?? false
   };
 
+  const now = Date.now();
+  const rand = Math.random().toString(36).substring(2, 8);
+
   return {
     roomId: mergedSettings.roomCode,
+    gameId: `game_${now}_${rand}`,
+    sessionId: `sess_${now}_${rand}`,
     hostPlayerId: undefined,
     settings: mergedSettings,
     phase: 'LOBBY',

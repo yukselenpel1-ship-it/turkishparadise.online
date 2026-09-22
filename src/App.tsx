@@ -161,6 +161,78 @@ export const App: React.FC = () => {
   const pendingRemoteStateRef = useRef<GameState | null>(null);
   const activeStepIntervalRef = useRef<any>(null);
   const saveStorageTimeoutRef = useRef<any>(null);
+  const sessionGenerationRef = useRef<number>(0);
+
+  /**
+   * Centralized Hard Game Session Termination
+   * Completely tears down current multiplayer room, unpublishes presence/beacons,
+   * notifies peers with ROOM_CLOSED, clears storage, and resets state.
+   */
+  const terminateGameSession = (reason: string = 'SESSION_TERMINATED', notifyPeers = true) => {
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const targetRoom = liveState.roomId || liveState.settings?.roomCode;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+
+    // 1. If host, unpublish public room beacon and broadcast ROOM_CLOSED
+    if (targetRoom) {
+      if (isMeHost) {
+        unpublishPublicRoom(targetRoom);
+        if (notifyPeers) {
+          syncManager.sendRoomClosed(targetRoom, liveState.sessionId, reason);
+        }
+      }
+      // Hard reset all sync manager state (close WebRTC, unsubscribe MQTT topic, clear listeners)
+      syncManager.hardResetSession(targetRoom, liveMyId || undefined);
+    }
+
+    // 2. Clear all room and game persistence from Storage
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
+        localStorage.removeItem(SESSION_PLAYER_ID_KEY);
+        sessionStorage.removeItem(SESSION_ROOM_ID_KEY);
+        localStorage.removeItem(SESSION_ROOM_ID_KEY);
+        sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
+        sessionStorage.removeItem(SESSION_GAME_STATE_KEY);
+        localStorage.removeItem(SESSION_GAME_STATE_KEY);
+
+        // Clean room query parameter from URL
+        const currentUrl = new URL(window.location.href);
+        if (currentUrl.searchParams.has('room') || currentUrl.searchParams.has('oda') || currentUrl.searchParams.has('code')) {
+          currentUrl.searchParams.delete('room');
+          currentUrl.searchParams.delete('oda');
+          currentUrl.searchParams.delete('code');
+          window.history.replaceState(null, '', currentUrl.toString());
+        }
+      }
+    } catch (e) {}
+
+    // 3. Clear local state and advance session generation to drop any in-flight packets
+    sessionGenerationRef.current++;
+    if (activeStepIntervalRef.current) {
+      clearInterval(activeStepIntervalRef.current);
+      activeStepIntervalRef.current = null;
+    }
+    if (saveStorageTimeoutRef.current) {
+      clearTimeout(saveStorageTimeoutRef.current);
+      saveStorageTimeoutRef.current = null;
+    }
+    setMyPlayerId(null);
+    setSelectedTile(null);
+    setIsPropertiesModalOpen(false);
+    setIsTradeModalOpen(false);
+    setIsTransactionsModalOpen(false);
+    setIsProfileModalOpen(false);
+    setTradeSelectedTile(undefined);
+    pendingRemoteStateRef.current = null;
+    setIsMoving(false);
+    isMovingRef.current = false;
+
+    // 4. Create a completely fresh initial state with a new random roomCode, gameId, and sessionId
+    const fresh = createInitialState();
+    setGameState(fresh);
+  };
 
   const debouncedSaveGameState = (state: GameState) => {
     if (saveStorageTimeoutRef.current) {
@@ -493,11 +565,25 @@ export const App: React.FC = () => {
     if (!gameState.roomId) return;
 
     const isMeHost = isPlayerHost(gameState, myPlayerId);
+    const activeGeneration = sessionGenerationRef.current;
 
     const unsubscribe = subscribeToRoom(
       gameState.roomId,
       (remoteState) => {
         if (!remoteState || remoteState.roomId !== gameState.roomId) return;
+        if (activeGeneration !== sessionGenerationRef.current) return;
+
+        // 🛡️ SESSION INTEGRITY GUARD:
+        // Reject stale packets from another session / old game
+        if (gameState.sessionId && remoteState.sessionId && remoteState.sessionId !== gameState.sessionId) {
+          console.warn('[Session Guard] Dropped packet from mismatched session:', {
+            currentRoom: gameState.roomId,
+            currentSession: gameState.sessionId,
+            remoteSession: remoteState.sessionId,
+            remoteGameId: remoteState.gameId
+          });
+          return;
+        }
 
         const liveMyId = myPlayerIdRef.current;
         const liveState = gameStateRef.current;
@@ -543,6 +629,7 @@ export const App: React.FC = () => {
         }
       },
       (newPlayer) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
         // Host adds incoming player and broadcasts updated state
         setGameState((prev) => {
           const isHost = isPlayerHost(prev, myPlayerId);
@@ -915,13 +1002,18 @@ export const App: React.FC = () => {
           }
         });
       },
-      isMeHost
+      isMeHost,
+      gameState.sessionId,
+      (reason) => {
+        console.log('[Multiplayer] Received ROOM_CLOSED from host:', reason);
+        terminateGameSession('ROOM_CLOSED', false);
+      }
     );
 
     return () => {
       unsubscribe();
     };
-  }, [gameState.roomId, myPlayerId, userAccount]);
+  }, [gameState.roomId, gameState.sessionId, myPlayerId, userAccount]);
 
   // Sync state changes to room (only host or initial room creator broadcasts to network)
   const updateAndBroadcastGameState = (updater: (prev: GameState) => GameState, allowNonHost = false) => {
@@ -1300,12 +1392,8 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    terminateGameSession('LOGOUT', true);
     await logoutUser();
-    try {
-      sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
-      localStorage.removeItem(SESSION_PLAYER_ID_KEY);
-      sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
-    } catch (e) {}
     setUserAccount(null);
   };
 
@@ -1365,6 +1453,10 @@ export const App: React.FC = () => {
       } catch (e) {}
 
       if (isCreatingRoom) {
+        // Ensure prior session networks are hard reset and session generation advanced
+        syncManager.hardResetSession(finalRoom, newPlayerId);
+        sessionGenerationRef.current++;
+
         // Create fresh room state and broadcast as authoritative Host
         const freshState: GameState = {
           ...createInitialState({ roomCode: finalRoom, startingMoney: startMoney }),
@@ -1401,28 +1493,9 @@ export const App: React.FC = () => {
     }
   };
 
-  // Leave Lobby / Go Back (Only affects departing player, preserves room for remaining players)
+  // Leave Lobby / Go Back (Hard disconnect and full reset)
   const handleLeaveLobby = () => {
-    const currentRoom = gameState.roomId;
-    const currentId = myPlayerId;
-
-    if (currentRoom && currentId) {
-      if (isPlayerHost(gameState, currentId)) {
-        unpublishPublicRoom(currentRoom);
-      }
-      syncManager.leaveRoom(currentRoom, currentId);
-    }
-
-    try {
-      sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
-      localStorage.removeItem(SESSION_PLAYER_ID_KEY);
-      sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
-      sessionStorage.removeItem(SESSION_GAME_STATE_KEY);
-      localStorage.removeItem(SESSION_GAME_STATE_KEY);
-    } catch (e) {}
-
-    setMyPlayerId(null);
-    setGameState(createInitialState());
+    terminateGameSession('LEAVE_LOBBY', true);
   };
 
   // Remove player or bot from room (Host Only)
@@ -2007,23 +2080,7 @@ export const App: React.FC = () => {
 
   // Restart Game
   const handleRestart = () => {
-    if (gameState.roomId) {
-      unpublishPublicRoom(gameState.roomId);
-    }
-    const nextInit = createInitialState(gameState.settings);
-    updateAndBroadcastGameState(() => nextInit);
-    try {
-      sessionStorage.removeItem(SESSION_PLAYER_ID_KEY);
-      localStorage.removeItem(SESSION_PLAYER_ID_KEY);
-      sessionStorage.removeItem(SESSION_PLAYER_NAME_KEY);
-      sessionStorage.removeItem(SESSION_GAME_STATE_KEY);
-      localStorage.removeItem(SESSION_GAME_STATE_KEY);
-    } catch (e) {}
-    setMyPlayerId(null);
-    setSelectedTile(null);
-    setIsPropertiesModalOpen(false);
-    setIsTradeModalOpen(false);
-    setTradeSelectedTile(undefined);
+    terminateGameSession('RESTART', true);
   };
 
   const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;

@@ -409,7 +409,9 @@ export function subscribeToRoom(
   onHostMigrated?: (newHostPlayerId: string) => void,
   onGameAction?: (playerId: string, actionType: string, payload?: any) => void,
   onDiceRolled?: (data: DiceRolledPayload) => void,
-  isHost = false
+  isHost = false,
+  sessionId?: string,
+  onRoomClosed?: (reason?: string) => void
 ): () => void {
   const seenActions = new Map<string, number>();
   let lastSeenStateVersion = 0;
@@ -431,6 +433,10 @@ export function subscribeToRoom(
   const unsubscribeSyncManager = syncManager.joinRoom(
     roomId,
     (msg) => {
+      if (msg.type === 'ROOM_CLOSED') {
+        onRoomClosed?.(msg.reason);
+        return;
+      }
       if (msg.type === 'STATE_SYNC' && msg.state) {
         if (typeof msg.version === 'number') {
           if (msg.version < lastSeenStateVersion && !isHost) {
@@ -463,7 +469,8 @@ export function subscribeToRoom(
         receiveAction(msg.playerId, msg.actionType, msg.payload, msg.actionId);
       }
     },
-    isHost
+    isHost,
+    sessionId
   );
 
   // 2. Firebase Realtime DB Listener (if configured)

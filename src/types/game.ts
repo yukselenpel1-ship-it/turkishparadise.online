@@ -214,6 +214,9 @@ export interface UserAccount {
 
 export interface GameState {
   roomId: string;
+  gameId?: string;
+  sessionId?: string;
+  sessionGeneration?: number;
   hostPlayerId?: string;
   settings: GameSettings;
   phase: 'LOBBY' | 'PLAYING' | 'ENDED';

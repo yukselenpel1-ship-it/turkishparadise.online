@@ -12,11 +12,13 @@ const BROKER_URLS = [
 ];
 
 export type SyncMessage =
-  | { type: 'STATE_SYNC'; senderId: string; roomId: string; version: number; state: GameState }
+  | { type: 'STATE_SYNC'; senderId: string; roomId: string; sessionId?: string; gameId?: string; version: number; state: GameState }
   | {
       type: 'DICE_ROLLED';
       senderId: string;
       roomId: string;
+      sessionId?: string;
+      gameId?: string;
       playerId: string;
       dice: [number, number];
       total: number;
@@ -26,13 +28,14 @@ export type SyncMessage =
       targetPosition: number;
       passedGo: boolean;
     }
-  | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; player: Player }
-  | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; playerId: string }
-  | { type: 'HOST_MIGRATED'; senderId: string; roomId: string; newHostPlayerId: string }
-  | { type: 'REQUEST_SYNC'; senderId: string; roomId: string; playerId?: string }
-  | { type: 'CHAT_MESSAGE'; senderId: string; roomId: string; message: ChatMessage }
-  | { type: 'TRADE_OFFER'; senderId: string; roomId: string; offer: TradeOffer }
-  | { type: 'GAME_ACTION'; senderId: string; roomId: string; playerId: string; actionType: string; payload?: any; actionId?: string };
+  | { type: 'JOIN_REQUEST'; senderId: string; roomId: string; sessionId?: string; player: Player }
+  | { type: 'LEAVE_NOTICE'; senderId: string; roomId: string; sessionId?: string; playerId: string }
+  | { type: 'HOST_MIGRATED'; senderId: string; roomId: string; sessionId?: string; newHostPlayerId: string }
+  | { type: 'REQUEST_SYNC'; senderId: string; roomId: string; sessionId?: string; playerId?: string }
+  | { type: 'CHAT_MESSAGE'; senderId: string; roomId: string; sessionId?: string; message: ChatMessage }
+  | { type: 'TRADE_OFFER'; senderId: string; roomId: string; sessionId?: string; offer: TradeOffer }
+  | { type: 'GAME_ACTION'; senderId: string; roomId: string; sessionId?: string; gameId?: string; playerId: string; actionType: string; payload?: any; actionId?: string }
+  | { type: 'ROOM_CLOSED'; senderId: string; roomId: string; sessionId?: string; reason?: string };
 
 export type MessageCallback = (msg: SyncMessage) => void;
 
@@ -42,6 +45,7 @@ class MultiplayerSyncManager {
   private peerConnections: Map<string, DataConnection> = new Map();
   private hostConnection: DataConnection | null = null;
   private currentRoomId: string | null = null;
+  private currentSessionId: string | null = null;
   private localChannel: BroadcastChannel | null = null;
   private listeners: Set<MessageCallback> = new Set();
   private friendListeners: Set<(data: any) => void> = new Set();
@@ -210,9 +214,10 @@ class MultiplayerSyncManager {
   /**
    * Initialize and join room over WebRTC (PeerJS) & MQTT WebSocket
    */
-  public joinRoom(roomId: string, onMessage: MessageCallback, isHostRole = false): () => void {
+  public joinRoom(roomId: string, onMessage: MessageCallback, isHostRole = false, sessionId?: string): () => void {
     const cleanRoomId = roomId.trim().toUpperCase();
     this.currentRoomId = cleanRoomId;
+    this.currentSessionId = sessionId || null;
     this.isHost = isHostRole;
     this.listeners.add(onMessage);
 
@@ -227,7 +232,8 @@ class MultiplayerSyncManager {
       this.send({
         type: 'REQUEST_SYNC',
         senderId: LOCAL_CLIENT_ID,
-        roomId: cleanRoomId
+        roomId: cleanRoomId,
+        sessionId: this.currentSessionId || undefined
       });
     }, 400);
 
@@ -241,6 +247,7 @@ class MultiplayerSyncManager {
    */
   private initPeerJs(roomId: string) {
     try {
+      if (typeof window === 'undefined' || typeof Peer !== 'function') return;
       // Clean peer room ID
       const safeRoomId = roomId.toLowerCase().replace(/[^a-z0-9]/g, '');
       const hostPeerId = `tp-host-${safeRoomId}`;
@@ -322,6 +329,7 @@ class MultiplayerSyncManager {
 
   private initPeerJsClient(roomId: string, hostPeerId: string) {
     try {
+      if (typeof window === 'undefined' || typeof Peer !== 'function') return;
       this.peer = new Peer(undefined as any, {
         debug: 1,
         config: {
@@ -343,7 +351,8 @@ class MultiplayerSyncManager {
           conn.send({
             type: 'REQUEST_SYNC',
             senderId: LOCAL_CLIENT_ID,
-            roomId: roomId.toUpperCase()
+            roomId: roomId.toUpperCase(),
+            sessionId: this.currentSessionId || undefined
           });
         });
 
@@ -402,6 +411,8 @@ class MultiplayerSyncManager {
       type: 'STATE_SYNC',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
+      sessionId: state.sessionId,
+      gameId: state.gameId,
       version: this.currentVersion,
       state
     };
@@ -411,11 +422,12 @@ class MultiplayerSyncManager {
   /**
    * Send player join request
    */
-  public sendJoinRequest(roomId: string, player: Player): void {
+  public sendJoinRequest(roomId: string, player: Player, sessionId?: string): void {
     const msg: SyncMessage = {
       type: 'JOIN_REQUEST',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
+      sessionId,
       player
     };
     this.send(msg);
@@ -424,11 +436,27 @@ class MultiplayerSyncManager {
   /**
    * Send request sync to room host
    */
-  public sendRequestSync(roomId: string): void {
+  public sendRequestSync(roomId: string, sessionId?: string): void {
     const msg: SyncMessage = {
       type: 'REQUEST_SYNC',
       senderId: LOCAL_CLIENT_ID,
-      roomId: roomId.trim().toUpperCase()
+      roomId: roomId.trim().toUpperCase(),
+      sessionId
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Broadcast room closed / session terminated notification to all room peers
+   */
+  public sendRoomClosed(roomId: string, sessionId?: string, reason = 'HOST_CLOSED'): void {
+    const cleanRoom = roomId.trim().toUpperCase();
+    const msg: SyncMessage = {
+      type: 'ROOM_CLOSED',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: cleanRoom,
+      sessionId: sessionId || this.currentSessionId || undefined,
+      reason
     };
     this.send(msg);
   }
@@ -436,24 +464,22 @@ class MultiplayerSyncManager {
   /**
    * Send leave notice when a player leaves/disconnects
    */
-  public sendLeaveNotice(roomId: string, playerId: string): void {
+  public sendLeaveNotice(roomId: string, playerId: string, sessionId?: string): void {
     const msg: SyncMessage = {
       type: 'LEAVE_NOTICE',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
+      sessionId: sessionId || this.currentSessionId || undefined,
       playerId
     };
     this.send(msg);
   }
 
   /**
-   * Safely leave room, closing all WebRTC connections, unsubscribing from room topic and resetting listeners
+   * Hard reset / terminate current room session
    */
-  public leaveRoom(roomId?: string, playerId?: string): void {
-    const targetRoom = roomId || this.currentRoomId;
-    if (targetRoom && playerId) {
-      this.sendLeaveNotice(targetRoom, playerId);
-    }
+  public hardResetSession(roomId?: string, playerId?: string): void {
+    const targetRoom = (roomId || this.currentRoomId || '').trim().toUpperCase();
 
     // Close all WebRTC peer connections
     try {
@@ -478,22 +504,37 @@ class MultiplayerSyncManager {
       try {
         const topic = `turkishparadise/rooms/${targetRoom.toLowerCase()}`;
         this.mqttClient.unsubscribe(topic);
+        this.subscribedTopics.delete(topic);
       } catch (e) {}
     }
 
     this.listeners.clear();
     this.currentRoomId = null;
+    this.currentSessionId = null;
     this.isHost = false;
+    this.currentVersion = 0;
+  }
+
+  /**
+   * Safely leave room, closing all WebRTC connections, unsubscribing from room topic and resetting listeners
+   */
+  public leaveRoom(roomId?: string, playerId?: string, sessionId?: string): void {
+    const targetRoom = roomId || this.currentRoomId;
+    if (targetRoom && playerId) {
+      this.sendLeaveNotice(targetRoom, playerId, sessionId);
+    }
+    this.hardResetSession(targetRoom || undefined, playerId);
   }
 
   /**
    * Send host migration notification
    */
-  public sendHostMigrated(roomId: string, newHostPlayerId: string): void {
+  public sendHostMigrated(roomId: string, newHostPlayerId: string, sessionId?: string): void {
     const msg: SyncMessage = {
       type: 'HOST_MIGRATED',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
+      sessionId,
       newHostPlayerId
     };
     this.send(msg);
@@ -511,12 +552,16 @@ class MultiplayerSyncManager {
     doublesStreak: number,
     startPosition: number,
     targetPosition: number,
-    passedGo: boolean
+    passedGo: boolean,
+    sessionId?: string,
+    gameId?: string
   ): void {
     const msg: SyncMessage = {
       type: 'DICE_ROLLED',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
+      sessionId: sessionId || this.currentSessionId || undefined,
+      gameId,
       playerId,
       dice,
       total,
@@ -532,12 +577,21 @@ class MultiplayerSyncManager {
   /**
    * Send authoritative game action request to host
    */
-  public sendGameAction(roomId: string, playerId: string, actionType: string, payload?: any): string {
+  public sendGameAction(
+    roomId: string,
+    playerId: string,
+    actionType: string,
+    payload?: any,
+    sessionId?: string,
+    gameId?: string
+  ): string {
     const actionId = `${LOCAL_CLIENT_ID}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const msg: SyncMessage = {
       type: 'GAME_ACTION',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
+      sessionId: sessionId || this.currentSessionId || undefined,
+      gameId,
       playerId,
       actionType,
       payload,
@@ -723,9 +777,13 @@ class MultiplayerSyncManager {
     };
   }
 
-  private notifyListeners(msg: SyncMessage): void {
+  public notifyListeners(msg: SyncMessage): void {
     if (!this.currentRoomId) return;
     if (msg.roomId && msg.roomId.toUpperCase() !== this.currentRoomId.toUpperCase()) return;
+    // 🛡️ Session Guard: Reject packets targeting a different session
+    if (this.currentSessionId && msg.sessionId && msg.sessionId !== this.currentSessionId) {
+      return;
+    }
     this.listeners.forEach((callback) => {
       try {
         callback(msg);
@@ -736,4 +794,5 @@ class MultiplayerSyncManager {
   }
 }
 
+export { MultiplayerSyncManager };
 export const syncManager = new MultiplayerSyncManager();
