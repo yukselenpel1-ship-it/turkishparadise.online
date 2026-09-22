@@ -1031,6 +1031,12 @@ class MultiplayerSyncManager {
   }
 
   public notifyListeners(msg: SyncMessage): void {
+    // 0. Directory-only messages must never reach room session listeners
+    const msgType = (msg as any).type;
+    if (msgType === 'PUBLIC_ROOM_REMOVED' || msgType === 'ROOM_ANNOUNCE' || msgType === 'DISCOVERY_PING') {
+      return;
+    }
+
     // 1. Handshake & joining messages arrive before session agreement or during room transitions; never drop them
     if (
       msg.type === 'JOIN_REQUEST' ||
@@ -1055,9 +1061,13 @@ class MultiplayerSyncManager {
     if (!this.currentRoomId) return;
     if (msg.roomId && msg.roomId.toUpperCase() !== this.currentRoomId.toUpperCase()) return;
 
-    // 2. Authoritative host never gets closed by remote ROOM_CLOSED
-    if (msg.type === 'ROOM_CLOSED' && this.isHost) {
-      return;
+    // 2. Authoritative host never gets closed by remote ROOM_CLOSED; Guest ignores ROOM_CLOSED from mismatched session
+    if (msg.type === 'ROOM_CLOSED') {
+      if (this.isHost) return;
+      if (this.currentSessionId && msg.sessionId && msg.sessionId !== this.currentSessionId) {
+        console.warn('[Sync] Ignored ROOM_CLOSED from mismatched session:', msg.sessionId, 'current:', this.currentSessionId);
+        return;
+      }
     }
 
     // 3. 🛡️ Session Guard: For state and in-game action sync, if both this client and message have sessionId and they mismatch, drop packet

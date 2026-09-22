@@ -57,9 +57,9 @@ export function unpublishPublicRoom(roomId: string): void {
 
   roomsMap.delete(roomId);
 
-  // 1. Broadcast room closed event globally to immediately remove from all clients
+  // 1. Broadcast public room removed event globally to remove from directory listings
   syncManager.broadcastGlobal(PUBLIC_ROOMS_GLOBAL_TOPIC, {
-    type: 'ROOM_CLOSED',
+    type: 'PUBLIC_ROOM_REMOVED',
     roomId,
     senderId: LOCAL_CLIENT_ID,
   });
@@ -163,7 +163,7 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
         roomsMap.delete(room.roomId);
       }
       emitCleanRooms();
-    } else if (payload.type === 'ROOM_CLOSED' && payload.roomId) {
+    } else if ((payload.type === 'PUBLIC_ROOM_REMOVED' || payload.type === 'ROOM_CLOSED') && payload.roomId) {
       roomsMap.delete(payload.roomId);
       emitCleanRooms();
     } else if (payload.type === 'DISCOVERY_PING') {

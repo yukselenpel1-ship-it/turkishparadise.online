@@ -507,13 +507,10 @@ export const App: React.FC = () => {
       return () => {
         clearInterval(heartbeatInterval);
         setActiveHostRoomProvider(null);
-        if (roomId) {
-          unpublishPublicRoom(roomId);
-        }
       };
     } else {
       setActiveHostRoomProvider(null);
-      if (roomId && (!isPublic || gameState.phase === 'ENDED')) {
+      if (isMeHost && roomId && (!isPublic || gameState.phase === 'ENDED')) {
         unpublishPublicRoom(roomId);
       }
     }
