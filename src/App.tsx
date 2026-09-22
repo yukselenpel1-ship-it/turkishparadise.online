@@ -542,7 +542,14 @@ export const App: React.FC = () => {
   // 3.5 Broadcast user online presence & current room in real-time
   useEffect(() => {
     if (userAccount && userAccount.friendCode) {
-      const activeRoom = gameState.roomId || gameState.settings?.roomCode || 'TR-1001';
+      const isInActiveRoom = Boolean(
+        myPlayerId &&
+        gameState.roomId &&
+        gameState.players.some(p => p.id === myPlayerId) &&
+        gameState.phase !== 'ENDED'
+      );
+      const activeRoom = isInActiveRoom ? gameState.roomId : undefined;
+
       updateUserPresence(
         userAccount.uid,
         userAccount.friendCode,
@@ -551,7 +558,7 @@ export const App: React.FC = () => {
         activeRoom
       );
     }
-  }, [userAccount, gameState.roomId, gameState.settings?.roomCode, gameState.phase]);
+  }, [userAccount, gameState.roomId, gameState.settings?.roomCode, gameState.phase, gameState.players.length, myPlayerId]);
 
   // 3.8 Window / Tab close listener to broadcast LEAVE_NOTICE only on explicit desktop close
   useEffect(() => {
@@ -1736,6 +1743,20 @@ export const App: React.FC = () => {
             sendHandshake();
           }, delay);
         });
+
+        // 3. Handshake timeout check: If room is not responding after 3.5s, exit with friendly message
+        setTimeout(() => {
+          const currentLive = gameStateRef.current;
+          if (
+            currentLive.roomId === finalRoom &&
+            !isCreatingRoom &&
+            !currentLive.sessionId &&
+            (!isSpectator ? currentLive.players.length <= 1 : !currentLive.hostPlayerId)
+          ) {
+            alert('Oda artık aktif değil veya kurucu ayrıldı.');
+            terminateGameSession('ROOM_INACTIVE', false);
+          }
+        }, 3500);
       }
     } catch (err) {
       console.error('[handleJoin] Error joining/creating room:', err);
@@ -1848,8 +1869,11 @@ export const App: React.FC = () => {
 
   // Join Friend's Room Directly from Profile Modal / Friends List
   const handleJoinFriendRoom = (targetRoomId: string) => {
-    const cleanRoom = targetRoomId.trim().toUpperCase();
-    if (!cleanRoom) return;
+    const cleanRoom = (targetRoomId || '').trim().toUpperCase();
+    if (!cleanRoom) {
+      alert('Oda artık aktif değil.');
+      return;
+    }
 
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('room', cleanRoom);
@@ -1860,10 +1884,9 @@ export const App: React.FC = () => {
       localStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
     } catch (e) {}
 
-    const existingPlayer = myPlayerId ? gameState.players.find(p => p.id === myPlayerId) : undefined;
-    const myName = existingPlayer?.name || userAccount?.displayName || 'Oyuncu';
-    const myAvatar = existingPlayer?.avatar || '🎩';
-    const myColor = existingPlayer?.color || '#3b82f6';
+    const myName = userAccount?.displayName || 'Oyuncu';
+    const myAvatar = '🎩';
+    const myColor = '#3b82f6';
 
     handleJoin(myName, myAvatar, myColor, true, cleanRoom, false);
   };

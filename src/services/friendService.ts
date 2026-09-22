@@ -657,14 +657,35 @@ export function updateUserPresence(
   isOnline: boolean,
   currentRoomId?: string
 ): void {
-  syncManager.sendFriendMessage({
+  const cleanCode = (friendCode || getDeterministicFriendCode(uid)).trim().toUpperCase();
+  const presenceData = {
     type: 'PRESENCE_UPDATE',
     userId: uid,
-    friendCode,
+    friendCode: cleanCode,
     displayName,
     isOnline,
-    currentRoomId
-  });
+    currentRoomId: currentRoomId || null,
+    updatedAt: Date.now()
+  };
+
+  // 1. Broadcast real-time MQTT message
+  syncManager.sendFriendMessage(presenceData);
+
+  // 2. Publish retained message on presence topic for cross-device persistence (PC <-> Mobile)
+  if (cleanCode) {
+    syncManager.publishRetained(`turkishparadise/presence/v1/${cleanCode}`, presenceData);
+  }
+  if (uid) {
+    syncManager.publishRetained(`turkishparadise/presence/v1/${uid}`, presenceData);
+  }
+
+  // 3. Sync to Firebase Realtime Database if configured
+  if (isFirebaseConfigured && database) {
+    try {
+      const presenceRef = ref(database, `presence/${uid}`);
+      set(presenceRef, presenceData).catch(() => {});
+    } catch (e) {}
+  }
 }
 
 /**
@@ -761,6 +782,36 @@ export function subscribeToFriendsAndRequests(
 
   // 3. Subscribe to Cloud Retained Topics (Instant sync across Mobile, PC, and all devices)
   const unsubs: Array<() => void> = [];
+
+  // Retained presence topics across all friends
+  unsubs.push(
+    syncManager.subscribeTopic('turkishparadise/presence/v1/#', (presencePayload) => {
+      if (!presencePayload || !active || !uid) return;
+      if (presencePayload.userId && presenceDataMatched(presencePayload, uid)) {
+        const currentFriends = getFriends(uid);
+        let updated = false;
+        const nextFriends = currentFriends.map((f) => {
+          if (f.uid === presencePayload.userId || (presencePayload.friendCode && f.friendCode === presencePayload.friendCode)) {
+            updated = true;
+            return {
+              ...f,
+              isOnline: Boolean(presencePayload.isOnline),
+              activeRoomId: presencePayload.currentRoomId || undefined
+            };
+          }
+          return f;
+        });
+        if (updated) {
+          saveFriends(uid, nextFriends);
+          safeNotify(nextFriends, getIncomingRequests(uid));
+        }
+      }
+    })
+  );
+
+  function presenceDataMatched(data: any, myUid: string): boolean {
+    return data.userId !== myUid;
+  }
 
   if (cleanMyCode) {
     // Retained account state for my friendCode
@@ -899,7 +950,7 @@ export function subscribeToFriendsAndRequests(
               return {
                 ...f,
                 isOnline: Boolean(data.isOnline),
-                activeRoomId: data.currentRoomId || f.activeRoomId
+                activeRoomId: data.currentRoomId || undefined
               };
             }
             return f;
