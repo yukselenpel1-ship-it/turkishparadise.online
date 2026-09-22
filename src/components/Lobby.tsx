@@ -586,11 +586,11 @@ export const Lobby: React.FC<LobbyProps> = ({
               /* Compact, elegant Room Lobby Header */
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-3 mb-3.5 w-full">
                 <div className="flex items-center gap-2.5 sm:gap-3 text-left">
-                  <div className="relative flex items-center justify-center shrink-0 pc-dice-icon-hover">
+                  <div className="relative flex items-center justify-center shrink-0">
                     <img
                       src="/dice-logo.png"
                       alt="Turkish Paradise 3D Zar Logo"
-                      className="site-logo-dice pointer-events-none"
+                      className="brand-dice pointer-events-none"
                       loading="eager"
                     />
                   </div>
@@ -612,12 +612,11 @@ export const Lobby: React.FC<LobbyProps> = ({
             ) : (
               /* Landing Page Card Header */
               <div className="text-center mb-4 sm:mb-5 flex flex-col items-center">
-                <div className="relative flex items-center justify-center shrink-0 mb-1.5 pc-dice-icon-hover">
-                  <div className="absolute inset-0 bg-amber-400/20 rounded-full blur-md pointer-events-none" />
+                <div className="relative flex items-center justify-center shrink-0 mb-1.5">
                   <img
                     src="/dice-logo.png"
                     alt="Turkish Paradise 3D Zar Logo"
-                    className="site-logo-dice pointer-events-none"
+                    className="brand-dice pointer-events-none"
                     loading="eager"
                   />
                 </div>

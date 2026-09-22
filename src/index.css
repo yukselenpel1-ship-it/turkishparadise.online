@@ -100,17 +100,31 @@ header img, header svg, .game-header img, .game-header svg {
   background: rgba(148, 163, 184, 0.8);
 }
 
-/* Site Logo Crisp 44px Rule */
+/* Site & Brand Logo Crisp Rules */
+.brand-dice,
 .site-logo-dice {
   width: 44px;
   height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  max-width: none;
+  max-height: none;
   object-fit: contain;
   display: block;
   flex-shrink: 0;
-
-  /* bulanıklık oluşturan şeyleri kaldır */
   filter: none;
   transform: none;
   image-rendering: auto;
 }
+
+@media (max-width: 768px) {
+  .brand-dice,
+  .site-logo-dice {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
+  }
+}
+
 

@@ -24,16 +24,12 @@ export const DiceLogo: React.FC<DiceLogoProps> = ({
     <div
       className={`inline-flex items-center gap-2 sm:gap-2.5 select-none group shrink-0 ${className}`}
     >
-      {/* 3D Dice Logo - Only this icon scales slightly on PC mouse hover */}
-      <div className={`relative ${sizeStyles} flex items-center justify-center shrink-0 pc-dice-icon-hover`}>
-        {/* Ambient subtle glow */}
-        <div className="absolute inset-0 bg-amber-400/20 rounded-full blur-sm pointer-events-none" />
-
-        {/* 3D Dice Image */}
+      {/* 3D Dice Logo */}
+      <div className="relative flex items-center justify-center shrink-0">
         <img
           src="/dice-logo.png"
           alt="Turkish Paradise 3D Zar Logo"
-          className="site-logo-dice pointer-events-none"
+          className="brand-dice pointer-events-none"
           loading="eager"
         />
       </div>
