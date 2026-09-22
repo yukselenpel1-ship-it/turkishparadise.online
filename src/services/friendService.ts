@@ -330,15 +330,21 @@ export async function fetchFriendsFromDB(userId: string): Promise<{
     if (res.ok) {
       const data = await res.json();
       if (data.success) {
-        const friends: FriendUser[] = (data.friends || []).map((f: any) => ({
-          uid: f.id || f.googleSub,
-          friendCode: f.friendCode,
-          displayName: f.displayName,
-          photoURL: f.avatarUrl,
-          email: f.email,
-          isOnline: Boolean(f.isOnline),
-          addedAt: f.createdAt
-        }));
+        const friends: FriendUser[] = (data.friends || []).map((f: any) => {
+          const cached = cachedFriends.find(
+            (c) => (c.uid && (c.uid === f.id || c.uid === f.googleSub)) || (c.friendCode && f.friendCode && c.friendCode === f.friendCode)
+          );
+          return {
+            uid: f.id || f.googleSub,
+            friendCode: f.friendCode,
+            displayName: f.displayName,
+            photoURL: f.avatarUrl,
+            email: f.email,
+            isOnline: cached ? cached.isOnline : Boolean(f.isOnline),
+            activeRoomId: cached?.activeRoomId,
+            addedAt: f.createdAt
+          };
+        });
 
         const pendingRequests: FriendRequest[] = (data.pendingIncoming || []).map((req: any) => ({
           id: req.id,

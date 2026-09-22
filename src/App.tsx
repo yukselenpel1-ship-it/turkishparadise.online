@@ -172,6 +172,7 @@ export const App: React.FC = () => {
   const saveStorageTimeoutRef = useRef<any>(null);
   const sessionGenerationRef = useRef<number>(0);
   const pendingJoinsRef = useRef<Map<string, { player: Player; expiresAt: number; requestId: string }>>(new Map());
+  const pendingJoinRequestIdRef = useRef<string | null>(null);
 
   /**
    * Centralized Hard Game Session Termination
@@ -771,6 +772,16 @@ export const App: React.FC = () => {
           isBot: false
         };
 
+        const updatedState: GameState = {
+          ...liveState,
+          players: [...liveState.players.filter(p => p.id !== playerToAdd.id && p.participantKey !== pKey), playerToAdd]
+        };
+
+        gameStateRef.current = updatedState;
+        setGameState(updatedState);
+        addLog(updatedState, `🎉 ${playerToAdd.name} odaya katıldı! (${liveState.roomId})`, 'success');
+        syncRoomState(liveState.roomId || '', updatedState);
+
         pendingJoinsRef.current.set(pKey, {
           player: playerToAdd,
           expiresAt: now + 10000,
@@ -783,32 +794,25 @@ export const App: React.FC = () => {
           totalReserved: totalReserved + 1
         });
 
-        syncManager.sendJoinAccept(liveState.roomId || '', playerToAdd.id, liveState, requestId, pKey);
+        syncManager.sendJoinAccept(liveState.roomId || '', playerToAdd.id, updatedState, requestId, pKey);
       },
       onJoinAccept: (msg) => {
         if (activeGeneration !== sessionGenerationRef.current) return;
         const liveMyId = myPlayerIdRef.current;
         const myPKey = getParticipantKey();
 
+        // Primary: match by the requestId we sent in JOIN_REQUEST
+        const myPendingReqId = pendingJoinRequestIdRef.current;
         const isTargetMe =
+          (myPendingReqId && msg.requestId && msg.requestId === myPendingReqId) ||
           (msg.targetParticipantKey && msg.targetParticipantKey === myPKey) ||
           msg.targetPlayerId === liveMyId ||
-          msg.assignedPlayerId === liveMyId ||
-          // Fallback: accept if this room matches and we have no sessionId yet (cross-device: participantKey may differ)
-          (msg.state && msg.state.roomId === gameStateRef.current.roomId && !gameStateRef.current.sessionId && !gameStateRef.current.hostPlayerId);
+          msg.assignedPlayerId === liveMyId;
 
-        if (!isTargetMe || !msg.state) {
-          console.log('[JOIN_ACCEPT] Skipped: not targeted at me', {
-            targetParticipantKey: msg.targetParticipantKey,
-            myPKey,
-            targetPlayerId: msg.targetPlayerId,
-            assignedPlayerId: msg.assignedPlayerId,
-            liveMyId,
-            myRoomId: gameStateRef.current.roomId,
-            msgRoomId: msg.state?.roomId
-          });
-          return;
-        }
+        if (!isTargetMe || !msg.state) return;
+
+        // Clear our pending request ID so we don't double-process
+        pendingJoinRequestIdRef.current = null;
 
         const assignedId = msg.assignedPlayerId || msg.targetPlayerId || liveMyId;
         if (assignedId && assignedId !== liveMyId) {
@@ -1724,7 +1728,7 @@ export const App: React.FC = () => {
 
         const sendHandshake = () => {
           if (isSpectator) {
-            syncManager.sendWatchRequest(finalRoom, {
+            const reqId = syncManager.sendWatchRequest(finalRoom, {
               id: newSpectatorId,
               name: newPlayer.name,
               avatar: newPlayer.avatar,
@@ -1733,8 +1737,10 @@ export const App: React.FC = () => {
               tabId,
               participantKey
             });
+            pendingJoinRequestIdRef.current = reqId;
           } else {
-            syncManager.sendJoinRequest(finalRoom, newPlayer);
+            const reqId = syncManager.sendJoinRequest(finalRoom, newPlayer);
+            pendingJoinRequestIdRef.current = reqId;
           }
           syncManager.sendRequestSync(finalRoom);
         };

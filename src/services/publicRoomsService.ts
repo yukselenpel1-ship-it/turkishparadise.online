@@ -4,7 +4,7 @@ import { database, isFirebaseConfigured } from './firebase';
 import { ref, set, remove, onValue, off, onDisconnect } from 'firebase/database';
 
 const PUBLIC_ROOMS_GLOBAL_TOPIC = 'turkishparadise/global/public_rooms';
-const ROOM_TTL_MS = 7000; // 7 seconds strict TTL for live rooms
+const ROOM_TTL_MS = 10000; // 10 seconds TTL for live rooms
 
 // Live in-memory rooms registry
 const roomsMap = new Map<string, PublicRoomInfo>();
@@ -188,7 +188,7 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
     }
   });
 
-  // 2. Firebase Database listener if configured
+  // 2. Firebase Database listener if configured (additive merge only - never delete active MQTT rooms)
   let unsubscribeFirebase = () => {};
   if (isFirebaseConfigured && database) {
     try {
@@ -197,7 +197,6 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
         const val = snapshot.val();
         if (val && typeof val === 'object') {
           const now = Date.now();
-          const firebaseRoomIds = new Set<string>();
           Object.values(val).forEach((room: any) => {
             if (
               room &&
@@ -207,21 +206,12 @@ export function subscribeToPublicRooms(callback: (rooms: PublicRoomInfo[]) => vo
               room.playerCount > 0 &&
               now - (room.updatedAt || 0) <= ROOM_TTL_MS
             ) {
-              firebaseRoomIds.add(room.roomId);
-              roomsMap.set(room.roomId, { ...room, updatedAt: room.updatedAt || now });
+              const existing = roomsMap.get(room.roomId);
+              if (!existing || (room.updatedAt && room.updatedAt > existing.updatedAt)) {
+                roomsMap.set(room.roomId, { ...room, updatedAt: room.updatedAt || now });
+              }
             }
           });
-
-          // Synchronize roomsMap: remove any rooms that are no longer in Firebase
-          roomsMap.forEach((_, id) => {
-            if (!firebaseRoomIds.has(id)) {
-              roomsMap.delete(id);
-            }
-          });
-          emitCleanRooms();
-        } else {
-          // Firebase returns null when database is empty -> clear roomsMap
-          roomsMap.clear();
           emitCleanRooms();
         }
       };
