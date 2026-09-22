@@ -94,7 +94,7 @@ export const App: React.FC = () => {
         const rawSavedState = sessionStorage.getItem(SESSION_GAME_STATE_KEY) || localStorage.getItem(SESSION_GAME_STATE_KEY);
         if (rawSavedState) {
           const parsed = JSON.parse(rawSavedState) as GameState;
-          if (parsed && parsed.players && parsed.players.length > 0) {
+          if (parsed && parsed.players && parsed.players.length > 0 && Array.isArray(parsed.board) && parsed.board.length === 38) {
             // If room matches or no specific room override was specified in URL
             if (!initialRoom || parsed.roomId === initialRoom) {
               return parsed;
