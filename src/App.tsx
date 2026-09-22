@@ -1680,20 +1680,25 @@ export const App: React.FC = () => {
         syncRoomState(finalRoom, freshState);
         debouncedSaveGameState(freshState);
       } else {
-        // Joining Guest or Spectator: DO NOT create a new session!
-        // Prepare sync manager room immediately and clear dummy local session so Guest seamlessly adopts Host's state
+        // Joining Guest or Spectator: Advance session generation & reset pending joins
+        sessionGenerationRef.current++;
+        pendingJoinsRef.current.clear();
         syncManager.prepareForRoom(finalRoom);
 
-        setGameState((prev) => ({
-          ...prev,
+        const guestInitialState: GameState = {
+          ...createInitialState({ roomCode: finalRoom, startingMoney: startMoney }),
           roomId: finalRoom,
           sessionId: undefined,
           gameId: undefined,
           hostPlayerId: undefined,
           isOnlineGame: isOnline,
-          settings: { ...prev.settings, roomCode: finalRoom },
-          players: isSpectator ? prev.players : [newPlayer]
-        }));
+          settings: { ...gameState.settings, roomCode: finalRoom },
+          players: isSpectator ? [] : [newPlayer],
+          phase: 'LOBBY'
+        };
+
+        gameStateRef.current = guestInitialState;
+        setGameState(guestInitialState);
 
         const sendHandshake = () => {
           if (isSpectator) {
@@ -1841,28 +1846,26 @@ export const App: React.FC = () => {
     });
   };
 
-  // Join Friend's Room Directly from Profile Modal
+  // Join Friend's Room Directly from Profile Modal / Friends List
   const handleJoinFriendRoom = (targetRoomId: string) => {
     const cleanRoom = targetRoomId.trim().toUpperCase();
     if (!cleanRoom) return;
 
-    if (gameState.roomId !== cleanRoom) {
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.set('room', cleanRoom);
-      window.history.replaceState(null, '', currentUrl.toString());
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('room', cleanRoom);
+    window.history.replaceState(null, '', currentUrl.toString());
 
-      try {
-        sessionStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
-        localStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
-      } catch (e) {}
+    try {
+      sessionStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
+      localStorage.setItem(SESSION_ROOM_ID_KEY, cleanRoom);
+    } catch (e) {}
 
-      const existingPlayer = myPlayerId ? gameState.players.find(p => p.id === myPlayerId) : undefined;
-      const myName = existingPlayer?.name || userAccount?.displayName || 'Oyuncu';
-      const myAvatar = existingPlayer?.avatar || '🎩';
-      const myColor = existingPlayer?.color || '#3b82f6';
+    const existingPlayer = myPlayerId ? gameState.players.find(p => p.id === myPlayerId) : undefined;
+    const myName = existingPlayer?.name || userAccount?.displayName || 'Oyuncu';
+    const myAvatar = existingPlayer?.avatar || '🎩';
+    const myColor = existingPlayer?.color || '#3b82f6';
 
-      handleJoin(myName, myAvatar, myColor, true, cleanRoom, false);
-    }
+    handleJoin(myName, myAvatar, myColor, true, cleanRoom, false);
   };
 
   // Step-by-Step Animated Roll Dice Action
