@@ -39,7 +39,8 @@ import {
   UserMinus,
   Mail,
   Send,
-  MessageSquare
+  MessageSquare,
+  AlertCircle
 } from 'lucide-react';
 
 interface LobbyProps {
@@ -231,6 +232,29 @@ export const Lobby: React.FC<LobbyProps> = ({
   const hasJoined = Boolean(myPlayerId && players.some((p) => p.id === myPlayerId));
   const me = hasJoined ? players.find((p) => p.id === myPlayerId) : undefined;
   const isHost = Boolean(myPlayerId && (hostPlayerId ? hostPlayerId === myPlayerId : me?.isHost));
+  const [isRoomInactive, setIsRoomInactive] = useState(false);
+
+  // Monitor room connectivity for joiners: if host never responds within 5.5s, show inactive alert
+  useEffect(() => {
+    if (!hasJoined || isHost) {
+      setIsRoomInactive(false);
+      return;
+    }
+
+    const hasOtherPlayers = players.some((p) => p.id !== myPlayerId);
+    if (hasOtherPlayers) {
+      setIsRoomInactive(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (players.length <= 1) {
+        setIsRoomInactive(true);
+      }
+    }, 5500);
+
+    return () => clearTimeout(timer);
+  }, [hasJoined, isHost, players, myPlayerId]);
 
   // Taken colors and avatars by other players/bots in the room (only when inside an active joined room)
   const takenColors = hasJoined ? players.filter((p) => p.id !== myPlayerId).map((p) => p.color) : [];
@@ -832,6 +856,23 @@ export const Lobby: React.FC<LobbyProps> = ({
                       <Play className="w-5 h-5 fill-current" />
                       <span>{t('startGame')}</span>
                     </button>
+                  ) : isRoomInactive ? (
+                    <div className="p-3.5 bg-rose-950/60 border border-rose-500/50 rounded-2xl text-center space-y-2.5 animate-fade-in shadow-xl">
+                      <div className="flex items-center justify-center gap-2 text-rose-300 text-xs font-black">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>{language === 'en' ? 'This room is no longer active or host left.' : 'Bu oda artık aktif değil veya kurucu oyunu kapattı.'}</span>
+                      </div>
+                      {onLeaveLobby && (
+                        <button
+                          type="button"
+                          onClick={onLeaveLobby}
+                          className="w-full bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black py-2.5 rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-rose-900/30 active:scale-95"
+                        >
+                          <ArrowLeft className="w-4 h-4 stroke-[2.5]" />
+                          <span>{t('backToMenu')}</span>
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl text-center space-y-1">
                       <div className="flex items-center justify-center gap-2 text-amber-400 text-xs font-bold">

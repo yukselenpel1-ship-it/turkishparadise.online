@@ -389,7 +389,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     const roomId = gameState.roomId || gameState.settings?.roomCode;
-    const isPublic = gameState.settings?.isPublic !== false;
+    const isPublic = Boolean(gameState.settings?.isPublic);
 
     if (isMeHost && roomId && gameState.players.length > 0 && isPublic && gameState.phase !== 'ENDED') {
       const getRoomInfo = () => {
@@ -413,18 +413,21 @@ export const App: React.FC = () => {
       // Publish initial state immediately
       publishPublicRoom(getRoomInfo());
 
-      // Periodic 3.5s heartbeat while host is in room
+      // Periodic 2.5s live heartbeat while host is active
       const heartbeatInterval = setInterval(() => {
         publishPublicRoom(getRoomInfo());
-      }, 3500);
+      }, 2500);
 
       return () => {
         clearInterval(heartbeatInterval);
         setActiveHostRoomProvider(null);
+        if (roomId) {
+          unpublishPublicRoom(roomId);
+        }
       };
     } else {
       setActiveHostRoomProvider(null);
-      if (gameState.phase === 'ENDED' && roomId) {
+      if (roomId && (!isPublic || gameState.phase === 'ENDED')) {
         unpublishPublicRoom(roomId);
       }
     }
@@ -465,18 +468,25 @@ export const App: React.FC = () => {
     }
   }, [userAccount, gameState.roomId, gameState.settings?.roomCode, gameState.phase]);
 
-  // 3.8 Window / Tab close listener to broadcast LEAVE_NOTICE to peers
+  // 3.8 Window / Tab close listener to broadcast LEAVE_NOTICE to peers and unpublish public room
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (gameState.roomId && myPlayerId) {
-        syncManager.sendLeaveNotice(gameState.roomId, myPlayerId);
+      const liveState = gameStateRef.current;
+      const liveMyId = myPlayerIdRef.current;
+      if (liveState.roomId && liveMyId) {
+        if (isPlayerHost(liveState, liveMyId)) {
+          unpublishPublicRoom(liveState.roomId);
+        }
+        syncManager.sendLeaveNotice(liveState.roomId, liveMyId);
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
     };
-  }, [gameState.roomId, myPlayerId]);
+  }, []);
 
   // 4. Real-time Room State Synchronization & Auto Session Recovery on F5 Reload
   useEffect(() => {
@@ -1962,6 +1972,9 @@ export const App: React.FC = () => {
 
   // Restart Game
   const handleRestart = () => {
+    if (gameState.roomId) {
+      unpublishPublicRoom(gameState.roomId);
+    }
     const nextInit = createInitialState(gameState.settings);
     updateAndBroadcastGameState(() => nextInit);
     try {
