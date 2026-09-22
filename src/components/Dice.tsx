@@ -115,8 +115,23 @@ export const Dice: React.FC<DiceProps> = ({
 }) => {
   const { t, language } = useLanguage();
   const [isRolling, setIsRolling] = useState(false);
+  const [hasTriggeredRoll, setHasTriggeredRoll] = useState(false);
   const [displayDice, setDisplayDice] = useState<[number, number]>(dice);
   const rollIntervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rollIntervalRef.current) {
+        clearInterval(rollIntervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!disabled && isMyTurn) {
+      setHasTriggeredRoll(false);
+    }
+  }, [disabled, isMyTurn]);
 
   useEffect(() => {
     if (!isRolling) {
@@ -125,11 +140,12 @@ export const Dice: React.FC<DiceProps> = ({
   }, [dice, isRolling]);
 
   const handleRollClick = () => {
-    if (disabled || !isMyTurn || isRolling) return;
+    if (disabled || !isMyTurn || isRolling || hasTriggeredRoll) return;
     if (isAfk && onTakeBackControl) {
       onTakeBackControl();
     }
 
+    setHasTriggeredRoll(true);
     setIsRolling(true);
 
     let count = 0;
