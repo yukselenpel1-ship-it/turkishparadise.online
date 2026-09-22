@@ -789,11 +789,26 @@ export const App: React.FC = () => {
         if (activeGeneration !== sessionGenerationRef.current) return;
         const liveMyId = myPlayerIdRef.current;
         const myPKey = getParticipantKey();
+
         const isTargetMe =
           (msg.targetParticipantKey && msg.targetParticipantKey === myPKey) ||
           msg.targetPlayerId === liveMyId ||
-          msg.assignedPlayerId === liveMyId;
-        if (!isTargetMe || !msg.state) return;
+          msg.assignedPlayerId === liveMyId ||
+          // Fallback: accept if this room matches and we have no sessionId yet (cross-device: participantKey may differ)
+          (msg.state && msg.state.roomId === gameStateRef.current.roomId && !gameStateRef.current.sessionId && !gameStateRef.current.hostPlayerId);
+
+        if (!isTargetMe || !msg.state) {
+          console.log('[JOIN_ACCEPT] Skipped: not targeted at me', {
+            targetParticipantKey: msg.targetParticipantKey,
+            myPKey,
+            targetPlayerId: msg.targetPlayerId,
+            assignedPlayerId: msg.assignedPlayerId,
+            liveMyId,
+            myRoomId: gameStateRef.current.roomId,
+            msgRoomId: msg.state?.roomId
+          });
+          return;
+        }
 
         const assignedId = msg.assignedPlayerId || msg.targetPlayerId || liveMyId;
         if (assignedId && assignedId !== liveMyId) {
@@ -1724,8 +1739,11 @@ export const App: React.FC = () => {
           syncManager.sendRequestSync(finalRoom);
         };
 
-        // 1. Send immediately
-        sendHandshake();
+        // 1. Send first handshake after short delay (100ms) so MQTT room subscription is active
+        // This prevents the race condition where JOIN_ACCEPT arrives before we are subscribed
+        setTimeout(() => {
+          sendHandshake();
+        }, 100);
 
         // 2. Auto-retry burst (200ms, 500ms, 1000ms, 1800ms, 3000ms, 4800ms) to guarantee cross-device connection
         const retryDelays = [200, 500, 1000, 1800, 3000, 4800];

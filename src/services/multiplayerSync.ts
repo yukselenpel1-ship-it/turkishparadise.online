@@ -301,8 +301,19 @@ class MultiplayerSyncManager {
     this.isHost = isHostRole;
     this.listeners.add(onMessage);
 
+    // Register topic immediately
+    const roomTopic = `turkishparadise/rooms/${cleanRoomId.toLowerCase()}`;
+    this.subscribedTopics.add(roomTopic);
+
     // 1. Connect MQTT WebSockets
     this.ensureMqttConnection();
+
+    // Subscribe now if already connected (don't wait for 'connect' event)
+    if (this.mqttClient && this.isMqttConnected) {
+      try {
+        this.mqttClient.subscribe(roomTopic, { qos: 1 });
+      } catch (e) {}
+    }
 
     // 2. Setup PeerJS WebRTC P2P mesh
     this.initPeerJs(cleanRoomId);
@@ -322,10 +333,36 @@ class MultiplayerSyncManager {
     };
   }
 
-  public prepareForRoom(roomId: string): void {
+  /**
+   * Prepare for joining a room as guest:
+   * 1. Set currentRoomId immediately
+   * 2. Subscribe to the room MQTT topic NOW (before sendHandshake) so JOIN_ACCEPT is not missed
+   * 3. Also register the room topic in subscribedTopics for re-subscribe on reconnect
+   */
+  public prepareForRoom(roomId: string, onMessage?: MessageCallback): void {
     const cleanRoomId = roomId.trim().toUpperCase();
     this.currentRoomId = cleanRoomId;
+    this.isHost = false;
+    this.currentSessionId = null;
+
+    if (onMessage) {
+      this.listeners.add(onMessage);
+    }
+
+    // Register room topic immediately so it survives reconnects
+    const roomTopic = `turkishparadise/rooms/${cleanRoomId.toLowerCase()}`;
+    this.subscribedTopics.add(roomTopic);
+
     this.ensureMqttConnection();
+
+    // Subscribe to room topic NOW — don't wait for joinRoom() to be called
+    if (this.mqttClient && this.isMqttConnected) {
+      try {
+        this.mqttClient.subscribe(roomTopic, { qos: 1 });
+      } catch (e) {
+        console.warn('[Sync] prepareForRoom subscribe error:', e);
+      }
+    }
   }
 
   public setSessionId(sessionId: string | null): void {
