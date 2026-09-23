@@ -1,0 +1,134 @@
+import { GameState } from '../types/game';
+import { getParticipantKey } from './identityService';
+
+export interface ClientAuthOptions {
+  token?: string | null;
+  participantKey?: string;
+  userId?: string;
+}
+
+export interface SendActionResult {
+  success: boolean;
+  roomId?: string;
+  actionId?: string;
+  version?: number;
+  state?: GameState;
+  events?: any[];
+  error?: string;
+  message?: string;
+  currentVersion?: number;
+}
+
+export interface FetchStateResult {
+  success: boolean;
+  roomId?: string;
+  version?: number;
+  state?: GameState;
+  error?: string;
+  message?: string;
+}
+
+/**
+ * Feature Flag Check:
+ * Returns true only when VITE_SERVER_AUTHORITATIVE_GAME is explicitly set to 'true'.
+ * Default: false (100% preserves existing production client-authoritative multiplayer).
+ */
+export function isServerAuthoritativeEnabled(): boolean {
+  try {
+    return (
+      (typeof import.meta !== 'undefined' &&
+        import.meta.env?.VITE_SERVER_AUTHORITATIVE_GAME === 'true') ||
+      (typeof process !== 'undefined' &&
+        process.env?.VITE_SERVER_AUTHORITATIVE_GAME === 'true')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Build authentication headers for server API requests
+ */
+export function buildAuthHeaders(auth?: ClientAuthOptions): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  if (auth?.token) {
+    headers['Authorization'] = `Bearer ${auth.token}`;
+  }
+
+  const pKey = auth?.participantKey || getParticipantKey();
+  if (pKey) {
+    headers['x-participant-key'] = pKey;
+  }
+
+  if (auth?.userId) {
+    headers['x-user-id'] = auth.userId;
+  }
+
+  return headers;
+}
+
+/**
+ * Send an authoritative action to /api/game/action
+ */
+export async function sendServerGameAction(
+  action: {
+    actionId: string;
+    roomId: string;
+    playerId: string;
+    expectedVersion: number;
+    type: string;
+    payload?: any;
+  },
+  auth?: ClientAuthOptions
+): Promise<SendActionResult> {
+  const headers = buildAuthHeaders(auth);
+
+  try {
+    const response = await fetch('/api/game/action', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(action)
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (err: any) {
+    console.warn('[ServerGameClient] Action network error:', err);
+    return {
+      success: false,
+      error: 'NETWORK_ERROR',
+      message: err?.message || 'Sunucuya bağlanılamadı.'
+    };
+  }
+}
+
+/**
+ * Fetch canonical room state from /api/game/state
+ */
+export async function fetchServerGameState(
+  roomId: string,
+  auth?: ClientAuthOptions
+): Promise<FetchStateResult> {
+  const headers = buildAuthHeaders(auth);
+  const cleanId = encodeURIComponent((roomId || '').trim().toUpperCase());
+
+  try {
+    const response = await fetch(`/api/game/state?roomId=${cleanId}`, {
+      method: 'GET',
+      headers
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (err: any) {
+    console.warn('[ServerGameClient] State fetch network error:', err);
+    return {
+      success: false,
+      error: 'NETWORK_ERROR',
+      message: err?.message || 'Oda durumu alınamadı.'
+    };
+  }
+}

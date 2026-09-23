@@ -1,0 +1,196 @@
+import { IRoomStorage, roomStorage, GameAction } from '../storage/roomStorage';
+import { applyGameAction, EngineOptions } from './serverGameEngine';
+import { AuthenticatedActor, validateActorMatchesPlayer } from '../auth/authMiddleware';
+import { validateActionRequest, ValidatedGameActionRequest } from '../validation/actionSchema';
+import { publishRoomStateUpdateNotification } from '../notification/mqttNotifier';
+import { GameState } from '../../types/game';
+
+export interface ActionPipelineResult {
+  success: boolean;
+  statusCode: number;
+  roomId?: string;
+  actionId?: string;
+  version?: number;
+  currentVersion?: number;
+  state?: GameState;
+  events?: any[];
+  error?: string;
+  message?: string;
+}
+
+export interface PipelineOptions extends EngineOptions {
+  storage?: IRoomStorage;
+}
+
+/**
+ * Robust, production-ready Server-Side Action Pipeline
+ * Executes the full Lifecycle:
+ * Validate -> Idempotency -> Load -> Apply -> Atomic CAS -> Notify -> Response
+ */
+export async function executeGameActionPipeline(
+  body: any,
+  actor: AuthenticatedActor,
+  options?: PipelineOptions
+): Promise<ActionPipelineResult> {
+  const storage = options?.storage || roomStorage;
+  const now = options?.now || Date.now();
+
+  // --------------------------------------------------------------------------
+  // 1. REQUEST SCHEMA VALIDATION
+  // --------------------------------------------------------------------------
+  const schemaRes = validateActionRequest(body);
+  if (!schemaRes.valid || !schemaRes.action) {
+    return {
+      success: false,
+      statusCode: 400,
+      error: schemaRes.error || 'INVALID_ACTION',
+      message: schemaRes.message || 'Geçersiz eylem verisi.'
+    };
+  }
+
+  const validAction: ValidatedGameActionRequest = schemaRes.action;
+  const { roomId, actionId, playerId, expectedVersion, type, payload } = validAction;
+
+  // --------------------------------------------------------------------------
+  // 2. IDEMPOTENCY CHECK
+  // --------------------------------------------------------------------------
+  try {
+    const idempotency = await storage.checkAndRecordActionIdempotency(roomId, actionId);
+    if (idempotency.isDuplicate) {
+      return {
+        success: false,
+        statusCode: 409,
+        error: 'DUPLICATE_ACTION',
+        message: `Bu eylem (${actionId}) zaten işlendi veya devam ediyor.`
+      };
+    }
+  } catch (err: any) {
+    if (err?.message?.includes('STORAGE_UNAVAILABLE')) {
+      return {
+        success: false,
+        statusCode: 503,
+        error: 'STORAGE_UNAVAILABLE',
+        message: 'Depolama servisine ulaşılamıyor.'
+      };
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 3. LOAD CANONICAL STATE FROM STORAGE
+  // --------------------------------------------------------------------------
+  let currentState: GameState | null = null;
+  try {
+    currentState = await storage.getRoomState(roomId);
+  } catch (err: any) {
+    if (err?.message?.includes('STORAGE_UNAVAILABLE')) {
+      return {
+        success: false,
+        statusCode: 503,
+        error: 'STORAGE_UNAVAILABLE',
+        message: 'Depolama servisine ulaşılamıyor.'
+      };
+    }
+    return {
+      success: false,
+      statusCode: 500,
+      error: 'STORAGE_ERROR',
+      message: 'Oda durumu yüklenirken sunucu hatası oluştu.'
+    };
+  }
+
+  if (!currentState) {
+    return {
+      success: false,
+      statusCode: 404,
+      error: 'ROOM_NOT_FOUND',
+      message: `"${roomId}" kodlu oda bulunamadı.`
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // 4. IDENTITY & ACTOR-TO-PLAYER VALIDATION
+  // --------------------------------------------------------------------------
+  const matchResult = validateActorMatchesPlayer(actor, currentState, playerId);
+  if (!matchResult.valid) {
+    return {
+      success: false,
+      statusCode: 403,
+      error: matchResult.error || 'UNAUTHORIZED_PLAYER',
+      message: matchResult.message || 'Yetkisiz oyuncu eylemi.'
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // 5. EXECUTE PURE SERVER GAME ENGINE
+  // --------------------------------------------------------------------------
+  const gameAction: GameAction = {
+    actionId,
+    roomId,
+    playerId,
+    expectedVersion,
+    type,
+    payload,
+    timestamp: now
+  };
+
+  const engineRes = applyGameAction(currentState, gameAction, actor, options);
+  if (!engineRes.success || !engineRes.state) {
+    return {
+      success: false,
+      statusCode: 400,
+      error: engineRes.error || 'INVALID_ACTION',
+      message: engineRes.errorMessage || 'Eylem kural hatası.',
+      currentVersion: currentState.version
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // 6. ATOMIC CAS COMMIT (Compare-And-Swap)
+  // --------------------------------------------------------------------------
+  const casResult = await storage.saveRoomStateWithVersion(roomId, expectedVersion, engineRes.state);
+  if (!casResult.success) {
+    if (casResult.error === 'VERSION_CONFLICT') {
+      return {
+        success: false,
+        statusCode: 409,
+        error: 'VERSION_CONFLICT',
+        message: 'Oda durumu değişmiş. Lütfen güncel durumu alıp işlemi tekrar deneyin.',
+        currentVersion: casResult.currentVersion || currentState.version
+      };
+    }
+    if (casResult.error === 'STORAGE_UNAVAILABLE') {
+      return {
+        success: false,
+        statusCode: 503,
+        error: 'STORAGE_UNAVAILABLE',
+        message: 'Depolama servisine ulaşılamıyor.'
+      };
+    }
+    return {
+      success: false,
+      statusCode: 500,
+      error: casResult.error || 'CAS_ERROR',
+      message: 'Oda durumu kaydedilemedi.'
+    };
+  }
+
+  const nextVersion = casResult.currentVersion || expectedVersion + 1;
+
+  // --------------------------------------------------------------------------
+  // 7. LIGHTWEIGHT MQTT NOTIFICATION BROADCAST
+  // --------------------------------------------------------------------------
+  await publishRoomStateUpdateNotification(roomId, nextVersion, now);
+
+  // --------------------------------------------------------------------------
+  // 8. RETURN SANITIZED SUCCESS RESULT
+  // --------------------------------------------------------------------------
+  return {
+    success: true,
+    statusCode: 200,
+    roomId,
+    actionId,
+    version: nextVersion,
+    state: casResult.state,
+    events: engineRes.events
+  };
+}
