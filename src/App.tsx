@@ -29,7 +29,8 @@ import {
   isPlayerHost,
   declareBankruptcy,
   evaluateTradeOfferByBot,
-  autoLiquidateDebtOrBankrupt
+  autoLiquidateDebtOrBankrupt,
+  executeForceBuy
 } from './engine/gameEngine';
 import {
   loginAsGuest,
@@ -45,6 +46,12 @@ import {
   getPersistentGuestId
 } from './services/firebase';
 import { syncManager } from './services/multiplayerSync';
+import {
+  isServerAuthoritativeEnabled,
+  sendServerGameAction,
+  fetchServerGameState,
+  createActionId
+} from './services/serverGameClient';
 import {
   initiateGoogleOAuthRedirect,
   handleGoogleOAuthCallback
@@ -177,6 +184,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     userAccountRef.current = userAccount;
   }, [userAccount]);
+
+  const isActionInFlightRef = useRef<boolean>(false);
 
   /**
    * Centralized Hard Game Session Termination
@@ -592,6 +601,27 @@ export const App: React.FC = () => {
     const unsubscribe = subscribeToRoom(gameState.roomId, {
       isHost: isMeHost,
       sessionId: isMeHost ? gameState.sessionId : undefined,
+      onRoomStateUpdated: (version: number) => {
+        if (activeGeneration !== sessionGenerationRef.current) return;
+        const liveState = gameStateRef.current;
+        const currentVer = liveState.version || 0;
+        if (version <= currentVer) return;
+
+        const roomId = liveState.roomId || gameState.roomId;
+        if (!roomId) return;
+
+        fetchServerGameState(roomId).then((res) => {
+          if (res.success && res.state) {
+            if (activeGeneration !== sessionGenerationRef.current) return;
+            const updated = res.state;
+            if ((updated.version || 0) < (gameStateRef.current.version || 0)) return;
+
+            gameStateRef.current = updated;
+            setGameState(updated);
+            debouncedSaveGameState(updated);
+          }
+        });
+      },
       onUpdate: (remoteState) => {
         if (!remoteState || remoteState.roomId !== gameState.roomId) return;
         if (activeGeneration !== sessionGenerationRef.current) return;
@@ -599,6 +629,24 @@ export const App: React.FC = () => {
         const liveMyId = myPlayerIdRef.current;
         const liveState = gameStateRef.current;
         const isCurrentlyHost = Boolean(liveMyId && (liveState.hostPlayerId === liveMyId || liveState.players.find(p => p.id === liveMyId)?.isHost));
+
+        // ⚡ If server-authoritative mode is enabled, ignore full client-pushed STATE_SYNC
+        // and instead fetch canonical state if version is higher
+        if (isServerAuthoritativeEnabled()) {
+          const currentVer = liveState.version || 0;
+          const incomingVer = remoteState.version || 0;
+          if (incomingVer > currentVer && remoteState.roomId) {
+            fetchServerGameState(remoteState.roomId).then((res) => {
+              if (res.success && res.state) {
+                if (activeGeneration !== sessionGenerationRef.current) return;
+                gameStateRef.current = res.state;
+                setGameState(res.state);
+                debouncedSaveGameState(res.state);
+              }
+            });
+          }
+          return;
+        }
 
         // 🛡️ AUTHORITATIVE HOST CLIENT INTEGRITY SHIELD:
         // When acting as the authoritative Host client for this room, NEVER apply incoming
@@ -1829,8 +1877,79 @@ export const App: React.FC = () => {
     terminateGameSession('LEAVE_LOBBY', true);
   };
 
+  /**
+   * ⚡ Core Server-Authoritative Action Dispatcher
+   * Sends atomic client intent to /api/game/action, handles idempotency, version conflict,
+   * local state synchronization, and MQTT ROOM_STATE_UPDATED notification.
+   */
+  const dispatchServerAction = async (
+    type: string,
+    actingPlayerId?: string,
+    payload?: any
+  ): Promise<boolean> => {
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const actorId = actingPlayerId || liveMyId || liveState.players[liveState.currentTurnIndex]?.id || 'actor';
+    const roomId = liveState.roomId || gameState.roomId;
+    if (!roomId) return false;
+
+    if (isActionInFlightRef.current) return false;
+    isActionInFlightRef.current = true;
+
+    const actionId = createActionId(type, actorId);
+    const expectedVersion = liveState.version || 1;
+    const userAuth = userAccount?.uid ? { token: userAccount.uid } : undefined;
+
+    try {
+      const res = await sendServerGameAction(
+        {
+          actionId,
+          roomId,
+          playerId: actorId,
+          expectedVersion,
+          type,
+          payload
+        },
+        userAuth
+      );
+
+      isActionInFlightRef.current = false;
+
+      if (res.success && res.state) {
+        gameStateRef.current = res.state;
+        setGameState(res.state);
+        debouncedSaveGameState(res.state);
+        if (res.state.version) {
+          syncManager.broadcastRoomStateUpdated(roomId, res.state.version, res.state.sessionId, res.state.gameId);
+        }
+        return true;
+      } else if (res.error === 'VERSION_CONFLICT') {
+        console.warn(`[ServerAction] VERSION_CONFLICT on ${type}, re-fetching canonical state.`);
+        const sRes = await fetchServerGameState(roomId, userAuth);
+        if (sRes.success && sRes.state) {
+          gameStateRef.current = sRes.state;
+          setGameState(sRes.state);
+          debouncedSaveGameState(sRes.state);
+        }
+        return false;
+      } else {
+        console.warn(`[ServerAction] ${type} rejected:`, res.error, res.errorMessage || res.message);
+        return false;
+      }
+    } catch (err) {
+      isActionInFlightRef.current = false;
+      console.warn(`[ServerAction] ${type} exception:`, err);
+      return false;
+    }
+  };
+
   // Remove player or bot from room (Host Only)
   const handleRemovePlayer = (playerIdToRemove: string) => {
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('REMOVE_BOT', myPlayerId || undefined, { botId: playerIdToRemove });
+      return;
+    }
+
     updateAndBroadcastGameState((prev) => {
       const isHost = isPlayerHost(prev, myPlayerId);
       if (!isHost) return prev;
@@ -1849,6 +1968,11 @@ export const App: React.FC = () => {
 
   // Update Game Settings (Host Only)
   const handleUpdateSettings = (newSettings: GameSettings) => {
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('UPDATE_SETTINGS', myPlayerId || undefined, newSettings);
+      return;
+    }
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost) return;
 
@@ -1861,6 +1985,11 @@ export const App: React.FC = () => {
 
   // Add Bot Player with Difficulty & Guaranteed Unique Color (Host Only)
   const handleAddBot = (difficulty: BotDifficulty = 'medium') => {
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('ADD_BOT', myPlayerId || undefined, { difficulty });
+      return;
+    }
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost || gameState.players.length >= 6) return;
 
@@ -1905,6 +2034,11 @@ export const App: React.FC = () => {
 
   // Start Game (Host Only)
   const handleStartGame = () => {
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('START_GAME', myPlayerId || undefined);
+      return;
+    }
+
     const isMeHost = isPlayerHost(gameState, myPlayerId);
     if (!isMeHost || gameState.players.length < 2) return;
 
@@ -1963,7 +2097,18 @@ export const App: React.FC = () => {
     if (!currentPlayer || !currentPlayer.inGame) return;
 
     const isMeHost = isPlayerHost(liveState, liveMyId);
-    const isMeCurrent = currentPlayer.id === liveMyId;
+    const isMeCurrent = currentPlayer.id === liveMyId || (currentPlayer.isBot && isMeHost);
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      if (!isMeCurrent) return;
+      dispatchServerAction('ROLL_DICE', currentPlayer.id).then((ok) => {
+        if (ok) {
+          soundManager.playDiceRoll();
+        }
+      });
+      return;
+    }
 
     // Non-host player: forward action to authoritative host
     if (!isMeHost) {
@@ -2104,6 +2249,15 @@ export const App: React.FC = () => {
   const handleEndTurnAction = () => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      const currentPlayer = liveState.players[liveState.currentTurnIndex];
+      const actingId = currentPlayer?.id || liveMyId || undefined;
+      dispatchServerAction('END_TURN', actingId);
+      return;
+    }
+
     const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
@@ -2128,6 +2282,14 @@ export const App: React.FC = () => {
     const targetId = isMeHost ? (playerId || liveMyId) : liveMyId;
     if (!targetId) return;
 
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('BANKRUPTCY', targetId, { playerId: targetId }).then((ok) => {
+        if (ok) soundManager.playJail();
+      });
+      return;
+    }
+
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
@@ -2150,6 +2312,15 @@ export const App: React.FC = () => {
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
     const activeActorId = actingPlayerId || liveState.players[liveState.currentTurnIndex]?.id || liveMyId || undefined;
+    if (!activeActorId) return;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('BUY_PROPERTY', activeActorId).then((ok) => {
+        if (ok) soundManager.playBuyProperty();
+      });
+      return;
+    }
 
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
@@ -2169,6 +2340,13 @@ export const App: React.FC = () => {
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
     const activeActorId = actingPlayerId || liveState.players[liveState.currentTurnIndex]?.id || liveMyId || undefined;
+    if (!activeActorId) return;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('PASS_PROPERTY', activeActorId);
+      return;
+    }
 
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
@@ -2187,6 +2365,14 @@ export const App: React.FC = () => {
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
     const actorId = actingPlayerId || liveMyId || undefined;
+    if (!actorId) return;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('SELL_TO_BANK', actorId, { tileId });
+      return;
+    }
+
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
@@ -2203,6 +2389,15 @@ export const App: React.FC = () => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('PAY_JAIL', liveMyId || undefined).then((ok) => {
+        if (ok) soundManager.playBuyProperty();
+      });
+      return;
+    }
+
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
@@ -2221,6 +2416,22 @@ export const App: React.FC = () => {
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
     const actorId = actingPlayerId || liveMyId || undefined;
+    if (!actorId) return;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('BUILD_HOUSE', actorId, { tileId }).then((ok) => {
+        if (ok) {
+          soundManager.playBuyProperty();
+          if (selectedTile && selectedTile.id === tileId) {
+            const updatedTile = gameStateRef.current.board.find((t) => t.id === tileId);
+            if (updatedTile) setSelectedTile(updatedTile);
+          }
+        }
+      });
+      return;
+    }
+
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
@@ -2246,6 +2457,19 @@ export const App: React.FC = () => {
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
     const actorId = actingPlayerId || liveMyId || undefined;
+    if (!actorId) return;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('SELL_HOUSE', actorId, { tileId }).then((ok) => {
+        if (ok && selectedTile && selectedTile.id === tileId) {
+          const updatedTile = gameStateRef.current.board.find((t) => t.id === tileId);
+          if (updatedTile) setSelectedTile(updatedTile);
+        }
+      });
+      return;
+    }
+
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
@@ -2270,6 +2494,19 @@ export const App: React.FC = () => {
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
     const actorId = actingPlayerId || liveMyId || undefined;
+    if (!actorId) return;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('MORTGAGE', actorId, { tileId }).then((ok) => {
+        if (ok && selectedTile && selectedTile.id === tileId) {
+          const updatedTile = gameStateRef.current.board.find((t) => t.id === tileId);
+          if (updatedTile) setSelectedTile(updatedTile);
+        }
+      });
+      return;
+    }
+
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
@@ -2288,11 +2525,44 @@ export const App: React.FC = () => {
     });
   };
 
+  // Force Buy Action (2x buyout)
+  const handleForceBuyAction = (tileId: number, actingPlayerId?: string) => {
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const activeActorId = actingPlayerId || liveMyId || undefined;
+    if (!activeActorId) return;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('FORCE_BUY', activeActorId, { tileId }).then((ok) => {
+        if (ok) soundManager.playBuyProperty();
+      });
+      return;
+    }
+
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+    if (!isMeHost) {
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'FORCE_BUY', { tileId });
+      }
+      return;
+    }
+    soundManager.playBuyProperty();
+    updateAndBroadcastGameState((prev) => executeForceBuy(prev, activeActorId, tileId));
+  };
+
   // Apply Chance Card
   const handleConfirmChanceCard = () => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('CONFIRM_CHANCE', liveMyId || undefined);
+      return;
+    }
+
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
@@ -2308,6 +2578,13 @@ export const App: React.FC = () => {
   const handleExecuteTradeAction = (offer: TradeOffer) => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('TRADE_OFFER', liveMyId || undefined, offer);
+      return;
+    }
+
     const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
@@ -2355,6 +2632,13 @@ export const App: React.FC = () => {
   const handleAcceptIncomingTrade = () => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('ACCEPT_TRADE', liveMyId || undefined);
+      return;
+    }
+
     const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
@@ -2375,6 +2659,13 @@ export const App: React.FC = () => {
   const handleDeclineIncomingTrade = () => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('DECLINE_TRADE', liveMyId || undefined);
+      return;
+    }
+
     const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
@@ -2412,11 +2703,17 @@ export const App: React.FC = () => {
   const handleSendMessageAction = (text: string, senderPlayerId?: string) => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
-    const isMeHost = isPlayerHost(liveState, liveMyId);
     const activeSenderId = senderPlayerId || liveMyId;
     const sanitizedText = (text || '').trim().substring(0, 250);
     if (!sanitizedText) return;
 
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('CHAT_MESSAGE', activeSenderId || undefined, { text: sanitizedText });
+      return;
+    }
+
+    const isMeHost = isPlayerHost(liveState, liveMyId);
     if (!isMeHost && !senderPlayerId) {
       if (liveState.roomId && liveMyId) {
         syncManager.sendGameAction(liveState.roomId, liveMyId, 'CHAT_MESSAGE', { text: sanitizedText });

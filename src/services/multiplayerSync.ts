@@ -114,7 +114,8 @@ export type SyncMessage =
   | { type: 'CHAT_MESSAGE'; senderId: string; roomId: string; sessionId?: string; message: ChatMessage }
   | { type: 'TRADE_OFFER'; senderId: string; roomId: string; sessionId?: string; offer: TradeOffer }
   | { type: 'GAME_ACTION'; senderId: string; roomId: string; sessionId?: string; gameId?: string; playerId: string; actionType: string; payload?: any; actionId?: string }
-  | { type: 'ROOM_CLOSED'; senderId: string; roomId: string; sessionId?: string; reason?: string };
+  | { type: 'ROOM_CLOSED'; senderId: string; roomId: string; sessionId?: string; reason?: string }
+  | { type: 'ROOM_STATE_UPDATED'; senderId: string; roomId: string; version: number; sessionId?: string; gameId?: string; timestamp?: number };
 
 export type MessageCallback = (msg: SyncMessage) => void;
 
@@ -548,6 +549,22 @@ class MultiplayerSyncManager {
       gameId: state.gameId,
       version: stateVersion,
       state: stateWithVersion
+    };
+    this.send(msg);
+  }
+
+  /**
+   * Broadcast lightweight room state notification (roomId + version) without leaking full state
+   */
+  public broadcastRoomStateUpdated(roomId: string, version: number, sessionId?: string, gameId?: string): void {
+    const msg: SyncMessage = {
+      type: 'ROOM_STATE_UPDATED',
+      senderId: LOCAL_CLIENT_ID,
+      roomId: roomId.trim().toUpperCase(),
+      version,
+      sessionId,
+      gameId,
+      timestamp: Date.now()
     };
     this.send(msg);
   }

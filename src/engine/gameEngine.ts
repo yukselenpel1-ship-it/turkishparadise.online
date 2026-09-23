@@ -216,6 +216,35 @@ export function payJailBail(state: GameState): GameState {
   return newState;
 }
 
+// ⚡ Zorla Satın Alma (Force Buy) — 2.0x bedel ile tekelde olmayan ve binasız arsayı zorla devralma
+export function executeForceBuy(state: GameState, buyerId: string, tileId: number): GameState {
+  const newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const buyer = newState.players.find(p => p.id === buyerId);
+  const tile = newState.board[tileId];
+  if (!buyer || !tile || !tile.ownerId || tile.ownerId === buyerId || !tile.price) {
+    return newState;
+  }
+  if (tile.houses && tile.houses > 0) return newState;
+  if (tile.colorGroup && hasColorGroupMonopoly(newState.board, tile.colorGroup, tile.ownerId)) return newState;
+
+  const currentOwner = newState.players.find(p => p.id === tile.ownerId);
+  if (!currentOwner) return newState;
+
+  const buyoutCost = tile.price * 2;
+  if (buyer.money < buyoutCost) return newState;
+
+  buyer.money -= buyoutCost;
+  currentOwner.money += buyoutCost;
+  tile.ownerId = buyer.id;
+  tile.isMortgaged = false;
+
+  addTransaction(newState, buyer, 'expense', 'buy', buyoutCost, `"${tile.name}" mülkü 2x bedelle zorla satın alındı`);
+  addTransaction(newState, currentOwner, 'income', 'trade', buyoutCost, `"${tile.name}" mülkü ${buyer.name} tarafından 2x bedelle devralındı`);
+  addLog(newState, `⚡ ${buyer.name}, "${tile.name}" mülkünü ${currentOwner.name} oyuncusundan 2x bedelle (${buyoutCost}₺) zorla satın aldı!`, 'warning');
+
+  return newState;
+}
+
 // Calculate strategic valuation of a property based on monopolies and sets
 export function calculatePropertyStrategicValue(
   tile: BoardTile,

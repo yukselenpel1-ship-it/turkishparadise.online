@@ -414,6 +414,7 @@ export interface ExtendedRoomHandlers {
   isHost?: boolean;
   sessionId?: string;
   onRoomClosed?: (reason?: string) => void;
+  onRoomStateUpdated?: (version: number, sessionId?: string, gameId?: string) => void;
 }
 
 /**
@@ -511,6 +512,8 @@ export function subscribeToRoom(
         handlers.onPlayerLeft(msg.playerId);
       } else if (msg.type === 'HOST_MIGRATED' && msg.newHostPlayerId && handlers.onHostMigrated) {
         handlers.onHostMigrated(msg.newHostPlayerId);
+      } else if (msg.type === 'ROOM_STATE_UPDATED' && handlers.onRoomStateUpdated) {
+        handlers.onRoomStateUpdated(msg.version, msg.sessionId, msg.gameId);
       } else if (msg.type === 'GAME_ACTION' && msg.playerId && msg.actionType && handlers.onGameAction) {
         receiveAction(msg.playerId, msg.actionType, msg.payload, msg.actionId);
       }
