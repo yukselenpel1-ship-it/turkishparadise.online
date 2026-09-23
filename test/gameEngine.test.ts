@@ -236,8 +236,52 @@ function runAllTests() {
   jailState.players = [jailedPlayer];
   jailState.currentTurnIndex = 0;
   jailState = payJailBail(jailState);
-  assert(!jailState.players[0].isJailed, 'Paying bail frees player from jail');
-  assert(jailState.players[0].money === 900, '100 bail amount deducted from player');
+  assert(!jailState.players[0].isJailed, 'Paying bail explicitly frees player from jail');
+  assert(jailState.players[0].money === 900, '100 bail amount deducted ONLY on explicit bail payment');
+
+  // Test 10B: 3 Turns in Jail -> Free with 0₺ deduction
+  let turn3JailState = createInitialState();
+  turn3JailState.phase = 'PLAYING';
+  turn3JailState.players = [{
+    id: 'j2',
+    name: 'Mahkum2',
+    color: '#3B82F6',
+    avatar: '🏎️',
+    money: 1000,
+    position: JAIL_TILE_INDEX,
+    isJailed: true,
+    jailTurns: 2, // At 2 turns, next non-double makes it 3 and frees player
+    inGame: true,
+    isBot: false,
+    lapsCompleted: 1,
+    firstLapPurchases: 0
+  }];
+  turn3JailState.currentTurnIndex = 0;
+  turn3JailState = handleRollDice(turn3JailState, [1, 2]); // Non-double
+  assert(!turn3JailState.players[0].isJailed, 'Completing 3 turns in jail frees player');
+  assert(turn3JailState.players[0].money === 1000, 'NO money deducted when completing 3 turns in jail');
+
+  // Test 10C: Rolling Doubles in Jail -> Free with 0₺ deduction
+  let doublesJailState = createInitialState();
+  doublesJailState.phase = 'PLAYING';
+  doublesJailState.players = [{
+    id: 'j3',
+    name: 'Mahkum3',
+    color: '#10B981',
+    avatar: '⛵',
+    money: 1000,
+    position: JAIL_TILE_INDEX,
+    isJailed: true,
+    jailTurns: 0,
+    inGame: true,
+    isBot: false,
+    lapsCompleted: 1,
+    firstLapPurchases: 0
+  }];
+  doublesJailState.currentTurnIndex = 0;
+  doublesJailState = handleRollDice(doublesJailState, [4, 4]); // Double
+  assert(!doublesJailState.players[0].isJailed, 'Rolling doubles frees player from jail');
+  assert(doublesJailState.players[0].money === 1000, 'NO money deducted when rolling doubles in jail');
 
   console.log('\n=============================================');
   console.log(`📊 TEST RESULTS: ${passedTests} PASSED, ${failedTests} FAILED`);

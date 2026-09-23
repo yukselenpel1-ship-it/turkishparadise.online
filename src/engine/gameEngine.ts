@@ -623,7 +623,7 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
 }
 
 
-export function handleRollDice(state: GameState): GameState {
+export function handleRollDice(state: GameState, customDice?: [number, number]): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
   const player = newState.players[newState.currentTurnIndex];
 
@@ -631,7 +631,7 @@ export function handleRollDice(state: GameState): GameState {
     return newState;
   }
 
-  const dice = rollDice();
+  const dice = customDice || rollDice();
   const diceTotal = dice[0] + dice[1];
   const isDouble = dice[0] === dice[1];
 
@@ -650,10 +650,8 @@ export function handleRollDice(state: GameState): GameState {
       newState.doublesCount = 0;
       if (player.jailTurns >= 3) {
         player.isJailed = false;
-        player.money -= JAIL_BAIL_AMOUNT;
         player.jailTurns = 0;
-        addTransaction(newState, player, 'expense', 'bail', JAIL_BAIL_AMOUNT, '3 tur kodes sonrası zorunlu kefalet ödendi');
-        addLog(newState, `⚠️ ${player.name} 3 tur bekledi ve ${JAIL_BAIL_AMOUNT}₺ ödeyerek kodesten çıktı.`, 'warning');
+        addLog(newState, `🔓 ${player.name} 3 tur kodes süresini tamamladı ve serbest kaldı.`, 'success');
       } else {
         addLog(newState, `🔒 ${player.name} (${dice[0]}-${dice[1]}) attı ve kodeste kaldı (${player.jailTurns}/3 tur).`, 'info');
         newState.pendingAction = 'NONE';

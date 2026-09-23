@@ -1973,27 +1973,35 @@ export const App: React.FC = () => {
           return updated;
         });
       } else {
-        updateAndBroadcastGameState((prev) => {
-          const updated = JSON.parse(JSON.stringify(prev)) as GameState;
-          const p = updated.players[updated.currentTurnIndex];
-          if (p) {
-            p.jailTurns += 1;
-            if (p.jailTurns >= 3) {
+        const nextJailTurns = (currentPlayer.jailTurns || 0) + 1;
+        if (nextJailTurns >= 3) {
+          updateAndBroadcastGameState((prev) => {
+            const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+            const p = updated.players[updated.currentTurnIndex];
+            if (p) {
               p.isJailed = false;
-              p.money -= 100;
               p.jailTurns = 0;
-              addTransaction(updated, p, 'expense', 'bail', 100, '3 tur kodes sonrası zorunlu kefalet ödendi');
-              addLog(updated, `⚠️ ${p.name} 3 tur bekledi ve 100₺ ödeyerek kodesten çıktı.`, 'warning');
-            } else {
-              addLog(updated, `🔒 ${p.name} (${dice[0]}-${dice[1]}) attı ve kodeste kaldı (${p.jailTurns}/3 tur).`, 'info');
-              updated.pendingAction = 'NONE';
             }
-          }
-          updated.dice = dice;
-          updated.diceRolled = true;
-          return updated;
-        });
-        return;
+            updated.dice = dice;
+            updated.diceRolled = true;
+            addLog(updated, `🔓 ${p?.name || currentPlayer.name} 3 tur kodes süresini tamamladı ve serbest kaldı.`, 'success');
+            return updated;
+          });
+        } else {
+          updateAndBroadcastGameState((prev) => {
+            const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+            const p = updated.players[updated.currentTurnIndex];
+            if (p) {
+              p.jailTurns = nextJailTurns;
+            }
+            updated.dice = dice;
+            updated.diceRolled = true;
+            addLog(updated, `🔒 ${p?.name || currentPlayer.name} (${dice[0]}-${dice[1]}) attı ve kodeste kaldı (${nextJailTurns}/3 tur).`, 'info');
+            updated.pendingAction = 'NONE';
+            return updated;
+          });
+          return;
+        }
       }
     }
 
