@@ -2970,7 +2970,7 @@ export const App: React.FC = () => {
               <span>{t('mobilePlayersTab', { count: gameState.players.length })}</span>
             </button>
 
-            <div className="relative">
+            <div className="relative inline-flex items-center justify-center">
               <button
                 onClick={openMobileChat}
                 className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer ${
@@ -2981,7 +2981,7 @@ export const App: React.FC = () => {
                 <span>{t('mobileChatTab')}</span>
               </button>
               {unreadChatCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center shadow-md pointer-events-none z-10">
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center shadow-lg ring-2 ring-[#070c18] pointer-events-none z-50 animate-scale-in">
                   {unreadChatCount > 99 ? '99+' : unreadChatCount}
                 </span>
               )}
