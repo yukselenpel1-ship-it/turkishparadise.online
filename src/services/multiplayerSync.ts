@@ -534,14 +534,20 @@ class MultiplayerSyncManager {
    */
   public broadcastState(roomId: string, state: GameState): void {
     this.currentVersion++;
+    const stateVersion = typeof state.version === 'number' ? Math.max(state.version, this.currentVersion) : this.currentVersion;
+    this.currentVersion = stateVersion;
+    const stateWithVersion: GameState = {
+      ...state,
+      version: stateVersion
+    };
     const msg: SyncMessage = {
       type: 'STATE_SYNC',
       senderId: LOCAL_CLIENT_ID,
       roomId: roomId.trim().toUpperCase(),
       sessionId: state.sessionId,
       gameId: state.gameId,
-      version: this.currentVersion,
-      state
+      version: stateVersion,
+      state: stateWithVersion
     };
     this.send(msg);
   }

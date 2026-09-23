@@ -600,10 +600,17 @@ export const App: React.FC = () => {
         const liveState = gameStateRef.current;
         const isCurrentlyHost = Boolean(liveMyId && (liveState.hostPlayerId === liveMyId || liveState.players.find(p => p.id === liveMyId)?.isHost));
 
-        // 🛡️ SESSION INTEGRITY GUARD:
-        // Host enforces its authoritative sessionId; drop rogue state with mismatch sessionId
-        if (isCurrentlyHost && liveState.sessionId && remoteState.sessionId && remoteState.sessionId !== liveState.sessionId) {
-          console.warn('[Session Guard] Host dropped packet from mismatched session:', {
+        // 🛡️ AUTHORITATIVE HOST CLIENT INTEGRITY SHIELD:
+        // When acting as the authoritative Host client for this room, NEVER apply incoming
+        // STATE_SYNC packets from external network peers. The Host client generates the canonical state.
+        if (isCurrentlyHost) {
+          return;
+        }
+
+        // 🛡️ GUEST SESSION & VERSION INTEGRITY GUARD:
+        // 1. Session consistency: drop packet if already connected to a session and remote session mismatches
+        if (liveState.sessionId && remoteState.sessionId && remoteState.sessionId !== liveState.sessionId) {
+          console.warn('[Guest Guard] Dropped STATE_SYNC from mismatched session:', {
             currentRoom: gameState.roomId,
             currentSession: liveState.sessionId,
             remoteSession: remoteState.sessionId,
@@ -612,25 +619,12 @@ export const App: React.FC = () => {
           return;
         }
 
-        // 🛡️ HOST PROTECTION SHIELD:
-        // If I am already established as Host in this room, never accept an external state
-        // that overwrites my host status or drops me from the player list!
-        if (isCurrentlyHost && liveState.hostPlayerId === liveMyId && liveState.players.some(p => p.id === liveMyId)) {
-          const remoteHost = remoteState.hostPlayerId;
-          const hasMeInRemote = remoteState.players?.some(p => p.id === liveMyId);
-
-          if (remoteHost !== liveMyId || !hasMeInRemote) {
-            console.warn('[Host Shield] Rejected rogue/stale STATE_SYNC from peer:', {
-              myPlayerId: liveMyId,
-              currentHost: liveState.hostPlayerId,
-              remoteHost,
-              hasMeInRemote,
-              remotePlayersCount: remoteState.players?.length
-            });
-            // Force-rebroadcast authoritative host state to correct any out-of-sync peers
-            syncRoomState(liveState.roomId, liveState);
-            return;
-          }
+        // 2. State version monotonicity check
+        const currentVer = liveState.version || 0;
+        const incomingVer = remoteState.version || 0;
+        if (incomingVer > 0 && currentVer > 0 && incomingVer < currentVer) {
+          console.warn('[Guest Guard] Dropped stale out-of-order STATE_SYNC:', { incomingVer, currentVer });
+          return;
         }
 
         // If local stepping animation is currently running, buffer remote state to apply on arrival
@@ -640,7 +634,7 @@ export const App: React.FC = () => {
         }
 
         // Guest adopts authoritative session ID
-        if (!isCurrentlyHost && remoteState.sessionId) {
+        if (remoteState.sessionId) {
           syncManager.setSessionId(remoteState.sessionId);
         }
 
@@ -754,10 +748,14 @@ export const App: React.FC = () => {
           assignedAvatar = freeAvatar || '🎲';
         }
 
+        const rawName = (newPlayer.name || 'Oyuncu').trim().substring(0, 30);
+        const sanitizedName = rawName.replace(/[<>]/g, '') || 'Oyuncu';
+
         const startMoney = liveState.settings?.startingMoney || 1500;
         const playerToAdd: Player = {
           ...newPlayer,
           id: newPlayer.id || createPlayerId(pKey),
+          name: sanitizedName,
           participantKey: pKey,
           clientId: newPlayer.clientId || getClientId(),
           tabId: newPlayer.tabId || getTabId(),
@@ -1175,7 +1173,10 @@ export const App: React.FC = () => {
             handleDeclineIncomingTrade();
           }
         } else if (actionType === 'CHAT_MESSAGE' && payload?.text && typeof payload.text === 'string') {
-          handleSendMessageAction(payload.text, senderPlayerId);
+          const sanitizedText = payload.text.trim().substring(0, 250);
+          if (sanitizedText.length > 0) {
+            handleSendMessageAction(sanitizedText, senderPlayerId);
+          }
         }
       },
       onDiceRolled: (diceData) => {
@@ -1184,6 +1185,30 @@ export const App: React.FC = () => {
         const liveState = gameStateRef.current;
         const isMeHost = isPlayerHost(liveState, liveMyId);
         if (isMeHost) return;
+
+        // 🛡️ Anti-Cheat Validation on incoming DICE_ROLLED:
+        // 1. Must match current turn player
+        const currentTurnPlayer = liveState.players[liveState.currentTurnIndex];
+        if (!currentTurnPlayer || currentTurnPlayer.id !== diceData.playerId) {
+          console.warn('[Anti-Cheat] Ignored DICE_ROLLED for non-current-turn player:', diceData.playerId);
+          return;
+        }
+
+        // 2. Validate dice values (must be integer 1-6 and total equals sum)
+        if (
+          !Array.isArray(diceData.dice) ||
+          diceData.dice.length !== 2 ||
+          !Number.isInteger(diceData.dice[0]) ||
+          !Number.isInteger(diceData.dice[1]) ||
+          diceData.dice[0] < 1 ||
+          diceData.dice[0] > 6 ||
+          diceData.dice[1] < 1 ||
+          diceData.dice[1] > 6 ||
+          diceData.total !== diceData.dice[0] + diceData.dice[1]
+        ) {
+          console.warn('[Anti-Cheat] Ignored corrupted/tampered DICE_ROLLED values:', diceData);
+          return;
+        }
 
         const rollingPlayer = liveState.players.find((p) => p.id === diceData.playerId);
         if (!rollingPlayer) return;
@@ -1242,6 +1267,8 @@ export const App: React.FC = () => {
       const isHost = isPlayerHost(prev, myPlayerId);
       const isInitialRoomCreation = prev.players.length === 0 || !prev.hostPlayerId;
       const next = updater(prev);
+      const nextVersion = (prev.version || 0) + 1;
+      next.version = nextVersion;
 
       if (next.roomId && (isHost || isInitialRoomCreation || allowNonHost)) {
         syncRoomState(next.roomId, next);
@@ -2094,17 +2121,25 @@ export const App: React.FC = () => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
-    const targetId = playerId || liveState.players[liveState.currentTurnIndex]?.id || liveMyId;
+    
+    // 🛡️ Anti-Cheat: Resolve target player strictly to the calling player
+    // If invoked via network on Host, playerId is the verified senderPlayerId.
+    // If invoked locally by human user, target is liveMyId.
+    const targetId = isMeHost ? (playerId || liveMyId) : liveMyId;
     if (!targetId) return;
 
     if (!isMeHost) {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
       if (liveState.roomId && liveMyId) {
-        syncManager.sendGameAction(liveState.roomId, liveMyId, 'BANKRUPTCY', { playerId: targetId });
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'BANKRUPTCY', { playerId: liveMyId });
       }
       return;
     }
+
+    const targetPlayer = liveState.players.find((p) => p.id === targetId);
+    if (!targetPlayer || !targetPlayer.inGame) return;
+
     soundManager.playJail();
     updateAndBroadcastGameState((prev) => declareBankruptcy(prev, targetId));
   };
@@ -2379,15 +2414,18 @@ export const App: React.FC = () => {
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
     const activeSenderId = senderPlayerId || liveMyId;
+    const sanitizedText = (text || '').trim().substring(0, 250);
+    if (!sanitizedText) return;
+
     if (!isMeHost && !senderPlayerId) {
       if (liveState.roomId && liveMyId) {
-        syncManager.sendGameAction(liveState.roomId, liveMyId, 'CHAT_MESSAGE', { text });
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'CHAT_MESSAGE', { text: sanitizedText });
       }
       return;
     }
     const mePlayer = liveState.players.find((p) => p.id === activeSenderId);
     if (!mePlayer) return;
-    updateAndBroadcastGameState((prev) => addChatMessage(prev, mePlayer, text));
+    updateAndBroadcastGameState((prev) => addChatMessage(prev, mePlayer, sanitizedText));
   };
 
   // Restart Game
