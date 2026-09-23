@@ -398,22 +398,54 @@ export class UpstashRedisRoomStorage implements IRoomStorage {
   }
 
   public async clearAll(): Promise<void> {
-    // No-op for remote redis in production
+    // No-op for Redis instance unless explicitly called in test environments
   }
 }
 
 /**
+ * Production Fail-safe Storage:
+ * Throws STORAGE_UNAVAILABLE if Redis credentials are missing in production,
+ * preventing silent split-brain in-memory corruption across serverless instances.
+ */
+export class UnavailableRoomStorage implements IRoomStorage {
+  public async getRoomState(): Promise<GameState | null> {
+    throw new Error('STORAGE_UNAVAILABLE: Production Redis credentials (UPSTASH_REDIS_REST_URL / KV_REST_API_URL) not configured');
+  }
+  public async createRoomState(): Promise<GameState> {
+    throw new Error('STORAGE_UNAVAILABLE: Production Redis credentials not configured');
+  }
+  public async saveRoomStateWithVersion(): Promise<SaveStateResult> {
+    return { success: false, error: 'STORAGE_UNAVAILABLE' };
+  }
+  public async deleteRoomState(): Promise<boolean> {
+    return false;
+  }
+  public async touchRoom(): Promise<boolean> {
+    return false;
+  }
+  public async checkAndRecordActionIdempotency(): Promise<IdempotencyResult> {
+    return { isDuplicate: false };
+  }
+  public async clearAll(): Promise<void> {}
+}
+
+/**
  * Storage Factory / Singleton:
- * Automatically uses Upstash Redis if environment variables exist,
- * or fallback in-memory CAS storage for unit testing / local development.
+ * Automatically uses Upstash Redis if environment variables exist.
+ * In production: Enforces Redis or returns UnavailableRoomStorage.
+ * In development / test: Uses InMemoryRoomStorage for zero-dependency local testing.
  */
 function createRoomStorage(): IRoomStorage {
   const upstashUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
   const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 
   if (upstashUrl && upstashToken) {
-    console.log('[Storage] Initializing Upstash Redis Room Storage');
     return new UpstashRedisRoomStorage(upstashUrl, upstashToken);
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[Storage Error] Running in production but Redis credentials (UPSTASH_REDIS_REST_URL) not provided!');
+    return new UnavailableRoomStorage();
   }
 
   return new InMemoryRoomStorage();
