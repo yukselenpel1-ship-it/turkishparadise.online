@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BoardTile, Player } from '../types/game';
 import { Tile } from './Tile';
 import { Dice } from './Dice';
+import turkishParadiseLogo from '../assets/turkish-paradise-logo.png';
 import { soundManager } from '../services/soundEffects';
 import { ShoppingBag, Unlock, ArrowLeftRight, Building2, Receipt, Volume2, VolumeX, AlertTriangle, Skull, Eye } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -178,7 +179,7 @@ export const Board: React.FC<BoardProps> = ({
           {/* Majestic Golden TURKISH PARADISE Emblem */}
           <div className="text-center relative z-10 w-full pt-1 sm:pt-2.5 flex flex-col items-center select-none pointer-events-none">
             <img
-              src="/turkish-paradise-logo.png"
+              src={turkishParadiseLogo}
               alt="Turkish Paradise"
               className="w-44 sm:w-60 md:w-72 max-w-[65%] h-auto object-contain drop-shadow-[0_4px_15px_rgba(245,158,11,0.45)]"
             />
