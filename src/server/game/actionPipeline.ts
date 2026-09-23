@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { IRoomStorage, roomStorage, GameAction } from '../storage/roomStorage';
 import { applyGameAction, EngineOptions } from './serverGameEngine';
 import { AuthenticatedActor, validateActorMatchesPlayer } from '../auth/authMiddleware';
@@ -25,7 +26,7 @@ export interface PipelineOptions extends EngineOptions {
 /**
  * Robust, production-ready Server-Side Action Pipeline
  * Executes the full Lifecycle:
- * Validate -> Idempotency -> Load -> Apply -> Atomic CAS -> Notify -> Response
+ * Validate -> Fingerprint/Idempotency -> Load -> Apply -> Atomic CAS -> Record -> Notify -> Response
  */
 export async function executeGameActionPipeline(
   body: any,
@@ -52,11 +53,31 @@ export async function executeGameActionPipeline(
   const { roomId, actionId, playerId, expectedVersion, type, payload } = validAction;
 
   // --------------------------------------------------------------------------
-  // 2. IDEMPOTENCY CHECK
+  // 2. IDEMPOTENCY & FINGERPRINT CHECK
   // --------------------------------------------------------------------------
+  const actionFingerprint = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ roomId, playerId, type, payload }))
+    .digest('hex');
+
   try {
-    const idempotency = await storage.checkAndRecordActionIdempotency(roomId, actionId);
+    const idempotency = await storage.checkAndRecordActionIdempotency(roomId, actionId, actionFingerprint);
     if (idempotency.isDuplicate) {
+      if (idempotency.isFingerprintMismatch) {
+        return {
+          success: false,
+          statusCode: 400,
+          error: 'INVALID_ACTION',
+          message: 'Aynı actionId farklı parametreler veya eylem türü ile tekrar kullanılamaz.'
+        };
+      }
+      if (idempotency.status === 'PROCESSED' && idempotency.cachedResult) {
+        return {
+          success: true,
+          statusCode: 200,
+          ...idempotency.cachedResult
+        };
+      }
       return {
         success: false,
         statusCode: 409,
@@ -177,20 +198,29 @@ export async function executeGameActionPipeline(
   const nextVersion = casResult.currentVersion || expectedVersion + 1;
 
   // --------------------------------------------------------------------------
-  // 7. LIGHTWEIGHT MQTT NOTIFICATION BROADCAST
+  // 7. RECORD ACTION COMPLETION CACHE
   // --------------------------------------------------------------------------
-  await publishRoomStateUpdateNotification(roomId, nextVersion, now);
-
-  // --------------------------------------------------------------------------
-  // 8. RETURN SANITIZED SUCCESS RESULT
-  // --------------------------------------------------------------------------
-  return {
-    success: true,
-    statusCode: 200,
+  const successResponse = {
     roomId,
     actionId,
     version: nextVersion,
     state: casResult.state,
     events: engineRes.events
+  };
+
+  await storage.recordActionCompletion(roomId, actionId, actionFingerprint, successResponse);
+
+  // --------------------------------------------------------------------------
+  // 8. LIGHTWEIGHT MQTT NOTIFICATION BROADCAST
+  // --------------------------------------------------------------------------
+  await publishRoomStateUpdateNotification(roomId, nextVersion, now);
+
+  // --------------------------------------------------------------------------
+  // 9. RETURN SANITIZED SUCCESS RESULT
+  // --------------------------------------------------------------------------
+  return {
+    success: true,
+    statusCode: 200,
+    ...successResponse
   };
 }

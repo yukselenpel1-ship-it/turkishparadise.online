@@ -23,13 +23,20 @@ import {
   JAIL_TILE_INDEX,
   TOTAL_TILES,
   JAIL_BAIL_AMOUNT,
-  isPlayerHost
+  isPlayerHost,
+  executeTrade,
+  evaluateTradeOfferByBot,
+  PLAYER_COLORS,
+  PLAYER_AVATARS
 } from '../../engine/gameEngine';
 import { GameAction } from '../storage/roomStorage';
 
 export interface AuthenticatedActor {
   userId: string;
+  googleSub?: string;
+  displayName?: string;
   participantKey?: string;
+  isGuest?: boolean;
   isHost?: boolean;
 }
 
@@ -197,46 +204,145 @@ export function applyGameAction(
   const { type, actionId } = action;
 
   // --------------------------------------------------------------------------
-  // ROOM MANAGEMENT ACTIONS (Host Authorized)
+  // CHAT MESSAGE ACTION (Lobby & In-Game)
   // --------------------------------------------------------------------------
-  if (type === 'START_GAME') {
+  if (type === 'CHAT_MESSAGE') {
+    const rawText = action.payload?.text;
+    if (typeof rawText !== 'string' || rawText.trim().length === 0) {
+      return { success: false, error: 'INVALID_ACTION', errorMessage: 'Mesaj metni boş olamaz.' };
+    }
+
+    const cleanText = rawText.trim().substring(0, 250);
+    const senderPlayer = nextState.players.find(p => p.id === action.playerId);
+    const senderName = senderPlayer ? senderPlayer.name : authenticatedActor.displayName || 'Oyuncu';
+    const senderAvatar = senderPlayer ? senderPlayer.avatar : '👤';
+    const senderColor = senderPlayer ? senderPlayer.color : '#3B82F6';
+
+    const newMsg = {
+      id: `chat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      senderId: action.playerId,
+      senderName,
+      senderAvatar,
+      senderColor,
+      text: cleanText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    nextState.chatMessages = [...(nextState.chatMessages || []), newMsg].slice(-50);
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ROOM MANAGEMENT ACTIONS (Host Authorized, Lobby Phase)
+  // --------------------------------------------------------------------------
+  if (type === 'START_GAME' || type === 'ADD_BOT' || type === 'REMOVE_BOT' || type === 'UPDATE_SETTINGS') {
     const isActorHost =
       authenticatedActor.isHost ||
       nextState.hostPlayerId === authenticatedActor.userId ||
       nextState.players.some(p => p.id === action.playerId && p.isHost && (p.userId === authenticatedActor.userId || p.participantKey === authenticatedActor.participantKey));
 
     if (!isActorHost) {
-      return { success: false, error: 'UNAUTHORIZED_PLAYER', errorMessage: 'Oyunu sadece oda kurucusu başlatabilir.' };
-    }
-    if (nextState.players.length < 2) {
-      return { success: false, error: 'INVALID_PHASE', errorMessage: 'Oyunu başlatmak için en az 2 oyuncu gerekir.' };
+      return { success: false, error: 'UNAUTHORIZED_PLAYER', errorMessage: 'Bu işlemi sadece oda kurucusu yapabilir.' };
     }
     if (nextState.phase !== 'LOBBY') {
-      return { success: false, error: 'INVALID_PHASE', errorMessage: 'Oyun zaten başlamış.' };
+      return { success: false, error: 'INVALID_PHASE', errorMessage: 'Bu işlem yalnızca lobi aşamasında yapılabilir.' };
     }
 
-    const startMoney = nextState.settings?.startingMoney || 1500;
-    nextState.players = nextState.players.map(p => ({
-      ...p,
-      money: startMoney,
-      lapsCompleted: 0,
-      firstLapPurchases: 0
-    }));
-    nextState.phase = 'PLAYING';
-    nextState.currentTurnIndex = 0;
-    nextState.diceRolled = false;
-    nextState.doublesCount = 0;
-    nextState.turnStartedAt = now;
-    addServerLog(nextState, '🎮 Turkish Paradise oyunu başladı! İyi şanslar!', 'success');
+    if (type === 'ADD_BOT') {
+      if (nextState.players.length >= 6) {
+        return { success: false, error: 'INVALID_ACTION', errorMessage: 'Oda maksimum oyuncu kapasitesine (6) ulaştı.' };
+      }
 
-    events.push({
-      type: 'GAME_STARTED',
-      actorPlayerId: action.playerId,
-      actionId,
-      timestamp: now
-    });
+      const botDifficulty = action.payload?.difficulty || nextState.settings?.botDifficulty || 'medium';
+      const botIndex = nextState.players.filter(p => p.isBot).length + 1;
+      const botNames = ['Zeki Bot', 'Usta Bot', 'Stratejist Bot', 'Tüccar Bot', 'Kurnaz Bot'];
+      const botName = botNames[botIndex - 1] || `Bot ${botIndex}`;
+      const usedAvatars = new Set(nextState.players.map(p => p.avatar));
+      const usedColors = new Set(nextState.players.map(p => p.color));
 
-    return { success: true, state: nextState, events };
+      const avatar = PLAYER_AVATARS.find(a => !usedAvatars.has(a)) || '🤖';
+      const color = PLAYER_COLORS.find(c => !usedColors.has(c)) || '#8B5CF6';
+
+      const botPlayer: Player = {
+        id: `bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        name: botName,
+        avatar,
+        color,
+        money: nextState.settings?.startingMoney || 1500,
+        position: 0,
+        isJailed: false,
+        jailTurns: 0,
+        inGame: true,
+        isBot: true,
+        botDifficulty,
+        isHost: false,
+        lapsCompleted: 0,
+        firstLapPurchases: 0
+      };
+
+      nextState.players.push(botPlayer);
+      addServerLog(nextState, `🤖 ${botName} (${botDifficulty === 'hard' ? 'Zor' : botDifficulty === 'easy' ? 'Kolay' : 'Orta'}) lobiye katıldı.`, 'info');
+      return { success: true, state: nextState, events };
+    }
+
+    if (type === 'REMOVE_BOT') {
+      const targetBotId = action.payload?.botId;
+      const botIdx = targetBotId
+        ? nextState.players.findIndex(p => p.id === targetBotId && p.isBot)
+        : nextState.players.map(p => p.isBot).lastIndexOf(true);
+
+      if (botIdx === -1) {
+        return { success: false, error: 'PLAYER_NOT_FOUND', errorMessage: 'Çıkarılacak bot bulunamadı.' };
+      }
+
+      const removed = nextState.players.splice(botIdx, 1)[0];
+      addServerLog(nextState, `🤖 ${removed.name} lobiden çıkarıldı.`, 'info');
+      return { success: true, state: nextState, events };
+    }
+
+    if (type === 'UPDATE_SETTINGS') {
+      const newSettings = action.payload || {};
+      nextState.settings = {
+        ...nextState.settings,
+        startingMoney: typeof newSettings.startingMoney === 'number' ? newSettings.startingMoney : nextState.settings?.startingMoney || 1500,
+        passGoSalary: typeof newSettings.passGoSalary === 'number' ? newSettings.passGoSalary : nextState.settings?.passGoSalary || 200,
+        firstLapBuyLimit: typeof newSettings.firstLapBuyLimit === 'number' ? newSettings.firstLapBuyLimit : nextState.settings?.firstLapBuyLimit || 0,
+        botDifficulty: newSettings.botDifficulty || nextState.settings?.botDifficulty || 'medium',
+        isPublic: typeof newSettings.isPublic === 'boolean' ? newSettings.isPublic : nextState.settings?.isPublic || false
+      };
+
+      addServerLog(nextState, '⚙️ Oyun ayarları oda kurucusu tarafından güncellendi.', 'info');
+      return { success: true, state: nextState, events };
+    }
+
+    if (type === 'START_GAME') {
+      if (nextState.players.length < 2) {
+        return { success: false, error: 'INVALID_PHASE', errorMessage: 'Oyunu başlatmak için en az 2 oyuncu gerekir.' };
+      }
+
+      const startMoney = nextState.settings?.startingMoney || 1500;
+      nextState.players = nextState.players.map(p => ({
+        ...p,
+        money: startMoney,
+        lapsCompleted: 0,
+        firstLapPurchases: 0
+      }));
+      nextState.phase = 'PLAYING';
+      nextState.currentTurnIndex = 0;
+      nextState.diceRolled = false;
+      nextState.doublesCount = 0;
+      nextState.turnStartedAt = now;
+      addServerLog(nextState, '🎮 Turkish Paradise oyunu başladı! İyi şanslar!', 'success');
+
+      events.push({
+        type: 'GAME_STARTED',
+        actorPlayerId: action.playerId,
+        actionId,
+        timestamp: now
+      });
+
+      return { success: true, state: nextState, events };
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -642,6 +748,256 @@ export function applyGameAction(
     }
 
     events.push({ type: 'BANKRUPTCY', actorPlayerId: actingPlayer.id, actionId, timestamp: now });
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: UNMORTGAGE
+  // --------------------------------------------------------------------------
+  if (type === 'UNMORTGAGE') {
+    const tileId = action.payload?.tileId;
+    if (typeof tileId !== 'number' || !Number.isInteger(tileId) || tileId < 0 || tileId >= TOTAL_TILES) {
+      return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Geçersiz arsa numarası.' };
+    }
+    const tile = nextState.board[tileId];
+    if (!tile || tile.ownerId !== actingPlayer.id) {
+      return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Bu arsa size ait değil.' };
+    }
+    if (!tile.isMortgaged) {
+      return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Mülk zaten ipotekli değil.' };
+    }
+    const mortgageValue = Math.floor((tile.price || 0) / 2);
+    const unmortgageCost = Math.floor(mortgageValue * 1.1);
+    if (actingPlayer.money < unmortgageCost) {
+      return { success: false, error: 'INSUFFICIENT_FUNDS', errorMessage: `İpoteği kaldırmak için ${unmortgageCost}₺ gereklidir.` };
+    }
+    actingPlayer.money -= unmortgageCost;
+    tile.isMortgaged = false;
+    addServerTransaction(nextState, actingPlayer, 'expense', 'mortgage', unmortgageCost, `"${tile.name}" ipoteği kaldırıldı`);
+    addServerLog(nextState, `🔓 ${actingPlayer.name}, "${tile.name}" ipoteğini ${unmortgageCost}₺ ödeyerek kaldırdı.`, 'info');
+    events.push({ type: 'MORTGAGE_TOGGLED', actorPlayerId: actingPlayer.id, tileId, actionId, timestamp: now });
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: SELL_TO_BANK
+  // --------------------------------------------------------------------------
+  if (type === 'SELL_TO_BANK') {
+    const tileId = action.payload?.tileId;
+    if (typeof tileId !== 'number' || !Number.isInteger(tileId) || tileId < 0 || tileId >= TOTAL_TILES) {
+      return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Geçersiz arsa numarası.' };
+    }
+    const tile = nextState.board[tileId];
+    if (!tile || tile.ownerId !== actingPlayer.id || !tile.price) {
+      return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Bu mülk size ait değil.' };
+    }
+    const propertyRefund = Math.floor(tile.price * (2 / 3));
+    const housesRefund = tile.houses > 0 && tile.houseCost ? Math.floor(tile.houses * tile.houseCost * 0.5) : 0;
+    const totalRefund = propertyRefund + housesRefund;
+
+    actingPlayer.money += totalRefund;
+    tile.ownerId = undefined;
+    tile.houses = 0;
+    tile.isMortgaged = false;
+
+    addServerTransaction(nextState, actingPlayer, 'income', 'bank_sell', totalRefund, `"${tile.name}" mülkü Banka'ya 2/3 fiyatına satıldı`);
+    addServerLog(nextState, `🏛️ ${actingPlayer.name}, "${tile.name}" mülkünü Banka'ya 2/3 değerine (${totalRefund}₺) geri sattı.`, 'warning');
+    events.push({ type: 'PROPERTY_PURCHASED', actorPlayerId: actingPlayer.id, tileId, amount: totalRefund, actionId, timestamp: now });
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: CONFIRM_CHANCE
+  // --------------------------------------------------------------------------
+  if (type === 'CONFIRM_CHANCE') {
+    const card = nextState.activeCard;
+    if (!card) {
+      return { success: false, error: 'INVALID_ACTION', errorMessage: 'Bekleyen aktif şans kartı bulunmuyor.' };
+    }
+    if (nextState.players[nextState.currentTurnIndex]?.id !== actingPlayer.id) {
+      return { success: false, error: 'NOT_YOUR_TURN', errorMessage: 'Sıra sizde değil.' };
+    }
+
+    addServerLog(nextState, `🃏 ${actingPlayer.name} kart çekti: ${card.title} - ${card.description}`, 'action');
+
+    switch (card.actionType) {
+      case 'MONEY':
+        if (card.amount) {
+          actingPlayer.money += card.amount;
+          if (card.amount > 0) {
+            addServerTransaction(nextState, actingPlayer, 'income', 'chance', card.amount, `Kart Kazancı: ${card.title}`);
+          } else {
+            addServerTransaction(nextState, actingPlayer, 'expense', 'chance', Math.abs(card.amount), `Kart Cezası: ${card.title}`);
+          }
+        }
+        break;
+
+      case 'JAIL':
+        actingPlayer.position = JAIL_TILE_INDEX;
+        actingPlayer.isJailed = true;
+        actingPlayer.jailTurns = 0;
+        nextState.doublesCount = 0;
+        break;
+
+      case 'MOVE_TO':
+        if (card.targetTileId !== undefined) {
+          const target = card.targetTileId % TOTAL_TILES;
+          if (target < actingPlayer.position) {
+            const salary = nextState.settings?.passGoSalary || 200;
+            actingPlayer.money += salary;
+            actingPlayer.lapsCompleted = (actingPlayer.lapsCompleted || 0) + 1;
+            addServerTransaction(nextState, actingPlayer, 'income', 'salary', salary, 'Kart ile Başlangıç noktasından geçildi');
+            addServerLog(nextState, `💰 ${actingPlayer.name} tur tamamlama bonusu ${salary}₺ aldı.`, 'success');
+          }
+          actingPlayer.position = target;
+        }
+        break;
+
+      case 'REPAIR':
+        let totalHouses = 0;
+        nextState.board.forEach(t => {
+          if (t.ownerId === actingPlayer.id) totalHouses += t.houses;
+        });
+        const cost = totalHouses * (card.amount || 25);
+        if (cost > 0) {
+          actingPlayer.money -= cost;
+          addServerTransaction(nextState, actingPlayer, 'expense', 'chance', cost, 'Tüm binaların bakım ve onarım vergisi');
+          addServerLog(nextState, `🛠️ ${actingPlayer.name} binaları için ${cost}₺ bakım ödedi.`, 'warning');
+        }
+        break;
+    }
+
+    nextState.activeCard = undefined;
+    nextState.pendingAction = 'NONE';
+    nextState.actionMessage = undefined;
+
+    if ((nextState.doublesCount || 0) > 0 && !actingPlayer.isJailed) {
+      nextState.diceRolled = false;
+    }
+
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: FORCE_BUY
+  // --------------------------------------------------------------------------
+  if (type === 'FORCE_BUY') {
+    const tileId = action.payload?.tileId;
+    if (typeof tileId !== 'number' || !Number.isInteger(tileId) || tileId < 0 || tileId >= TOTAL_TILES) {
+      return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Geçersiz arsa numarası.' };
+    }
+    const tile = nextState.board[tileId];
+    if (!tile || !tile.ownerId || tile.ownerId === actingPlayer.id || !tile.price) {
+      return { success: false, error: 'INVALID_FORCE_BUY', errorMessage: 'Bu arsa zorla satın alınamaz.' };
+    }
+    if (tile.houses > 0) {
+      return { success: false, error: 'INVALID_FORCE_BUY', errorMessage: 'Üzerinde ev dikilmiş mülkler zorla satın alınamaz!' };
+    }
+
+    const currentOwner = nextState.players.find(p => p.id === tile.ownerId);
+    if (!currentOwner) {
+      return { success: false, error: 'PLAYER_NOT_FOUND', errorMessage: 'Mülk sahibi bulunamadı.' };
+    }
+
+    const buyoutCost = tile.price * 2;
+    if (actingPlayer.money < buyoutCost) {
+      return { success: false, error: 'INSUFFICIENT_FUNDS', errorMessage: `Zorla alım için 2x bedel (${buyoutCost}₺) gereklidir.` };
+    }
+
+    actingPlayer.money -= buyoutCost;
+    currentOwner.money += buyoutCost;
+    tile.ownerId = actingPlayer.id;
+    tile.isMortgaged = false;
+
+    addServerTransaction(nextState, actingPlayer, 'expense', 'buy', buyoutCost, `"${tile.name}" mülkü 2x bedelle zorla satın alındı`);
+    addServerTransaction(nextState, currentOwner, 'income', 'trade', buyoutCost, `"${tile.name}" mülkü ${actingPlayer.name} tarafından 2x bedelle devralındı`);
+    addServerLog(nextState, `⚡ ${actingPlayer.name}, "${tile.name}" mülkünü ${currentOwner.name} oyuncusundan 2x bedelle (${buyoutCost}₺) zorla satın aldı!`, 'warning');
+
+    events.push({ type: 'PROPERTY_PURCHASED', actorPlayerId: actingPlayer.id, targetPlayerId: currentOwner.id, tileId, amount: buyoutCost, actionId, timestamp: now });
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: TRADE_OFFER
+  // --------------------------------------------------------------------------
+  if (type === 'TRADE_OFFER') {
+    const offer: TradeOffer = action.payload;
+    if (!offer || !offer.toPlayerId) {
+      return { success: false, error: 'INVALID_TRADE', errorMessage: 'Geçersiz takas verisi.' };
+    }
+    const targetPlayer = nextState.players.find(p => p.id === offer.toPlayerId);
+    if (!targetPlayer || !targetPlayer.inGame) {
+      return { success: false, error: 'PLAYER_NOT_FOUND', errorMessage: 'Hedef oyuncu oyunda bulunmuyor.' };
+    }
+    if (offer.offeredMoney > 0 && actingPlayer.money < offer.offeredMoney) {
+      return { success: false, error: 'INSUFFICIENT_FUNDS', errorMessage: 'Teklif edilen nakit paraya sahip değilsiniz.' };
+    }
+
+    // Verify property ownership
+    for (const id of offer.offeredTileIds || []) {
+      const tile = nextState.board.find(b => b.id === id);
+      if (!tile || tile.ownerId !== actingPlayer.id) {
+        return { success: false, error: 'INVALID_PROPERTY', errorMessage: `Teklif edilen "${tile?.name || id}" sizin mülkiyetinizde değil.` };
+      }
+      if (tile.houses > 0) {
+        return { success: false, error: 'INVALID_TRADE', errorMessage: 'Üzerinde ev olan mülk takas edilemez.' };
+      }
+    }
+
+    for (const id of offer.requestedTileIds || []) {
+      const tile = nextState.board.find(b => b.id === id);
+      if (!tile || tile.ownerId !== targetPlayer.id) {
+        return { success: false, error: 'INVALID_PROPERTY', errorMessage: `İstenen "${tile?.name || id}" hedef oyuncuya ait değil.` };
+      }
+      if (tile.houses > 0) {
+        return { success: false, error: 'INVALID_TRADE', errorMessage: 'Üzerinde ev olan mülk takas edilemez.' };
+      }
+    }
+
+    if (targetPlayer.isBot) {
+      const updated = executeTrade(nextState, offer);
+      addServerLog(updated, `🤝 ${actingPlayer.name} ile ${targetPlayer.name} arasında takas başarıyla gerçekleşti!`, 'success');
+      events.push({ type: 'TRADE_COMPLETED', actorPlayerId: actingPlayer.id, targetPlayerId: targetPlayer.id, actionId, timestamp: now });
+      return { success: true, state: updated, events };
+    } else {
+      nextState.incomingTradeOffer = {
+        ...offer,
+        fromPlayerId: actingPlayer.id,
+        toPlayerId: targetPlayer.id,
+        fromPlayerName: actingPlayer.name,
+        fromPlayerAvatar: actingPlayer.avatar
+      };
+      addServerLog(nextState, `📬 ${actingPlayer.name}, ${targetPlayer.name} oyuncusuna takas teklifinde bulundu. Karar bekleniyor...`, 'info');
+      return { success: true, state: nextState, events };
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: TRADE_ACCEPT / ACCEPT_TRADE
+  // --------------------------------------------------------------------------
+  if (type === 'TRADE_ACCEPT' || type === 'ACCEPT_TRADE') {
+    const offer = nextState.incomingTradeOffer;
+    if (!offer || offer.toPlayerId !== actingPlayer.id) {
+      return { success: false, error: 'INVALID_TRADE', errorMessage: 'Onaylanacak aktif bir takas teklifi bulunmuyor.' };
+    }
+
+    const updated = executeTrade(nextState, offer);
+    updated.incomingTradeOffer = undefined;
+    events.push({ type: 'TRADE_COMPLETED', actorPlayerId: actingPlayer.id, targetPlayerId: offer.fromPlayerId, actionId, timestamp: now });
+    return { success: true, state: updated, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: TRADE_DECLINE / DECLINE_TRADE
+  // --------------------------------------------------------------------------
+  if (type === 'TRADE_DECLINE' || type === 'DECLINE_TRADE') {
+    const offer = nextState.incomingTradeOffer;
+    if (!offer || offer.toPlayerId !== actingPlayer.id) {
+      return { success: false, error: 'INVALID_TRADE', errorMessage: 'Reddedilecek aktif bir takas teklifi bulunmuyor.' };
+    }
+
+    nextState.incomingTradeOffer = undefined;
+    addServerLog(nextState, `❌ ${actingPlayer.name} gelen takas teklifini reddetti.`, 'info');
     return { success: true, state: nextState, events };
   }
 

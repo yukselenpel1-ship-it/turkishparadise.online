@@ -299,7 +299,7 @@ describe('Serverless Action Endpoint & Middleware (/api/game/action & /api/game/
   });
 
   describe('5. Idempotency & Replay Protection (x20 Rapid Replay)', () => {
-    it('executes action once and rejects 20 rapid duplicate replays with DUPLICATE_ACTION', async () => {
+    it('executes action once and safely returns cached processed result for 20 rapid duplicate replays', async () => {
       const actionBody = {
         actionId: 'act_unique_idempotency_1',
         roomId: 'TR-1001',
@@ -313,12 +313,12 @@ describe('Serverless Action Endpoint & Middleware (/api/game/action & /api/game/
       expect(firstRes.success).toBe(true);
       expect(firstRes.version).toBe(2);
 
-      // Replays 2..20
+      // Replays 2..20 (Must return cached result with same version 2)
       for (let i = 2; i <= 20; i++) {
         const replayRes = await executeGameActionPipeline(actionBody, hostActor, { storage });
-        expect(replayRes.success).toBe(false);
-        expect(replayRes.statusCode).toBe(409);
-        expect(replayRes.error).toBe('DUPLICATE_ACTION');
+        expect(replayRes.success).toBe(true);
+        expect(replayRes.statusCode).toBe(200);
+        expect(replayRes.version).toBe(2);
       }
 
       // Ensure room state was modified only once (version remains 2)

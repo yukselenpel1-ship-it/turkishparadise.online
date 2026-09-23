@@ -3,6 +3,7 @@ import {
   TokenPayload,
   signUserToken,
   verifyUserTokenDirect,
+  verifyGuestToken,
   extractUserFromRequest
 } from './tokenUtil';
 import { GameState, Player } from '../../types/game';
@@ -86,27 +87,59 @@ export function resolveAuthenticatedActor(req: any): AuthResolutionResult {
   }
 
   if (token) {
-    const verified = verifyUserTokenDirect(token);
-    if (verified && verified.id) {
+    // 1. Try Google / User JWT Token
+    const verifiedUser = verifyUserTokenDirect(token);
+    if (verifiedUser && verifiedUser.id) {
       return {
         success: true,
         actor: {
-          userId: verified.id,
-          googleSub: verified.googleSub,
-          displayName: verified.displayName,
+          userId: verifiedUser.id,
+          googleSub: verifiedUser.googleSub,
+          displayName: verifiedUser.displayName,
           isGuest: false
         }
       };
-    } else {
+    }
+
+    // 2. Try Signed Guest JWT Token
+    const verifiedGuest = verifyGuestToken(token);
+    if (verifiedGuest && verifiedGuest.guestId) {
       return {
-        success: false,
-        error: 'INVALID_TOKEN',
-        message: 'Oturum anahtarı (JWT) geçersiz veya süresi dolmuş.'
+        success: true,
+        actor: {
+          userId: verifiedGuest.guestId,
+          participantKey: verifiedGuest.participantKey,
+          displayName: verifiedGuest.displayName,
+          isGuest: true
+        }
+      };
+    }
+
+    return {
+      success: false,
+      error: 'INVALID_TOKEN',
+      message: 'Oturum anahtarı (JWT) geçersiz veya süresi dolmuş.'
+    };
+  }
+
+  // 2. Check Guest Signed / Session Token Header (x-guest-token)
+  const guestTokenHeader = (headers['x-guest-token'] || req.body?.guestToken || req.query?.guestToken) as string | undefined;
+  if (guestTokenHeader) {
+    const verifiedGuest = verifyGuestToken(guestTokenHeader);
+    if (verifiedGuest && verifiedGuest.guestId) {
+      return {
+        success: true,
+        actor: {
+          userId: verifiedGuest.guestId,
+          participantKey: verifiedGuest.participantKey,
+          displayName: verifiedGuest.displayName,
+          isGuest: true
+        }
       };
     }
   }
 
-  // 2. Check Guest Participant Key Header
+  // 3. Check Guest Participant Key Header (Isolated Browser Profile)
   const participantKey = (
     headers['x-participant-key'] ||
     headers['x-participantkey'] ||
@@ -130,7 +163,7 @@ export function resolveAuthenticatedActor(req: any): AuthResolutionResult {
     };
   }
 
-  // 3. Check raw x-user-id Header (Resilient Guest Identification)
+  // 4. Check raw x-user-id Header (Resilient Guest Identification)
   const rawUserId = (headers['x-user-id'] || req.query?.userId || req.body?.userId) as string | undefined;
   if (rawUserId && typeof rawUserId === 'string' && rawUserId.trim().length >= 2) {
     const cleanId = rawUserId.trim();
@@ -240,4 +273,52 @@ export function validateRoomReadAccess(
     allowed: false,
     reason: 'FORBIDDEN_PRIVATE_ROOM'
   };
+}
+
+/**
+ * Sanitizes GameState before exposing via GET /api/game/state.
+ * 🔒 SECURITY:
+ * - Masks or strips participantKey of opponent players so malicious users cannot forge them.
+ * - Preserves the requesting actor's own identity fields for seamless reconnections.
+ */
+export function sanitizeGameStateForClient(
+  state: GameState,
+  requestingActor?: AuthenticatedActor
+): GameState {
+  if (!state || typeof state !== 'object') return state;
+
+  const sanitized: GameState = JSON.parse(JSON.stringify(state));
+
+  if (Array.isArray(sanitized.players)) {
+    sanitized.players = sanitized.players.map(p => {
+      const isOwnPlayer =
+        requestingActor &&
+        (p.id === requestingActor.userId ||
+          (p.userId && p.userId === requestingActor.userId) ||
+          (p.participantKey && p.participantKey === requestingActor.participantKey));
+
+      return {
+        ...p,
+        // Only keep participantKey for the player themselves, mask for opponents
+        participantKey: isOwnPlayer ? p.participantKey : undefined
+      };
+    });
+  }
+
+  if (Array.isArray(sanitized.spectators)) {
+    sanitized.spectators = sanitized.spectators.map(s => {
+      const isOwnSpectator =
+        requestingActor &&
+        (s.id === requestingActor.userId ||
+          (s.userId && s.userId === requestingActor.userId) ||
+          (s.participantKey && s.participantKey === requestingActor.participantKey));
+
+      return {
+        ...s,
+        participantKey: isOwnSpectator ? s.participantKey : undefined
+      };
+    });
+  }
+
+  return sanitized;
 }

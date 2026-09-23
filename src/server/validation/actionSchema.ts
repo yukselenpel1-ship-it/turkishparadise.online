@@ -10,6 +10,19 @@ export const ALLOWED_ACTION_TYPES = [
   'BUILD_HOUSE',
   'SELL_HOUSE',
   'MORTGAGE',
+  'UNMORTGAGE',
+  'SELL_TO_BANK',
+  'CONFIRM_CHANCE',
+  'TRADE_OFFER',
+  'TRADE_ACCEPT',
+  'ACCEPT_TRADE',
+  'TRADE_DECLINE',
+  'DECLINE_TRADE',
+  'FORCE_BUY',
+  'ADD_BOT',
+  'REMOVE_BOT',
+  'UPDATE_SETTINGS',
+  'CHAT_MESSAGE',
   'BANKRUPTCY'
 ] as const;
 
@@ -134,7 +147,14 @@ export function validateActionRequest(body: any): SchemaValidationResult {
   // 6. Validate payload structure per action type
   let sanitizedPayload: Record<string, any> | undefined = undefined;
 
-  if (type === 'BUILD_HOUSE' || type === 'SELL_HOUSE' || type === 'MORTGAGE') {
+  if (
+    type === 'BUILD_HOUSE' ||
+    type === 'SELL_HOUSE' ||
+    type === 'MORTGAGE' ||
+    type === 'UNMORTGAGE' ||
+    type === 'SELL_TO_BANK' ||
+    type === 'FORCE_BUY'
+  ) {
     if (!payload || typeof payload !== 'object') {
       return {
         valid: false,
@@ -151,8 +171,42 @@ export function validateActionRequest(body: any): SchemaValidationResult {
       };
     }
     sanitizedPayload = { tileId };
+  } else if (type === 'TRADE_OFFER') {
+    if (!payload || typeof payload !== 'object') {
+      return { valid: false, error: 'INVALID_TRADE', message: 'Takas teklif verisi eksik.' };
+    }
+    const toPlayerId = payload.toPlayerId;
+    const offeredTileIds = Array.isArray(payload.offeredTileIds) ? payload.offeredTileIds.filter((x: any) => typeof x === 'number') : [];
+    const requestedTileIds = Array.isArray(payload.requestedTileIds) ? payload.requestedTileIds.filter((x: any) => typeof x === 'number') : [];
+    const offeredMoney = typeof payload.offeredMoney === 'number' && payload.offeredMoney >= 0 ? payload.offeredMoney : 0;
+    const requestedMoney = typeof payload.requestedMoney === 'number' && payload.requestedMoney >= 0 ? payload.requestedMoney : 0;
+
+    if (!toPlayerId || typeof toPlayerId !== 'string') {
+      return { valid: false, error: 'INVALID_TRADE', message: 'Takas hedef oyuncusu (toPlayerId) zorunludur.' };
+    }
+    sanitizedPayload = {
+      fromPlayerId: playerId.trim(),
+      toPlayerId: toPlayerId.trim(),
+      offeredTileIds,
+      requestedTileIds,
+      offeredMoney,
+      requestedMoney
+    };
+  } else if (type === 'CHAT_MESSAGE') {
+    if (!payload || typeof payload.text !== 'string') {
+      return { valid: false, error: 'INVALID_ACTION', message: 'Sohbet mesajı metni zorunludur.' };
+    }
+    const text = payload.text.trim().substring(0, 250);
+    sanitizedPayload = { text };
+  } else if (type === 'ADD_BOT') {
+    const difficulty = payload?.difficulty === 'easy' || payload?.difficulty === 'hard' ? payload.difficulty : 'medium';
+    sanitizedPayload = { difficulty };
+  } else if (type === 'REMOVE_BOT') {
+    const botId = typeof payload?.botId === 'string' ? payload.botId.trim() : undefined;
+    sanitizedPayload = { botId };
+  } else if (type === 'UPDATE_SETTINGS') {
+    sanitizedPayload = payload && typeof payload === 'object' ? payload : {};
   } else if (payload && typeof payload === 'object') {
-    // For other actions, keep only safe known primitive payload fields if present
     sanitizedPayload = {};
   }
 

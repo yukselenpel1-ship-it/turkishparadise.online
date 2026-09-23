@@ -24,6 +24,29 @@ export function verifyUserTokenDirect(token: string): TokenPayload | null {
   return null;
 }
 
+export interface GuestTokenPayload {
+  guestId: string;
+  participantKey: string;
+  displayName: string;
+  roomId?: string;
+  isGuest: true;
+}
+
+export function signGuestToken(payload: GuestTokenPayload): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+}
+
+export function verifyGuestToken(token: string): GuestTokenPayload | null {
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as GuestTokenPayload;
+    if (decoded && decoded.guestId && decoded.participantKey && decoded.isGuest) {
+      return decoded;
+    }
+  } catch (err) {}
+  return null;
+}
+
 /**
  * Extracts and verifies user identity from Request.
  * Supports:

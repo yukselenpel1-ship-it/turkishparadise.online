@@ -18,9 +18,21 @@ export interface SaveStateResult {
   error?: string;
 }
 
+export interface IdempotencyEntry {
+  recordedAt: number;
+  expiresAt: number;
+  fingerprint?: string;
+  status: 'IN_FLIGHT' | 'PROCESSED';
+  result?: any;
+}
+
 export interface IdempotencyResult {
   isDuplicate: boolean;
   recordedAt?: number;
+  fingerprint?: string;
+  isFingerprintMismatch?: boolean;
+  status?: 'IN_FLIGHT' | 'PROCESSED';
+  cachedResult?: any;
 }
 
 // TTL Configurations
@@ -82,7 +94,8 @@ export interface IRoomStorage {
   saveRoomStateWithVersion(roomId: string, expectedVersion: number, newState: GameState): Promise<SaveStateResult>;
   deleteRoomState(roomId: string): Promise<boolean>;
   touchRoom(roomId: string): Promise<boolean>;
-  checkAndRecordActionIdempotency(roomId: string, actionId: string, ttlSeconds?: number): Promise<IdempotencyResult>;
+  checkAndRecordActionIdempotency(roomId: string, actionId: string, fingerprint?: string, ttlSeconds?: number): Promise<IdempotencyResult>;
+  recordActionCompletion(roomId: string, actionId: string, fingerprint: string, result: any, ttlSeconds?: number): Promise<void>;
   clearAll(): Promise<void>; // For testing
 }
 
@@ -92,7 +105,7 @@ export interface IRoomStorage {
  */
 export class InMemoryRoomStorage implements IRoomStorage {
   private states = new Map<string, { state: GameState; expiresAt: number }>();
-  private actions = new Map<string, { recordedAt: number; expiresAt: number }>();
+  private actions = new Map<string, IdempotencyEntry>();
 
   public async getRoomState(roomId: string): Promise<GameState | null> {
     const cleanId = normalizeRoomId(roomId);
@@ -191,6 +204,7 @@ export class InMemoryRoomStorage implements IRoomStorage {
   public async checkAndRecordActionIdempotency(
     roomId: string,
     actionId: string,
+    fingerprint?: string,
     ttlSeconds = ACTION_IDEMPOTENCY_TTL_SECONDS
   ): Promise<IdempotencyResult> {
     const cleanId = normalizeRoomId(roomId);
@@ -202,15 +216,55 @@ export class InMemoryRoomStorage implements IRoomStorage {
     const existing = this.actions.get(key);
 
     if (existing && now <= existing.expiresAt) {
-      return { isDuplicate: true, recordedAt: existing.recordedAt };
+      // Fingerprint Mismatch Check: Action ID reused with different payload / params
+      if (fingerprint && existing.fingerprint && existing.fingerprint !== fingerprint) {
+        return {
+          isDuplicate: true,
+          isFingerprintMismatch: true,
+          recordedAt: existing.recordedAt,
+          status: existing.status
+        };
+      }
+
+      return {
+        isDuplicate: true,
+        recordedAt: existing.recordedAt,
+        fingerprint: existing.fingerprint,
+        status: existing.status,
+        cachedResult: existing.result
+      };
     }
 
     this.actions.set(key, {
       recordedAt: now,
-      expiresAt: now + ttlSeconds * 1000
+      expiresAt: now + ttlSeconds * 1000,
+      fingerprint,
+      status: 'IN_FLIGHT'
     });
 
-    return { isDuplicate: false, recordedAt: now };
+    return { isDuplicate: false, recordedAt: now, status: 'IN_FLIGHT' };
+  }
+
+  public async recordActionCompletion(
+    roomId: string,
+    actionId: string,
+    fingerprint: string,
+    result: any,
+    ttlSeconds = ACTION_IDEMPOTENCY_TTL_SECONDS
+  ): Promise<void> {
+    const cleanId = normalizeRoomId(roomId);
+    const cleanActionId = (actionId || '').trim();
+    if (!cleanId || !cleanActionId) return;
+
+    const key = `${cleanId}:${cleanActionId}`;
+    const now = Date.now();
+    this.actions.set(key, {
+      recordedAt: now,
+      expiresAt: now + ttlSeconds * 1000,
+      fingerprint,
+      status: 'PROCESSED',
+      result: JSON.parse(JSON.stringify(result))
+    });
   }
 
   public async clearAll(): Promise<void> {
@@ -379,21 +433,67 @@ export class UpstashRedisRoomStorage implements IRoomStorage {
   public async checkAndRecordActionIdempotency(
     roomId: string,
     actionId: string,
+    fingerprint?: string,
     ttlSeconds = ACTION_IDEMPOTENCY_TTL_SECONDS
   ): Promise<IdempotencyResult> {
     const key = getActionIdempotencyKey(roomId, actionId);
     const now = Date.now();
     try {
-      // SET key value NX EX ttl (Atomic Set if Not Exists)
-      const res = await this.executeCommand(['SET', key, now.toString(), 'NX', 'EX', ttlSeconds.toString()]);
-      const isNew = res === 'OK' || res === 1;
-      return {
-        isDuplicate: !isNew,
-        recordedAt: now
+      const existing = await this.executeCommand(['GET', key]);
+      if (existing) {
+        const parsed = typeof existing === 'string' ? JSON.parse(existing) : existing;
+        if (fingerprint && parsed.fingerprint && parsed.fingerprint !== fingerprint) {
+          return {
+            isDuplicate: true,
+            isFingerprintMismatch: true,
+            recordedAt: parsed.recordedAt || now,
+            status: parsed.status
+          };
+        }
+        return {
+          isDuplicate: true,
+          recordedAt: parsed.recordedAt || now,
+          fingerprint: parsed.fingerprint,
+          status: parsed.status,
+          cachedResult: parsed.result
+        };
+      }
+
+      const initialEntry: IdempotencyEntry = {
+        recordedAt: now,
+        expiresAt: now + ttlSeconds * 1000,
+        fingerprint,
+        status: 'IN_FLIGHT'
       };
+
+      await this.executeCommand(['SET', key, JSON.stringify(initialEntry), 'EX', ttlSeconds.toString()]);
+      return { isDuplicate: false, recordedAt: now, status: 'IN_FLIGHT' };
     } catch (err) {
       console.warn('[RedisStorage] idempotency error:', err);
       return { isDuplicate: false, recordedAt: now };
+    }
+  }
+
+  public async recordActionCompletion(
+    roomId: string,
+    actionId: string,
+    fingerprint: string,
+    result: any,
+    ttlSeconds = ACTION_IDEMPOTENCY_TTL_SECONDS
+  ): Promise<void> {
+    const key = getActionIdempotencyKey(roomId, actionId);
+    const now = Date.now();
+    try {
+      const entry: IdempotencyEntry = {
+        recordedAt: now,
+        expiresAt: now + ttlSeconds * 1000,
+        fingerprint,
+        status: 'PROCESSED',
+        result
+      };
+      await this.executeCommand(['SET', key, JSON.stringify(entry), 'EX', ttlSeconds.toString()]);
+    } catch (err) {
+      console.warn('[RedisStorage] recordActionCompletion error:', err);
     }
   }
 
@@ -424,7 +524,10 @@ export class UnavailableRoomStorage implements IRoomStorage {
     return false;
   }
   public async checkAndRecordActionIdempotency(): Promise<IdempotencyResult> {
-    return { isDuplicate: false };
+    throw new Error('STORAGE_UNAVAILABLE: Production Redis credentials not configured');
+  }
+  public async recordActionCompletion(): Promise<void> {
+    throw new Error('STORAGE_UNAVAILABLE: Production Redis credentials not configured');
   }
   public async clearAll(): Promise<void> {}
 }

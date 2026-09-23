@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { resolveAuthenticatedActor, validateRoomReadAccess } from '../../src/server/auth/authMiddleware';
+import { resolveAuthenticatedActor, validateRoomReadAccess, sanitizeGameStateForClient } from '../../src/server/auth/authMiddleware';
 import { roomStorage, normalizeRoomId } from '../../src/server/storage/roomStorage';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -66,11 +66,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const clientState = sanitizeGameStateForClient(state, authRes.actor);
+
     return res.status(200).json({
       success: true,
       roomId: cleanId,
-      version: state.version || 1,
-      state
+      version: clientState.version || 1,
+      state: clientState
     });
   } catch (err: any) {
     if (err?.message?.includes('STORAGE_UNAVAILABLE')) {
