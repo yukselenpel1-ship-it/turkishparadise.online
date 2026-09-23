@@ -335,7 +335,7 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
           expectedVersion: currentExpectedVer
         };
 
-        const rollRes = await executeGameActionPipeline(rollAction, hActor, { storage });
+        const rollRes = await executeGameActionPipeline(rollAction, hActor, { storage, rng: () => [1, 2] });
         expect(rollRes.success).toBe(true);
         expect(rollRes.state?.diceRolled).toBe(true);
         currentExpectedVer = rollRes.state!.version;

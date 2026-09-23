@@ -7,7 +7,8 @@ export default defineConfig({
       'test/controlledRolloutValidation.test.ts',
       'test/securityParityAudit.test.ts',
       'test/serverActionEndpoint.test.ts',
-      'test/serverGameEngine.test.ts'
+      'test/serverGameEngine.test.ts',
+      'test/multiplayerStressEdgeCases.test.ts'
     ]
   }
 });

@@ -590,7 +590,7 @@ describe('🚀 ADIM 4 — CLIENT MIGRATION & FEATURE FLAG VERIFICATION', () => {
           type: 'ROLL_DICE'
         },
         actorB,
-        { storage }
+        { storage, rng: () => [1, 2] }
       );
       expect(rollResB.success).toBe(true);
       if (!rollResB.success) return;
@@ -642,7 +642,7 @@ describe('🚀 ADIM 4 — CLIENT MIGRATION & FEATURE FLAG VERIFICATION', () => {
           type: 'ROLL_DICE'
         },
         actorC,
-        { storage }
+        { storage, rng: () => [1, 2] }
       );
       expect(rollResC.success).toBe(true);
       if (!rollResC.success) return;
