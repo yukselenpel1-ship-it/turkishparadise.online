@@ -149,7 +149,7 @@ export const Tile: React.FC<TileProps> = ({
       {/* 6. Special Graphic for Corners */}
       {isStart && (
         <div className="flex-1 flex flex-col items-center justify-center p-0.5 sm:p-1 text-center relative z-10">
-          <span className="text-sm sm:text-2xl font-black text-slate-950 mb-0.5 leading-none">➔</span>
+          <span className="text-sm sm:text-2xl font-black text-slate-950 mb-0.5 leading-none">←</span>
           <span className="text-[7px] sm:text-xs font-black text-slate-950 tracking-tight leading-none uppercase">
             {language === 'en' ? 'GO' : 'BAŞLANGIÇ'}
           </span>
