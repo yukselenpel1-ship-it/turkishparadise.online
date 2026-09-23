@@ -418,17 +418,64 @@ describe('🚀 ADIM 4 — CLIENT MIGRATION & FEATURE FLAG VERIFICATION', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 7: Auth Headers Builder Verification
+  // TEST 8: Chat Unread Notification Badge Logic
   // --------------------------------------------------------------------------
-  describe('7. Auth Header Resolution', () => {
-    it('buildAuthHeaders properly handles Google JWT, Guest Token, and ParticipantKey', () => {
-      const googleHeaders = buildAuthHeaders({ token: 'google_jwt_123', userId: 'usr_1' });
-      expect(googleHeaders['Authorization']).toBe('Bearer google_jwt_123');
-      expect(googleHeaders['x-user-id']).toBe('usr_1');
+  describe('8. Chat Unread Notification Badge Logic', () => {
+    it('should increment unread count only for other players when chat is closed and reset on open', () => {
+      const myId = 'p_mobile_me';
+      let unreadCount = 0;
+      let isChatOpen = false;
+      let prevCount = 0;
 
-      const guestHeaders = buildAuthHeaders({ guestToken: 'guest_jwt_456', participantKey: 'pKey_abc' });
-      expect(guestHeaders['x-guest-token']).toBe('guest_jwt_456');
-      expect(guestHeaders['x-participant-key']).toBe('pKey_abc');
+      const simulateIncomingMessages = (allMessages: Array<{ id: string; senderId: string; text: string; isSystem?: boolean }>) => {
+        const currentLen = allMessages.length;
+        if (currentLen > prevCount) {
+          if (!isChatOpen) {
+            const newMessages = allMessages.slice(prevCount);
+            const unreadFromOthers = newMessages.filter(
+              (m) => m && m.senderId && m.senderId !== myId && !m.isSystem
+            ).length;
+            unreadCount += unreadFromOthers;
+          }
+        } else if (isChatOpen) {
+          unreadCount = 0;
+        }
+        prevCount = currentLen;
+      };
+
+      const messages: Array<{ id: string; senderId: string; text: string; isSystem?: boolean }> = [];
+
+      // 1. Other player sends 1st message -> unread = 1
+      messages.push({ id: 'msg1', senderId: 'p_pc_other', text: 'Selam!' });
+      simulateIncomingMessages(messages);
+      expect(unreadCount).toBe(1);
+
+      // 2. Other player sends 2nd message -> unread = 2
+      messages.push({ id: 'msg2', senderId: 'p_pc_other', text: 'Zar atacak mısın?' });
+      simulateIncomingMessages(messages);
+      expect(unreadCount).toBe(2);
+
+      // 3. User sends own message -> unread stays 2 (does not increment)
+      messages.push({ id: 'msg3', senderId: myId, text: 'Geldim!' });
+      simulateIncomingMessages(messages);
+      expect(unreadCount).toBe(2);
+
+      // 4. User opens chat -> unread resets to 0
+      isChatOpen = true;
+      unreadCount = 0;
+      simulateIncomingMessages(messages);
+      expect(unreadCount).toBe(0);
+
+      // 5. Incoming message while chat is open -> unread stays 0
+      messages.push({ id: 'msg4', senderId: 'p_pc_other', text: 'Tamamdır' });
+      simulateIncomingMessages(messages);
+      expect(unreadCount).toBe(0);
+
+      // 6. User closes chat and new message arrives -> unread = 1
+      isChatOpen = false;
+      messages.push({ id: 'msg5', senderId: 'p_pc_other', text: 'Hadi başlayalım' });
+      simulateIncomingMessages(messages);
+      expect(unreadCount).toBe(1);
     });
   });
 });

@@ -393,16 +393,29 @@ export const App: React.FC = () => {
     }
   }, [gameState.phase, gameState.winner]);
 
-  // Track unread chat messages for mobile badge
+  // Track unread chat messages for chat badge (ignores user's own messages and resets when chat opens)
   useEffect(() => {
-    const currentLen = gameState.chatMessages?.length || 0;
+    const chatList = gameState.chatMessages || [];
+    const currentLen = chatList.length;
+
     if (currentLen > prevChatCountRef.current) {
       if (mobileSheet !== 'chat') {
-        setUnreadChatCount((prev) => prev + (currentLen - prevChatCountRef.current));
+        const newMessages = chatList.slice(prevChatCountRef.current);
+        const unreadFromOthers = newMessages.filter(
+          (m) => m && m.senderId && m.senderId !== myPlayerId && !m.isSystem
+        ).length;
+        if (unreadFromOthers > 0) {
+          setUnreadChatCount((prev) => prev + unreadFromOthers);
+        }
       }
+    } else if (currentLen < prevChatCountRef.current) {
+      // Game restarted or chat cleared
+      setUnreadChatCount(0);
+    } else if (mobileSheet === 'chat') {
+      setUnreadChatCount(0);
     }
     prevChatCountRef.current = currentLen;
-  }, [gameState.chatMessages, mobileSheet]);
+  }, [gameState.chatMessages, mobileSheet, myPlayerId]);
 
   const openMobileChat = () => {
     setMobileSheet('chat');
@@ -2957,20 +2970,22 @@ export const App: React.FC = () => {
               <span>{t('mobilePlayersTab', { count: gameState.players.length })}</span>
             </button>
 
-            <button
-              onClick={openMobileChat}
-              className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer relative ${
-                mobileSheet === 'chat' ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>{t('mobileChatTab')}</span>
+            <div className="relative">
+              <button
+                onClick={openMobileChat}
+                className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold py-1 px-3 rounded-xl transition cursor-pointer ${
+                  mobileSheet === 'chat' ? 'text-amber-400 bg-amber-500/20' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>{t('mobileChatTab')}</span>
+              </button>
               {unreadChatCount > 0 && (
-                <span className="absolute -top-1 right-1.5 bg-rose-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.2 animate-bounce shadow">
-                  {unreadChatCount}
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center shadow-md pointer-events-none z-10">
+                  {unreadChatCount > 99 ? '99+' : unreadChatCount}
                 </span>
               )}
-            </button>
+            </div>
 
             <button
               onClick={() => setMobileSheet(mobileSheet === 'logs' ? null : 'logs')}
