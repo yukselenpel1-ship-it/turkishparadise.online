@@ -177,6 +177,18 @@ export function advanceServerTurn(state: GameState): GameState {
     addServerLog(state, `🔄 Sıra ${nextPlayer.name} oyuncusunda!`, 'info');
   }
 
+  // Ensure hostPlayerId is migrated to an active in-game human player if current host is inactive
+  const currentHost = state.players.find(p => p.id === state.hostPlayerId);
+  if (!currentHost || !currentHost.inGame) {
+    const nextHost = state.players.find(p => p.inGame && !p.isBot);
+    if (nextHost) {
+      state.hostPlayerId = nextHost.id;
+      state.players.forEach(p => {
+        p.isHost = p.id === nextHost.id;
+      });
+    }
+  }
+
   return state;
 }
 
@@ -722,6 +734,7 @@ export function applyGameAction(
   // --------------------------------------------------------------------------
   if (type === 'BANKRUPTCY') {
     actingPlayer.inGame = false;
+    actingPlayer.isHost = false;
     addServerLog(nextState, `💀 ${actingPlayer.name} iflas etti ve elendi.`, 'danger');
 
     // Return all properties to bank
@@ -735,6 +748,18 @@ export function applyGameAction(
 
     nextState.pendingAction = 'NONE';
     nextState.actionMessage = undefined;
+
+    // Migrate hostPlayerId if bankrupt player was host
+    if (nextState.hostPlayerId === actingPlayer.id || actingPlayer.isHost) {
+      const nextHost = nextState.players.find(p => p.id !== actingPlayer.id && p.inGame && !p.isBot);
+      if (nextHost) {
+        nextState.hostPlayerId = nextHost.id;
+        nextState.players.forEach(p => {
+          p.isHost = p.id === nextHost.id;
+        });
+        addServerLog(nextState, `👑 Oda kuruculuğu ${nextHost.name} oyuncusuna devredildi.`, 'info');
+      }
+    }
 
     const activePlayers = nextState.players.filter(p => p.inGame);
     if (activePlayers.length <= 1) {

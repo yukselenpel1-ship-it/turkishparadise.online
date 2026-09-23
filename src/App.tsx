@@ -1086,7 +1086,7 @@ export const App: React.FC = () => {
           // I AM A GUEST: Check if the HOST left
           const hostId = liveState.hostPlayerId || liveState.players.find((p) => p.isHost)?.id || liveState.players[0]?.id;
           if (hostId && hostId === leavingPlayerId) {
-            const remainingHumans = liveState.players.filter((p) => p.id !== leavingPlayerId && !p.isBot);
+            const remainingHumans = liveState.players.filter((p) => p.id !== leavingPlayerId && !p.isBot && (liveState.phase === 'LOBBY' || p.inGame));
             const nextHost = remainingHumans[0];
 
             if (!nextHost) return;
@@ -1575,6 +1575,10 @@ export const App: React.FC = () => {
       // 3. Pending Action is NONE -> Execute Proactive Trade, Build Houses & End Turn
       if (gameState.pendingAction === 'NONE') {
         const timer = setTimeout(() => {
+          if (isServerAuthoritativeEnabled()) {
+            handleEndTurnAction();
+            return;
+          }
           updateAndBroadcastGameState((prev) => {
             let next = JSON.parse(JSON.stringify(prev)) as GameState;
             const currentActor = next.players[next.currentTurnIndex];

@@ -184,6 +184,19 @@ export function validateActorMatchesPlayer(
     return { valid: true };
   }
 
+  // Allow active human player in the room to submit actions for Bot players
+  if (targetPlayer.isBot) {
+    const isActorInRoom = roomState.players.some(
+      p =>
+        p.id === actor.userId ||
+        (p.userId && p.userId === actor.userId) ||
+        (p.participantKey && actor.participantKey && p.participantKey === actor.participantKey)
+    );
+    if (isActorInRoom) {
+      return { valid: true };
+    }
+  }
+
   // In test/dev environment, allow if actor is explicitly marked host or matches
   if (process.env.NODE_ENV !== 'production' && actor.isHost) {
     return { valid: true };
@@ -233,8 +246,13 @@ export function validateRoomReadAccess(
   );
   if (isInSpectators) return { allowed: true };
 
-  // 4. Check if actor is host
-  if (roomState.hostPlayerId === actor.userId || actor.isHost) {
+  // 4. Check if actor is host (or active fallback host)
+  const activeHostId =
+    roomState.hostPlayerId && roomState.players?.find(p => p.id === roomState.hostPlayerId)?.inGame
+      ? roomState.hostPlayerId
+      : roomState.players?.find(p => p.inGame && !p.isBot)?.id || roomState.players?.[0]?.id;
+
+  if (activeHostId === actor.userId || actor.isHost) {
     return { allowed: true };
   }
 

@@ -478,4 +478,196 @@ describe('🚀 ADIM 4 — CLIENT MIGRATION & FEATURE FLAG VERIFICATION', () => {
       expect(unreadCount).toBe(1);
     });
   });
+
+  // --------------------------------------------------------------------------
+  // TEST 9: Host Bankruptcy & Disconnect Tab Close Game Continuity Test
+  // --------------------------------------------------------------------------
+  describe('9. Host Bankruptcy & Disconnect Tab Close Game Continuity', () => {
+    it('should seamlessly continue gameplay for remaining players when original host bankrupts and closes tab', async () => {
+      const pC: Player = {
+        id: 'p_guest789',
+        name: 'GuestCan',
+        avatar: '🚗',
+        color: '#10B981',
+        money: 1500,
+        position: 0,
+        isJailed: false,
+        jailTurns: 0,
+        lapsCompleted: 0,
+        firstLapPurchases: 0,
+        inGame: true,
+        isBot: false,
+        isHost: false,
+        participantKey: 'guest_can:tab3'
+      };
+
+      const botP: Player = {
+        id: 'p_bot_helper',
+        name: 'Zeki Bot 🤖',
+        avatar: '🤖',
+        color: '#F59E0B',
+        money: 1500,
+        position: 0,
+        isJailed: false,
+        jailTurns: 0,
+        lapsCompleted: 0,
+        firstLapPurchases: 0,
+        inGame: true,
+        isBot: true,
+        isHost: false
+      };
+
+      const threePlayerState: GameState = {
+        roomId: 'TR-NO-FREEZE-999',
+        sessionId: 'sess_freeze_test',
+        gameId: 'game_freeze_1',
+        version: 1,
+        phase: 'PLAYING',
+        currentTurnIndex: 0,
+        turnTimeLeft: 60,
+        players: [hostPlayer, guestPlayer, pC, botP],
+        board: JSON.parse(JSON.stringify(INITIAL_BOARD)),
+        hostPlayerId: hostPlayer.id,
+        dice: [1, 2],
+        diceRolled: false,
+        doublesCount: 0,
+        pendingAction: 'NONE',
+        logs: [],
+        chatMessages: [],
+        transactions: []
+      };
+
+      await storage.createRoomState('TR-NO-FREEZE-999', threePlayerState);
+
+      const actorA: AuthenticatedActor = {
+        userId: hostPlayer.id,
+        participantKey: hostPlayer.participantKey,
+        isGuest: true
+      };
+
+      const actorB: AuthenticatedActor = {
+        userId: guestPlayer.id,
+        participantKey: guestPlayer.participantKey,
+        isGuest: true
+      };
+
+      const actorC: AuthenticatedActor = {
+        userId: pC.id,
+        participantKey: pC.participantKey,
+        isGuest: true
+      };
+
+      // 1. Host A goes bankrupt
+      const bkpRes = await executeGameActionPipeline(
+        {
+          actionId: 'act_bkp_host',
+          roomId: 'TR-NO-FREEZE-999',
+          playerId: hostPlayer.id,
+          expectedVersion: 1,
+          type: 'BANKRUPTCY'
+        },
+        actorA,
+        { storage }
+      );
+
+      expect(bkpRes.success).toBe(true);
+      if (!bkpRes.success) return;
+
+      // 2. Verify Host is migrated to Player B (next active human)
+      expect(bkpRes.state.hostPlayerId).toBe(guestPlayer.id);
+      expect(bkpRes.state.players.find(p => p.id === guestPlayer.id)?.isHost).toBe(true);
+      expect(bkpRes.state.players.find(p => p.id === hostPlayer.id)?.inGame).toBe(false);
+      expect(bkpRes.state.players.find(p => p.id === hostPlayer.id)?.isHost).toBe(false);
+
+      // 3. Player A closes browser tab completely.
+      // Player B (now host) rolls dice
+      const rollResB = await executeGameActionPipeline(
+        {
+          actionId: 'act_roll_b',
+          roomId: 'TR-NO-FREEZE-999',
+          playerId: guestPlayer.id,
+          expectedVersion: bkpRes.state.version,
+          type: 'ROLL_DICE'
+        },
+        actorB,
+        { storage }
+      );
+      expect(rollResB.success).toBe(true);
+      if (!rollResB.success) return;
+
+      // If pendingAction is BUY_PROPERTY, pass it
+      let currentV = rollResB.state.version;
+      if (rollResB.state.pendingAction === 'BUY_PROPERTY') {
+        const passRes = await executeGameActionPipeline(
+          {
+            actionId: 'act_pass_b',
+            roomId: 'TR-NO-FREEZE-999',
+            playerId: guestPlayer.id,
+            expectedVersion: currentV,
+            type: 'PASS_PROPERTY'
+          },
+          actorB,
+          { storage }
+        );
+        expect(passRes.success).toBe(true);
+        if (!passRes.success) return;
+        currentV = passRes.state.version;
+      }
+
+      // Player B ends turn
+      const endTurnResB = await executeGameActionPipeline(
+        {
+          actionId: 'act_end_b',
+          roomId: 'TR-NO-FREEZE-999',
+          playerId: guestPlayer.id,
+          expectedVersion: currentV,
+          type: 'END_TURN'
+        },
+        actorB,
+        { storage }
+      );
+      expect(endTurnResB.success).toBe(true);
+      if (!endTurnResB.success) return;
+
+      // Turn is now on Player C
+      expect(endTurnResB.state.players[endTurnResB.state.currentTurnIndex].id).toBe(pC.id);
+
+      // Player C rolls dice
+      const rollResC = await executeGameActionPipeline(
+        {
+          actionId: 'act_roll_c',
+          roomId: 'TR-NO-FREEZE-999',
+          playerId: pC.id,
+          expectedVersion: endTurnResB.state.version,
+          type: 'ROLL_DICE'
+        },
+        actorC,
+        { storage }
+      );
+      expect(rollResC.success).toBe(true);
+      if (!rollResC.success) return;
+
+      // Player B (new host) can also advance bot actions without 403 error
+      const botActionRes = await executeGameActionPipeline(
+        {
+          actionId: 'act_bot_roll',
+          roomId: 'TR-NO-FREEZE-999',
+          playerId: botP.id,
+          expectedVersion: 999, // Intentional mismatch test or direct state check
+          type: 'ROLL_DICE'
+        },
+        actorB,
+        { storage }
+      );
+      // Fails only on version / turn, NOT UNAUTHORIZED_PLAYER
+      if (!botActionRes.success) {
+        expect(botActionRes.error).not.toBe('UNAUTHORIZED_PLAYER');
+      }
+
+      // Verify canonical state in storage is healthy
+      const finalState = await storage.getRoomState('TR-NO-FREEZE-999');
+      expect(finalState?.phase).toBe('PLAYING');
+      expect(finalState?.hostPlayerId).toBe(guestPlayer.id);
+    });
+  });
 });

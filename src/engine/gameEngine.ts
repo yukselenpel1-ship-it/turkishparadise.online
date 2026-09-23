@@ -99,11 +99,30 @@ export function createInitialState(settings?: Partial<GameSettings>): GameState 
  * Robust host checker that never relies solely on array index
  */
 export function isPlayerHost(state: GameState, playerId: string | null): boolean {
-  if (!playerId) return false;
-  if (state.hostPlayerId) return state.hostPlayerId === playerId;
-  const player = state.players.find((p) => p.id === playerId);
-  if (player && typeof player.isHost === 'boolean') return player.isHost;
-  return false;
+  if (!playerId || !state || !Array.isArray(state.players)) return false;
+
+  // 1. Check if current hostPlayerId is valid and still an active player
+  if (state.hostPlayerId) {
+    const hostP = state.players.find((p) => p.id === state.hostPlayerId);
+    if (hostP && (state.phase === 'LOBBY' || hostP.inGame)) {
+      return state.hostPlayerId === playerId;
+    }
+  }
+
+  // 2. Check if a player in the list has explicit isHost flag and is active
+  const explicitHost = state.players.find((p) => p.isHost && (state.phase === 'LOBBY' || p.inGame));
+  if (explicitHost) {
+    return explicitHost.id === playerId;
+  }
+
+  // 3. Fallback: First active human player in the game becomes the acting host
+  const firstActiveHuman = state.players.find((p) => !p.isBot && (state.phase === 'LOBBY' || p.inGame));
+  if (firstActiveHuman) {
+    return firstActiveHuman.id === playerId;
+  }
+
+  // 4. Default fallback: first player in array
+  return state.players[0]?.id === playerId;
 }
 
 
