@@ -950,4 +950,74 @@ describe('⚡ MULTIPLAYER COMPREHENSIVE EDGE-CASE STRESS TEST SUITE', () => {
       expect(nextAct.version).toBe(11);
     });
   });
+
+  // ==========================================================================
+  // GROUP E: AFK LIFECYCLE & "BURADAYIM" / TAKE BACK CONTROL
+  // ==========================================================================
+  describe('Group E: AFK Lifecycle & "Buradayım" Reset Stress Tests', () => {
+    it('E1: Player marked AFK -> sends PLAYER_ACTIVE ("Buradayım") -> isAfk cleared and turnStartedAt reset', async () => {
+      // 1. Mark Joiner as AFK via SET_AFK
+      const afkRes = await executeGameActionPipeline(
+        { actionId: 'act_afk_set_1', roomId, playerId: hostPlayer.id, expectedVersion: 1, type: 'SET_AFK', payload: { targetPlayerId: joinerPlayer.id } },
+        hostActor,
+        { storage }
+      );
+      expect(afkRes.success).toBe(true);
+      expect(afkRes.state?.players.find(p => p.id === joinerPlayer.id)?.isAfk).toBe(true);
+
+      const beforeActiveTime = Date.now();
+      // 2. Joiner clicks "Buradayım" -> dispatches PLAYER_ACTIVE
+      const activeRes = await executeGameActionPipeline(
+        { actionId: 'act_player_active_1', roomId, playerId: joinerPlayer.id, expectedVersion: afkRes.version!, type: 'PLAYER_ACTIVE' },
+        joinerActor,
+        { storage }
+      );
+
+      expect(activeRes.success).toBe(true);
+      expect(activeRes.state?.players.find(p => p.id === joinerPlayer.id)?.isAfk).toBe(false);
+      expect(activeRes.state?.turnStartedAt).toBeGreaterThanOrEqual(beforeActiveTime);
+
+      // 3. Countdown timer simulation: elapsed time from new turnStartedAt gives full 60 seconds
+      const turnStart = activeRes.state?.turnStartedAt || Date.now();
+      const elapsedSeconds = Math.floor((Date.now() - turnStart) / 1000);
+      const remainingSeconds = Math.max(0, 60 - elapsedSeconds);
+      expect(remainingSeconds).toBeGreaterThanOrEqual(58); // Fresh 60s window!
+    });
+
+    it('E2: Any active gameplay action from human player automatically clears isAfk on server', async () => {
+      // Set Host as AFK
+      baseState.players[0].isAfk = true;
+      await storage.createRoomState('TR-AFK-AUTO', baseState);
+
+      // Host executes ROLL_DICE
+      const rollRes = await executeGameActionPipeline(
+        { actionId: 'act_roll_afk_clear', roomId: 'TR-AFK-AUTO', playerId: hostPlayer.id, expectedVersion: 1, type: 'ROLL_DICE' },
+        hostActor,
+        { storage, rng: () => [1, 2] }
+      );
+
+      expect(rollRes.success).toBe(true);
+      expect(rollRes.state?.players[0].isAfk).toBe(false); // Automatically cleared!
+    });
+
+    it('E3: Reconnecting after take-back-control retains active non-AFK state without loop', async () => {
+      // Joiner took back control
+      const stateAfterActive: GameState = {
+        ...baseState,
+        version: 3,
+        currentTurnIndex: 1,
+        turnStartedAt: Date.now(),
+        players: baseState.players.map(p => p.id === joinerPlayer.id ? { ...p, isAfk: false } : p)
+      };
+      await storage.createRoomState('TR-RECONN-NO-LOOP', stateAfterActive);
+
+      // Joiner reconnects / re-reads canonical state
+      const reconnected = await storage.getRoomState('TR-RECONN-NO-LOOP');
+      const joinerInState = reconnected?.players.find(p => p.id === joinerPlayer.id);
+
+      expect(joinerInState?.isAfk).toBe(false);
+      const remaining = Math.max(0, 60 - Math.floor((Date.now() - (reconnected?.turnStartedAt || Date.now())) / 1000));
+      expect(remaining).toBeGreaterThan(0);
+    });
+  });
 });

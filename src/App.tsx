@@ -936,6 +936,7 @@ export const App: React.FC = () => {
           if (p && p.isAfk) {
             const updated = {
               ...liveState,
+              turnStartedAt: liveState.players[liveState.currentTurnIndex]?.id === p.id ? Date.now() : liveState.turnStartedAt,
               players: liveState.players.map(x => (x.id === p.id) ? { ...x, isAfk: false } : x)
             };
             gameStateRef.current = updated;
@@ -1388,6 +1389,10 @@ export const App: React.FC = () => {
     // Trigger AFK marking on host or current player client
     if (isMeHost || isMeCurrent) {
       if (!currentPlayer.isAfk) {
+        if (isServerAuthoritativeEnabled()) {
+          dispatchServerAction('SET_AFK', isMeHost ? (myPlayerId || undefined) : currentPlayer.id, { targetPlayerId: currentPlayer.id });
+          return;
+        }
         updateAndBroadcastGameState((prev) => {
           const updated = JSON.parse(JSON.stringify(prev)) as GameState;
           const p = updated.players[updated.currentTurnIndex];
@@ -1678,19 +1683,55 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [gameState.phase, gameState.pendingAction, isMoving, myPlayerId]);
 
-  // Human Player Takes Back Control from AFK Bot
+  // Human Player Takes Back Control from AFK Bot ("Buradayım")
   const handleTakeBackControl = () => {
+    const liveMyId = myPlayerIdRef.current;
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('PLAYER_ACTIVE', liveMyId || undefined);
+      setTurnSecondsRemaining(60);
+      return;
+    }
+
     updateAndBroadcastGameState((prev) => {
       const updated = JSON.parse(JSON.stringify(prev)) as GameState;
-      const meIdx = updated.players.findIndex((p) => p.id === myPlayerId);
-      if (meIdx >= 0 && updated.players[meIdx].isAfk) {
+      const meIdx = updated.players.findIndex((p) => p.id === liveMyId);
+      if (meIdx >= 0) {
         updated.players[meIdx].isAfk = false;
+        updated.turnStartedAt = Date.now();
         addLog(updated, `✨ ${updated.players[meIdx].name} tekrar aktif oldu ve kontrolü devraldı!`, 'success');
       }
       return updated;
     });
     setTurnSecondsRemaining(60);
   };
+
+  // Passive User Activity Listener: User interaction resets AFK if active
+  const lastUserActivityRef = useRef<number>(Date.now());
+  useEffect(() => {
+    const onUserInteraction = () => {
+      const now = Date.now();
+      if (now - lastUserActivityRef.current > 1500) {
+        lastUserActivityRef.current = now;
+        const liveState = gameStateRef.current;
+        const liveMyId = myPlayerIdRef.current;
+        if (liveState.phase === 'PLAYING') {
+          const me = liveState.players.find(p => p.id === liveMyId);
+          if (me && me.isAfk) {
+            handleTakeBackControl();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('pointerdown', onUserInteraction, { passive: true });
+    window.addEventListener('keydown', onUserInteraction, { passive: true });
+    window.addEventListener('touchstart', onUserInteraction, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', onUserInteraction);
+      window.removeEventListener('keydown', onUserInteraction);
+      window.removeEventListener('touchstart', onUserInteraction);
+    };
+  }, []);
 
   // Auth Handlers: Direct official Google OAuth 2.0 redirect
   const handleGoogleLogin = async () => {

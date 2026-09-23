@@ -71,7 +71,9 @@ export interface ServerGameEvent {
     | 'JAIL_STATUS'
     | 'BANKRUPTCY'
     | 'TURN_CHANGED'
-    | 'GAME_STARTED';
+    | 'GAME_STARTED'
+    | 'PLAYER_ACTIVE'
+    | 'PLAYER_AFK';
   actorPlayerId: string;
   targetPlayerId?: string;
   tileId?: number;
@@ -381,6 +383,11 @@ export function applyGameAction(
 
   if (!actingPlayer.inGame) {
     return { success: false, error: 'INVALID_ACTION', errorMessage: 'Elenen oyuncular hamle yapamaz.' };
+  }
+
+  // Clear isAfk when any human player performs an active game action
+  if (!actingPlayer.isBot && actingPlayer.isAfk) {
+    actingPlayer.isAfk = false;
   }
 
   const currentTurnPlayer = nextState.players[nextState.currentTurnIndex];
@@ -1023,6 +1030,31 @@ export function applyGameAction(
 
     nextState.incomingTradeOffer = undefined;
     addServerLog(nextState, `❌ ${actingPlayer.name} gelen takas teklifini reddetti.`, 'info');
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: PLAYER_ACTIVE ("Buradayım" / Take Back Control)
+  // --------------------------------------------------------------------------
+  if (type === 'PLAYER_ACTIVE') {
+    actingPlayer.isAfk = false;
+    nextState.turnStartedAt = now;
+    addServerLog(nextState, `✨ ${actingPlayer.name} tekrar aktif oldu ve kontrolü devraldı!`, 'success');
+    events.push({ type: 'PLAYER_ACTIVE', actorPlayerId: actingPlayer.id, actionId, timestamp: now });
+    return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: SET_AFK (60s Timeout Auto-Takeover)
+  // --------------------------------------------------------------------------
+  if (type === 'SET_AFK') {
+    const targetPlayerId = action.payload?.targetPlayerId || actingPlayer.id;
+    const target = nextState.players.find(p => p.id === targetPlayerId);
+    if (target && !target.isBot && target.inGame && !target.isAfk) {
+      target.isAfk = true;
+      addServerLog(nextState, `⏰ ${target.name} 60 saniye boyunca hamle yapmadığı için AFK moduna geçti. Sırayı geçici olarak bot devraldı!`, 'warning');
+      events.push({ type: 'PLAYER_AFK', actorPlayerId: target.id, actionId, timestamp: now });
+    }
     return { success: true, state: nextState, events };
   }
 

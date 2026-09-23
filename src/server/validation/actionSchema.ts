@@ -26,7 +26,9 @@ export const ALLOWED_ACTION_TYPES = [
   'REMOVE_BOT',
   'UPDATE_SETTINGS',
   'CHAT_MESSAGE',
-  'BANKRUPTCY'
+  'BANKRUPTCY',
+  'PLAYER_ACTIVE',
+  'SET_AFK'
 ] as const;
 
 export type ValidActionType = typeof ALLOWED_ACTION_TYPES[number];
@@ -209,6 +211,9 @@ export function validateActionRequest(body: any): SchemaValidationResult {
     sanitizedPayload = { botId };
   } else if (type === 'UPDATE_SETTINGS') {
     sanitizedPayload = payload && typeof payload === 'object' ? payload : {};
+  } else if (type === 'SET_AFK') {
+    const targetPlayerId = typeof payload?.targetPlayerId === 'string' ? payload.targetPlayerId.trim() : undefined;
+    sanitizedPayload = { targetPlayerId };
   } else if (payload && typeof payload === 'object') {
     sanitizedPayload = {};
   }
