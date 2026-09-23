@@ -1,6 +1,9 @@
 import { TOTAL_TILES } from '../../engine/gameEngine';
 
 export const ALLOWED_ACTION_TYPES = [
+  'CREATE_ROOM',
+  'INIT_ROOM',
+  'JOIN_ROOM',
   'START_GAME',
   'ROLL_DICE',
   'BUY_PROPERTY',

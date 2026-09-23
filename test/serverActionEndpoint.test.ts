@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { executeGameActionPipeline } from '../src/server/game/actionPipeline';
 import { InMemoryRoomStorage, UnavailableRoomStorage, getRoomStateKey } from '../src/server/storage/roomStorage';
 import { AuthenticatedActor, resolveAuthenticatedActor, validateRoomReadAccess } from '../src/server/auth/authMiddleware';
-import { signUserToken } from '../src/server/auth/tokenUtil';
+import { signUserToken, signGuestToken } from '../src/server/auth/tokenUtil';
 import { registerNotificationListener, clearNotificationListeners, RoomStateUpdateNotification } from '../src/server/notification/mqttNotifier';
 import { createInitialState } from '../src/engine/gameEngine';
 import { GameState, Player } from '../src/types/game';
@@ -86,7 +86,29 @@ describe('Serverless Action Endpoint & Middleware (/api/game/action & /api/game/
       expect(auth.actor?.isGuest).toBe(false);
     });
 
-    it('successfully resolves guest actor from x-participant-key header', () => {
+    it('successfully resolves guest actor from signed x-guest-token header', () => {
+      const guestToken = signGuestToken({
+        guestId: 'guest_dev_99',
+        participantKey: 'dev_client_99:tab_1',
+        displayName: 'Guest Mehmet',
+        isGuest: true
+      });
+
+      const req = {
+        headers: {
+          'x-guest-token': guestToken
+        }
+      };
+
+      const auth = resolveAuthenticatedActor(req);
+      expect(auth.success).toBe(true);
+      expect(auth.actor?.userId).toBe('guest_dev_99');
+      expect(auth.actor?.participantKey).toBe('dev_client_99:tab_1');
+      expect(auth.actor?.displayName).toBe('Guest Mehmet');
+      expect(auth.actor?.isGuest).toBe(true);
+    });
+
+    it('rejects plain x-participant-key without signed guest token (401 UNAUTHORIZED)', () => {
       const req = {
         headers: {
           'x-participant-key': 'dev_client_99:tab_1',
@@ -95,16 +117,26 @@ describe('Serverless Action Endpoint & Middleware (/api/game/action & /api/game/
       };
 
       const auth = resolveAuthenticatedActor(req);
-      expect(auth.success).toBe(true);
-      expect(auth.actor?.participantKey).toBe('dev_client_99:tab_1');
-      expect(auth.actor?.displayName).toBe('Guest Mehmet');
-      expect(auth.actor?.isGuest).toBe(true);
+      expect(auth.success).toBe(false);
+      expect(auth.error).toBe('UNAUTHORIZED');
     });
 
     it('rejects invalid or forged JWT token', () => {
       const req = {
         headers: {
           authorization: 'Bearer forged.invalid.token.xyz'
+        }
+      };
+
+      const auth = resolveAuthenticatedActor(req);
+      expect(auth.success).toBe(false);
+      expect(auth.error).toBe('INVALID_TOKEN');
+    });
+
+    it('rejects invalid or forged x-guest-token', () => {
+      const req = {
+        headers: {
+          'x-guest-token': 'forged_tampered_guest_jwt'
         }
       };
 

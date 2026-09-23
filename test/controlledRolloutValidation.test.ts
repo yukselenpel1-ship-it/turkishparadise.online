@@ -6,7 +6,7 @@ import {
 } from '../src/services/serverGameClient';
 import { executeGameActionPipeline } from '../src/server/game/actionPipeline';
 import { InMemoryRoomStorage, UnavailableRoomStorage } from '../src/server/storage/roomStorage';
-import { AuthenticatedActor } from '../src/server/auth/authMiddleware';
+import { AuthenticatedActor, resolveAuthenticatedActor } from '../src/server/auth/authMiddleware';
 import { GameState, Player } from '../src/types/game';
 import { INITIAL_BOARD } from '../src/data/boardData';
 import { signUserToken, signGuestToken } from '../src/server/auth/tokenUtil';
@@ -198,17 +198,102 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
   });
 
   // ==========================================================================
-  // SECTION 2: Preview / Staging Isolation & Production Flag Default
+  // SECTION 2: Final Guest Auth Verification & Production Readiness
   // ==========================================================================
-  describe('2. Preview / Staging Isolation & Feature Flag', () => {
-    it('should default VITE_SERVER_AUTHORITATIVE_GAME to false in production', () => {
+  describe('2. Final Guest Auth Verification & Production Readiness', () => {
+    it('should correctly evaluate VITE_SERVER_AUTHORITATIVE_GAME feature flag', () => {
+      const prev = process.env.VITE_SERVER_AUTHORITATIVE_GAME;
+      process.env.VITE_SERVER_AUTHORITATIVE_GAME = 'false';
       expect(isServerAuthoritativeEnabled()).toBe(false);
+      process.env.VITE_SERVER_AUTHORITATIVE_GAME = 'true';
+      expect(isServerAuthoritativeEnabled()).toBe(true);
+      process.env.VITE_SERVER_AUTHORITATIVE_GAME = prev;
     });
 
     it('should construct unforgeable auth headers for guest sessions', () => {
       const headers = buildAuthHeaders({ token: 'my_guest_jwt', participantKey: 'client_tab_key' });
       expect(headers['Authorization']).toBe('Bearer my_guest_jwt');
       expect(headers['x-participant-key']).toBe('client_tab_key');
+    });
+
+    it('Test 2.1: valid participantKey + no guest token -> 401 UNAUTHORIZED', () => {
+      const req = {
+        headers: {
+          'x-participant-key': 'valid_tab_key:1234',
+          'x-user-name': 'Guest Player'
+        }
+      };
+      const auth = resolveAuthenticatedActor(req);
+      expect(auth.success).toBe(false);
+      expect(auth.error).toBe('UNAUTHORIZED');
+    });
+
+    it('Test 2.2: forged / invalid guest token -> 401 INVALID_TOKEN', () => {
+      const req = {
+        headers: {
+          'x-guest-token': 'forged_fake_guest_token_data'
+        }
+      };
+      const auth = resolveAuthenticatedActor(req);
+      expect(auth.success).toBe(false);
+      expect(auth.error).toBe('INVALID_TOKEN');
+    });
+
+    it('Test 2.3: valid guest token + wrong playerId -> 403 UNAUTHORIZED_PLAYER', async () => {
+      const spoofAction = {
+        actionId: 'act_spoof_guest_target',
+        roomId: testRoomId,
+        playerId: hostPlayer.id, // Targeting host
+        type: 'ROLL_DICE',
+        expectedVersion: 1
+      };
+      // Executed by guest actor (Joiner)
+      const res = await executeGameActionPipeline(spoofAction, guestActor, { storage });
+      expect(res.success).toBe(false);
+      expect(res.statusCode).toBe(403);
+      expect(res.error).toBe('UNAUTHORIZED_PLAYER');
+    });
+
+    it('Test 2.4: valid guest token + correct playerId -> SUCCESS (200)', async () => {
+      // Set turn to guest
+      testState.currentTurnIndex = 1;
+      testState.diceRolled = false;
+      await storage.saveRoomStateWithVersion(testRoomId, 1, testState);
+
+      const validAction = {
+        actionId: 'act_valid_guest_roll',
+        roomId: testRoomId,
+        playerId: guestPlayer.id,
+        type: 'ROLL_DICE',
+        expectedVersion: 2
+      };
+      const res = await executeGameActionPipeline(validAction, guestActor, { storage });
+      expect(res.success).toBe(true);
+      expect(res.statusCode).toBe(200);
+      expect(res.state?.diceRolled).toBe(true);
+    });
+
+    it('Test 2.5: Server initializes pure canonical state without client local tampering', async () => {
+      const createAction = {
+        actionId: 'act_init_room_server',
+        roomId: 'TR-CANONICAL-INIT',
+        playerId: 'p_host_pure',
+        type: 'CREATE_ROOM',
+        expectedVersion: 1,
+        payload: {
+          // Attacker tries to inject startingMoney: 9999999 or forged properties
+          startingMoney: 9999999,
+          forgedPosition: 35
+        }
+      };
+
+      const res = await executeGameActionPipeline(createAction, hostGuestActor, { storage });
+      expect(res.success).toBe(true);
+      expect(res.state?.roomId).toBe('TR-CANONICAL-INIT');
+      // Server clamped money to standard (1500₺), position = 0, board unowned
+      expect(res.state?.players[0].money).toBe(1500);
+      expect(res.state?.players[0].position).toBe(0);
+      expect(res.state?.board[1].ownerId).toBeUndefined();
     });
   });
 
@@ -225,24 +310,26 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
       { name: 'Scenario 6: Mobile Google (Host) -> PC Google (Joiner)', hostActorType: 'google', joinActorType: 'google' }
     ];
 
-    for (const sc of matrixScenarios) {
+    matrixScenarios.forEach((sc, idx) => {
       it(`should successfully validate lifecycle on ${sc.name}`, async () => {
+        const scRoomId = `TR-ROLLOUT-SC-${idx + 1}`;
         const hActor = sc.hostActorType === 'google' ? hostGoogleActor : hostGuestActor;
         const jActor = sc.joinActorType === 'google' ? guestGoogleActor : guestActor;
 
-        // Reset room state for each matrix run
+        // Reset isolated room state for each matrix run
         const freshState = JSON.parse(JSON.stringify(testState));
+        freshState.roomId = scRoomId;
         freshState.version = 1;
         freshState.currentTurnIndex = 0;
         freshState.diceRolled = false;
         freshState.pendingAction = 'NONE';
-        await storage.saveRoomStateWithVersion(testRoomId, 1, freshState);
+        await storage.createRoomState(scRoomId, freshState);
 
         // Step 1: Host rolls dice
-        let currentExpectedVer = 2;
+        let currentExpectedVer = 1;
         const rollAction = {
           actionId: `roll_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-          roomId: testRoomId,
+          roomId: scRoomId,
           playerId: hostPlayer.id,
           type: 'ROLL_DICE',
           expectedVersion: currentExpectedVer
@@ -255,20 +342,20 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
 
         // Resolve pending action if any
         if (rollRes.state?.pendingAction === 'BUY_PROPERTY') {
-          const passAction = {
-            actionId: `pass_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-            roomId: testRoomId,
+          const buyAction = {
+            actionId: `buy_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+            roomId: scRoomId,
             playerId: hostPlayer.id,
-            type: 'PASS_PROPERTY',
+            type: 'BUY_PROPERTY',
             expectedVersion: currentExpectedVer
           };
-          const passRes = await executeGameActionPipeline(passAction, hActor, { storage });
-          expect(passRes.success).toBe(true);
-          currentExpectedVer = passRes.state!.version;
+          const buyRes = await executeGameActionPipeline(buyAction, hActor, { storage });
+          expect(buyRes.success).toBe(true);
+          currentExpectedVer = buyRes.state!.version;
         } else if (rollRes.state?.pendingAction === 'CHANCE_CARD') {
           const confAction = {
             actionId: `conf_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-            roomId: testRoomId,
+            roomId: scRoomId,
             playerId: hostPlayer.id,
             type: 'CONFIRM_CHANCE',
             expectedVersion: currentExpectedVer
@@ -276,26 +363,10 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
           const confRes = await executeGameActionPipeline(confAction, hActor, { storage });
           expect(confRes.success).toBe(true);
           currentExpectedVer = confRes.state!.version;
-        }
-
-        // If player rolled doubles and needs second roll before ending turn
-        const postRollState = await storage.getRoomState(testRoomId);
-        if (!postRollState?.diceRolled && postRollState?.doublesCount && postRollState.doublesCount > 0) {
-          const secondRollAction = {
-            actionId: `roll2_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-            roomId: testRoomId,
-            playerId: hostPlayer.id,
-            type: 'ROLL_DICE',
-            expectedVersion: currentExpectedVer
-          };
-          const roll2Res = await executeGameActionPipeline(secondRollAction, hActor, { storage });
-          expect(roll2Res.success).toBe(true);
-          currentExpectedVer = roll2Res.state!.version;
-
-          if (roll2Res.state?.pendingAction === 'BUY_PROPERTY') {
+          if (confRes.state?.pendingAction === 'BUY_PROPERTY') {
             const passAction2 = {
               actionId: `pass2_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-              roomId: testRoomId,
+              roomId: scRoomId,
               playerId: hostPlayer.id,
               type: 'PASS_PROPERTY',
               expectedVersion: currentExpectedVer
@@ -306,10 +377,49 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
           }
         }
 
+        // If doubles were rolled and player needs a second roll
+        const currentSavedState = await storage.getRoomState(scRoomId);
+        if (currentSavedState && !currentSavedState.diceRolled && (currentSavedState.doublesCount || 0) > 0) {
+          const roll2Action = {
+            actionId: `roll2_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+            roomId: scRoomId,
+            playerId: hostPlayer.id,
+            type: 'ROLL_DICE',
+            expectedVersion: currentExpectedVer
+          };
+          const roll2Res = await executeGameActionPipeline(roll2Action, hActor, { storage });
+          expect(roll2Res.success).toBe(true);
+          currentExpectedVer = roll2Res.state!.version;
+
+          if (roll2Res.state?.pendingAction === 'BUY_PROPERTY') {
+            const pass2 = {
+              actionId: `passd2_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+              roomId: scRoomId,
+              playerId: hostPlayer.id,
+              type: 'PASS_PROPERTY',
+              expectedVersion: currentExpectedVer
+            };
+            const pRes = await executeGameActionPipeline(pass2, hActor, { storage });
+            expect(pRes.success).toBe(true);
+            currentExpectedVer = pRes.state!.version;
+          } else if (roll2Res.state?.pendingAction === 'CHANCE_CARD') {
+            const conf2 = {
+              actionId: `confd2_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+              roomId: scRoomId,
+              playerId: hostPlayer.id,
+              type: 'CONFIRM_CHANCE',
+              expectedVersion: currentExpectedVer
+            };
+            const cRes = await executeGameActionPipeline(conf2, hActor, { storage });
+            expect(cRes.success).toBe(true);
+            currentExpectedVer = cRes.state!.version;
+          }
+        }
+
         // Step 2: Host ends turn
         const endAction = {
           actionId: `end_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-          roomId: testRoomId,
+          roomId: scRoomId,
           playerId: hostPlayer.id,
           type: 'END_TURN',
           expectedVersion: currentExpectedVer
@@ -323,7 +433,7 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
         // Step 3: Joiner rolls dice
         const joinerRollAction = {
           actionId: `jroll_${sc.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-          roomId: testRoomId,
+          roomId: scRoomId,
           playerId: guestPlayer.id,
           type: 'ROLL_DICE',
           expectedVersion: currentExpectedVer
@@ -332,7 +442,7 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
         const jRollRes = await executeGameActionPipeline(joinerRollAction, jActor, { storage });
         expect(jRollRes.success).toBe(true);
       });
-    }
+    });
   });
 
   // ==========================================================================
@@ -352,7 +462,7 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
       expect(res1.state?.version).toBe(2);
       currentV = res1.state!.version;
 
-      // 2. Pass property if pending -> v3
+      // 2. Resolve pending action if any
       if (res1.state?.pendingAction === 'BUY_PROPERTY') {
         const passRes = await executeGameActionPipeline(
           { actionId: 'seq_act_pass', roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
@@ -361,6 +471,44 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
         );
         expect(passRes.success).toBe(true);
         currentV = passRes.state!.version;
+      } else if (res1.state?.pendingAction === 'CHANCE_CARD') {
+        const confRes = await executeGameActionPipeline(
+          { actionId: 'seq_act_conf', roomId: testRoomId, playerId: hostPlayer.id, type: 'CONFIRM_CHANCE', expectedVersion: currentV },
+          hostGuestActor,
+          { storage }
+        );
+        expect(confRes.success).toBe(true);
+        currentV = confRes.state!.version;
+        if (confRes.state?.pendingAction === 'BUY_PROPERTY') {
+          const passRes = await executeGameActionPipeline(
+            { actionId: 'seq_act_pass2', roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
+            hostGuestActor,
+            { storage }
+          );
+          expect(passRes.success).toBe(true);
+          currentV = passRes.state!.version;
+        }
+      }
+
+      // If doubles were rolled, roll again
+      const postRollState = await storage.getRoomState(testRoomId);
+      if (postRollState && !postRollState.diceRolled && (postRollState.doublesCount || 0) > 0) {
+        const roll2Res = await executeGameActionPipeline(
+          { actionId: 'seq_act_roll2', roomId: testRoomId, playerId: hostPlayer.id, type: 'ROLL_DICE', expectedVersion: currentV },
+          hostGuestActor,
+          { storage }
+        );
+        expect(roll2Res.success).toBe(true);
+        currentV = roll2Res.state!.version;
+        if (roll2Res.state?.pendingAction === 'BUY_PROPERTY') {
+          const passRes = await executeGameActionPipeline(
+            { actionId: 'seq_act_pass3', roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
+            hostGuestActor,
+            { storage }
+          );
+          expect(passRes.success).toBe(true);
+          currentV = passRes.state!.version;
+        }
       }
 
       // 3. End turn

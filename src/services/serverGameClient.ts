@@ -57,6 +57,39 @@ export function setStoredGuestToken(token: string): void {
 }
 
 /**
+ * Acquire and persist signed guest JWT token from /api/auth/guest
+ */
+export async function fetchOrCreateGuestToken(
+  participantKey?: string,
+  displayName?: string,
+  roomId?: string
+): Promise<string | null> {
+  const existing = getStoredGuestToken();
+  if (existing) return existing;
+
+  const pKey = participantKey || getParticipantKey();
+  if (!pKey) return null;
+
+  try {
+    const res = await fetch('/api/auth/guest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ participantKey: pKey, displayName, roomId })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.token) {
+        setStoredGuestToken(data.token);
+        return data.token;
+      }
+    }
+  } catch (err) {
+    console.warn('[ServerGameClient] Failed to acquire guest token:', err);
+  }
+  return null;
+}
+
+/**
  * Generate unique, deterministic actionId for idempotency
  */
 export function createActionId(type: string, playerId?: string): string {

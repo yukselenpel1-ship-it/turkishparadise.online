@@ -4,7 +4,8 @@ import { applyGameAction, EngineOptions } from './serverGameEngine';
 import { AuthenticatedActor, validateActorMatchesPlayer } from '../auth/authMiddleware';
 import { validateActionRequest, ValidatedGameActionRequest } from '../validation/actionSchema';
 import { publishRoomStateUpdateNotification } from '../notification/mqttNotifier';
-import { GameState } from '../../types/game';
+import { GameState, Player } from '../../types/game';
+import { createInitialState } from '../../engine/gameEngine';
 
 export interface ActionPipelineResult {
   success: boolean;
@@ -120,6 +121,68 @@ export async function executeGameActionPipeline(
   }
 
   if (!currentState) {
+    if (type === 'CREATE_ROOM' || type === 'INIT_ROOM') {
+      const rawSettings = payload || {};
+      const startingMoney = typeof rawSettings.startingMoney === 'number' && rawSettings.startingMoney >= 500 && rawSettings.startingMoney <= 5000
+        ? rawSettings.startingMoney
+        : 1500;
+      const isPublic = typeof rawSettings.isPublic === 'boolean' ? rawSettings.isPublic : false;
+
+      const hostP: Player = {
+        id: playerId,
+        userId: actor.userId,
+        participantKey: actor.participantKey,
+        name: actor.displayName || 'Oda Kurucusu',
+        avatar: '🎩',
+        color: '#3B82F6',
+        money: startingMoney,
+        position: 0,
+        isJailed: false,
+        jailTurns: 0,
+        inGame: true,
+        isBot: false,
+        isHost: true,
+        lapsCompleted: 0,
+        firstLapPurchases: 0
+      };
+
+      const newInitialState = createInitialState({
+        roomCode: roomId,
+        startingMoney,
+        isPublic
+      });
+      newInitialState.roomId = roomId;
+      newInitialState.hostPlayerId = playerId;
+      newInitialState.players = [hostP];
+      newInitialState.version = 1;
+
+      try {
+        const savedState = await storage.createRoomState(roomId, newInitialState);
+        await storage.recordActionCompletion(roomId, actionId, actionFingerprint, {
+          roomId,
+          actionId,
+          version: savedState.version,
+          state: savedState
+        });
+
+        await publishRoomStateUpdateNotification(roomId, savedState.version ?? 1, now);
+
+        return {
+          success: true,
+          statusCode: 200,
+          roomId,
+          actionId,
+          version: savedState.version,
+          state: savedState
+        };
+      } catch (err: any) {
+        if (err?.message?.includes('STORAGE_UNAVAILABLE')) {
+          return { success: false, statusCode: 503, error: 'STORAGE_UNAVAILABLE', message: 'Depolama servisine ulaşılamıyor.' };
+        }
+        return { success: false, statusCode: 500, error: 'STORAGE_ERROR', message: 'Oda oluşturulamadı.' };
+      }
+    }
+
     return {
       success: false,
       statusCode: 404,

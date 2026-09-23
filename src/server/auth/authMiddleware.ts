@@ -64,9 +64,11 @@ export interface AuthResolutionResult {
  * Resolves authenticated identity from incoming Request headers / body.
  * 
  * Hierarchy:
- * 1. Bearer JWT Token in Authorization header (Google authenticated user)
- * 2. x-participant-key header (Guest isolated tab/device identifier)
- * 3. x-user-id header / body participantKey fallback
+ * 1. Bearer JWT Token in Authorization header (Google authenticated user or Guest JWT)
+ * 2. x-guest-token header / body (Signed, server-issued Guest JWT)
+ * 
+ * 🔒 SECURITY: Plain x-participant-key or raw x-user-id alone is NEVER accepted as authentication.
+ * participantKey is strictly verified from inside the signed token.
  */
 export function resolveAuthenticatedActor(req: any): AuthResolutionResult {
   if (!req || typeof req !== 'object') {
@@ -124,8 +126,8 @@ export function resolveAuthenticatedActor(req: any): AuthResolutionResult {
 
   // 2. Check Guest Signed / Session Token Header (x-guest-token)
   const guestTokenHeader = (headers['x-guest-token'] || req.body?.guestToken || req.query?.guestToken) as string | undefined;
-  if (guestTokenHeader) {
-    const verifiedGuest = verifyGuestToken(guestTokenHeader);
+  if (guestTokenHeader && typeof guestTokenHeader === 'string' && guestTokenHeader.trim().length > 0) {
+    const verifiedGuest = verifyGuestToken(guestTokenHeader.trim());
     if (verifiedGuest && verifiedGuest.guestId) {
       return {
         success: true,
@@ -137,51 +139,18 @@ export function resolveAuthenticatedActor(req: any): AuthResolutionResult {
         }
       };
     }
-  }
-
-  // 3. Check Guest Participant Key Header (Isolated Browser Profile)
-  const participantKey = (
-    headers['x-participant-key'] ||
-    headers['x-participantkey'] ||
-    req.body?.participantKey ||
-    req.query?.participantKey
-  ) as string | undefined;
-
-  if (participantKey && typeof participantKey === 'string' && participantKey.trim().length >= 3) {
-    const cleanKey = participantKey.trim();
-    const guestUserId = (headers['x-user-id'] || req.body?.userId || `guest_${cleanKey.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)}`) as string;
-    const displayName = (headers['x-user-name'] || req.body?.displayName || 'Misafir Oyuncu') as string;
-
     return {
-      success: true,
-      actor: {
-        userId: guestUserId,
-        participantKey: cleanKey,
-        displayName,
-        isGuest: true
-      }
+      success: false,
+      error: 'INVALID_TOKEN',
+      message: 'Misafir oturum anahtarı (x-guest-token) geçersiz veya süresi dolmuş.'
     };
   }
 
-  // 4. Check raw x-user-id Header (Resilient Guest Identification)
-  const rawUserId = (headers['x-user-id'] || req.query?.userId || req.body?.userId) as string | undefined;
-  if (rawUserId && typeof rawUserId === 'string' && rawUserId.trim().length >= 2) {
-    const cleanId = rawUserId.trim();
-    return {
-      success: true,
-      actor: {
-        userId: cleanId,
-        participantKey: cleanId,
-        displayName: (headers['x-user-name'] || req.body?.displayName || 'Oyuncu') as string,
-        isGuest: true
-      }
-    };
-  }
-
+  // Reject requests without valid signed token
   return {
     success: false,
     error: 'UNAUTHORIZED',
-    message: 'İşlem için geçerli bir kimlik doğrulaması (JWT veya participantKey) gereklidir.'
+    message: 'İşlem için geçerli bir oturum anahtarı (Google JWT veya x-guest-token) zorunludur.'
   };
 }
 

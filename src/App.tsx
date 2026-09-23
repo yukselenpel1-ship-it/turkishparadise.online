@@ -50,7 +50,8 @@ import {
   isServerAuthoritativeEnabled,
   sendServerGameAction,
   fetchServerGameState,
-  createActionId
+  createActionId,
+  fetchOrCreateGuestToken
 } from './services/serverGameClient';
 import {
   initiateGoogleOAuthRedirect,
@@ -83,7 +84,7 @@ import { IncomingTradeModal } from './components/IncomingTradeModal';
 import { ProfileModal, ProfileTab } from './components/ProfileModal';
 import { DiceLogo } from './components/DiceLogo';
 import { useLanguage, LanguageSwitcher } from './i18n/LanguageContext';
-import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins } from 'lucide-react';
+import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins, AlertCircle } from 'lucide-react';
 
 const SESSION_PLAYER_ID_KEY = 'tp_active_player_id';
 const SESSION_ROOM_ID_KEY = 'tp_active_room_id';
@@ -157,6 +158,7 @@ export const App: React.FC = () => {
   const [isMoving, setIsMoving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
   const [mobileSheet, setMobileSheet] = useState<'players' | 'chat' | 'logs' | null>(null);
+  const [serverUnavailableMsg, setServerUnavailableMsg] = useState<string | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const prevChatCountRef = useRef<number>(gameState.chatMessages?.length || 0);
   const gameStateRef = useRef<GameState>(gameState);
@@ -1880,12 +1882,13 @@ export const App: React.FC = () => {
   /**
    * ⚡ Core Server-Authoritative Action Dispatcher
    * Sends atomic client intent to /api/game/action, handles idempotency, version conflict,
-   * local state synchronization, and MQTT ROOM_STATE_UPDATED notification.
+   * local state synchronization, 503 resilience, and MQTT ROOM_STATE_UPDATED notification.
    */
   const dispatchServerAction = async (
     type: string,
     actingPlayerId?: string,
-    payload?: any
+    payload?: any,
+    fixedActionId?: string
   ): Promise<boolean> => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
@@ -1896,9 +1899,15 @@ export const App: React.FC = () => {
     if (isActionInFlightRef.current) return false;
     isActionInFlightRef.current = true;
 
-    const actionId = createActionId(type, actorId);
+    // Use preserved actionId on retry for economic safety (prevent duplicate operations)
+    const actionId = fixedActionId || createActionId(type, actorId);
     const expectedVersion = liveState.version || 1;
     const userAuth = userAccount?.uid ? { token: userAccount.uid } : undefined;
+
+    // Ensure signed guest JWT exists if user is in guest mode
+    if (!userAuth) {
+      await fetchOrCreateGuestToken(liveMyId || undefined, undefined, roomId);
+    }
 
     try {
       const res = await sendServerGameAction(
@@ -1916,6 +1925,7 @@ export const App: React.FC = () => {
       isActionInFlightRef.current = false;
 
       if (res.success && res.state) {
+        setServerUnavailableMsg(null);
         gameStateRef.current = res.state;
         setGameState(res.state);
         debouncedSaveGameState(res.state);
@@ -1923,8 +1933,13 @@ export const App: React.FC = () => {
           syncManager.broadcastRoomStateUpdated(roomId, res.state.version, res.state.sessionId, res.state.gameId);
         }
         return true;
+      } else if (res.error === 'STORAGE_UNAVAILABLE') {
+        console.warn(`[ServerAction Warning] STORAGE_UNAVAILABLE: Oyun sunucusuna geçici olarak ulaşılamıyor.`);
+        setServerUnavailableMsg('Oyun sunucusuna geçici olarak ulaşılamıyor. Oyununuz kaydedildi, lütfen birkaç saniye sonra tekrar deneyin.');
+        setTimeout(() => setServerUnavailableMsg(null), 4000);
+        return false;
       } else if (res.error === 'VERSION_CONFLICT') {
-        console.warn(`[ServerAction] VERSION_CONFLICT on ${type}, re-fetching canonical state.`);
+        console.warn(`[ServerAction Warning] VERSION_CONFLICT on ${type}, re-fetching canonical state.`);
         const sRes = await fetchServerGameState(roomId, userAuth);
         if (sRes.success && sRes.state) {
           gameStateRef.current = sRes.state;
@@ -1933,12 +1948,14 @@ export const App: React.FC = () => {
         }
         return false;
       } else {
-        console.warn(`[ServerAction] ${type} rejected:`, res.error, res.errorMessage || res.message);
+        console.warn(`[ServerAction Warning] ${type} failed:`, res.error, res.errorMessage || res.message);
         return false;
       }
     } catch (err) {
       isActionInFlightRef.current = false;
-      console.warn(`[ServerAction] ${type} exception:`, err);
+      console.warn(`[ServerAction Warning] ${type} network exception:`, err);
+      setServerUnavailableMsg('Oyun sunucusuna geçici olarak ulaşılamıyor. Oyununuz kaydedildi, lütfen birkaç saniye sonra tekrar deneyin.');
+      setTimeout(() => setServerUnavailableMsg(null), 4000);
       return false;
     }
   };
@@ -2733,11 +2750,19 @@ export const App: React.FC = () => {
   const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
 
   return (
-    <div className={`w-full max-w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none ${
+    <div className={`w-full max-w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none relative ${
       gameState.phase === 'LOBBY'
         ? 'min-h-[100dvh] overflow-y-auto overflow-x-hidden'
         : 'h-[100dvh] overflow-hidden'
     }`}>
+      {/* 503 / Storage Unavailable Banner */}
+      {serverUnavailableMsg && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] bg-amber-950/95 border-2 border-amber-500 text-amber-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md text-xs sm:text-sm font-bold flex items-center gap-3 animate-fade-in">
+          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
+          <span>{serverUnavailableMsg}</span>
+        </div>
+      )}
+
       {gameState.phase === 'LOBBY' ? (
         <Lobby
           players={gameState.players}

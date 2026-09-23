@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "postinstall": "prisma generate",
     "server": "tsx src/server/server.ts",
-    "start": "tsx src/server/server.ts"
+    "start": "tsx src/server/server.ts",
+    "test": "npx vitest run",
+    "test:standalone": "tsx test/antiCheatAudit.test.ts && tsx test/sessionIsolation.test.ts && tsx test/googleGuestDiscovery.test.ts && tsx test/gameEngine.test.ts && tsx test/serverStorage.test.ts && tsx test/e2eSmoke.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -44,6 +46,7 @@
     "tailwindcss": "^3.4.4",
     "tsx": "^4.15.6",
     "typescript": "^5.4.5",
-    "vite": "^5.3.1"
+    "vite": "^5.3.1",
+    "vitest": "^2.1.9"
   }
 }
