@@ -17,7 +17,10 @@ const allowedOrigins = [
   'https://api.turkishparadise.xyz',
   'https://turkishparadise.online',
   'https://www.turkishparadise.online',
-  'https://api.turkishparadise.online'
+  'https://api.turkishparadise.online',
+  'https://turkishparadise.digital',
+  'https://www.turkishparadise.digital',
+  'https://api.turkishparadise.digital'
 ];
 if (process.env.CORS_ORIGIN) {
   allowedOrigins.push(process.env.CORS_ORIGIN);
