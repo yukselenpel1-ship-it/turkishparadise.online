@@ -421,4 +421,41 @@ describe('Serverless Action Endpoint & Middleware (/api/game/action & /api/game/
       expect(stateAfter?.version).toBe(1);
     });
   });
+
+  describe('9. Server-Authoritative AUTO_LIQUIDATE Action Pipeline', () => {
+    it('processes AUTO_LIQUIDATE end-to-end via actionPipeline and persists canonical state in Redis storage', async () => {
+      // Start game
+      await executeGameActionPipeline(
+        { actionId: 'act_start_game', roomId: 'TR-1001', playerId: 'p_host', expectedVersion: 1, type: 'START_GAME' },
+        hostActor,
+        { storage }
+      );
+
+      // Set host player into debt with an unmortgaged property
+      const current = await storage.getRoomState('TR-1001');
+      current!.players[0].money = -50;
+      current!.board[1].ownerId = 'p_host';
+      current!.board[1].price = 120; // Mortgage = 60
+      current!.board[1].isMortgaged = false;
+      current!.board[1].houses = 0;
+      await storage.saveRoomStateWithVersion('TR-1001', 2, current!);
+
+      // Dispatch AUTO_LIQUIDATE action
+      const res = await executeGameActionPipeline(
+        { actionId: 'act_auto_liquidate_test', roomId: 'TR-1001', playerId: 'p_host', expectedVersion: 3, type: 'AUTO_LIQUIDATE' },
+        hostActor,
+        { storage }
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].money).toBe(10); // -50 + 60 = 10
+      expect(res.state?.board[1].isMortgaged).toBe(true);
+      expect(res.state?.version).toBe(4);
+
+      // Verify canonical state in storage
+      const saved = await storage.getRoomState('TR-1001');
+      expect(saved?.players[0].money).toBe(10);
+      expect(saved?.board[1].isMortgaged).toBe(true);
+    });
+  });
 });

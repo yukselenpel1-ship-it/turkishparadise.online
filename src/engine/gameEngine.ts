@@ -1283,44 +1283,160 @@ export function declareBankruptcy(state: GameState, playerId: string): GameState
   return newState;
 }
 
-// Auto-liquidate assets (houses, properties) for AFK / bot in debt settlement or force bankruptcy
+/**
+ * Calculates strategic score of a property for liquidation ranking.
+ * Lower score = Less valuable / expendable first.
+ * Higher score = Protected (e.g. monopolies, houses, high rent).
+ */
+export function calculateLiquidationScore(tile: BoardTile, board: BoardTile[], ownerId: string): number {
+  if (!tile || tile.ownerId !== ownerId) return 0;
+
+  let score = tile.price || 0;
+
+  // Rent potential
+  const rent = calculateRent(tile, board);
+  score += rent * 15;
+
+  // Station network
+  if (tile.type === 'station') {
+    const ownedStations = board.filter(t => t.type === 'station' && t.ownerId === ownerId).length;
+    score += ownedStations * 600;
+  }
+
+  // Monopoly & house bonuses
+  if (tile.colorGroup) {
+    const isMonopoly = hasColorGroupMonopoly(board, tile.colorGroup, ownerId);
+    if (isMonopoly) {
+      score += 10000;
+    }
+    const groupTiles = board.filter(t => t.colorGroup === tile.colorGroup);
+    const totalGroupHouses = groupTiles.reduce((sum, t) => sum + (t.houses || 0), 0);
+    score += totalGroupHouses * 1500;
+
+    // Penalty if color group is held/blocked by opponents (no monopoly possible)
+    const opponentPieces = groupTiles.filter(t => t.ownerId && t.ownerId !== ownerId).length;
+    if (opponentPieces > 0) {
+      score -= 200;
+    }
+  }
+
+  score += (tile.houses || 0) * 2000;
+
+  return score;
+}
+
+/**
+ * Deterministic tie-breaker comparator for liquidating properties (ascending: lowest score first).
+ * Tie-breaker 1: Lower score first
+ * Tie-breaker 2: Lower deed price first
+ * Tie-breaker 3: Lower tile id first
+ */
+export function compareTilesForLiquidation(a: BoardTile, b: BoardTile, board: BoardTile[], ownerId: string): number {
+  const scoreA = calculateLiquidationScore(a, board, ownerId);
+  const scoreB = calculateLiquidationScore(b, board, ownerId);
+  if (scoreA !== scoreB) {
+    return scoreA - scoreB;
+  }
+  const priceA = a.price || 0;
+  const priceB = b.price || 0;
+  if (priceA !== priceB) {
+    return priceA - priceB;
+  }
+  return a.id - b.id;
+}
+
+// Auto-liquidate assets with minimum strategic harm or declare bankruptcy if impossible
 export function autoLiquidateDebtOrBankrupt(state: GameState, playerId: string): GameState {
   let newState = JSON.parse(JSON.stringify(state)) as GameState;
   const player = newState.players.find(p => p.id === playerId);
   if (!player || !player.inGame) return newState;
 
   if (player.money >= 0) {
-    newState.pendingAction = 'NONE';
-    newState.actionMessage = undefined;
+    if (newState.pendingAction === 'DEBT_SETTLEMENT') {
+      newState.pendingAction = 'NONE';
+      newState.actionMessage = undefined;
+    }
     return newState;
   }
 
-  addLog(newState, `🤖 ${player.name} AFK olduğu için borçları bot tarafından otomatik tasfiye ediliyor...`, 'warning');
+  addLog(newState, `⚖️ ${player.name} borçlu olduğu için varlıkları otomatik tasfiye ediliyor... (${player.money}₺)`, 'warning');
 
-  // 1. First sell houses on owned properties
-  const ownedHouses = newState.board.filter(t => t.ownerId === player.id && t.houses > 0);
-  for (const tile of ownedHouses) {
-    while (tile.houses > 0) {
-      newState = sellHouse(newState, tile.id, player.id);
-      const currP = newState.players.find(p => p.id === playerId);
-      if (currP && currP.money >= 0) break;
+  const colorGroupHasHouses = (colorGroup?: string) => {
+    if (!colorGroup) return false;
+    return newState.board.some(t => t.colorGroup === colorGroup && (t.houses || 0) > 0);
+  };
+
+  // STAGE 1: Mortgage unmortgaged, house-free properties
+  if (player.money < 0) {
+    const unmortgagedProperties = newState.board
+      .filter(t => t.ownerId === player.id && !t.isMortgaged && (t.houses || 0) === 0 && !colorGroupHasHouses(t.colorGroup))
+      .sort((a, b) => compareTilesForLiquidation(a, b, newState.board, player.id));
+
+    for (const tile of unmortgagedProperties) {
+      if (player.money >= 0) break;
+      newState = toggleMortgage(newState, tile.id, player.id);
+      const curr = newState.players.find(p => p.id === playerId);
+      if (curr && curr.money >= 0) break;
     }
-    const currP = newState.players.find(p => p.id === playerId);
-    if (currP && currP.money >= 0) break;
   }
 
-  // 2. If still in debt, sell properties to bank
+  // STAGE 2: Sell Houses (Obeying Even-Building / Selling Rule)
   let currP = newState.players.find(p => p.id === playerId);
+  while (currP && currP.money < 0) {
+    const tilesWithHouses = newState.board.filter(t => t.ownerId === player.id && (t.houses || 0) > 0);
+    if (tilesWithHouses.length === 0) break;
+
+    const groupsWithHouses = Array.from(new Set(tilesWithHouses.map(t => t.colorGroup).filter(Boolean) as string[]));
+    groupsWithHouses.sort((g1, g2) => {
+      const score1 = newState.board.filter(t => t.colorGroup === g1).reduce((sum, t) => sum + calculateLiquidationScore(t, newState.board, player.id), 0);
+      const score2 = newState.board.filter(t => t.colorGroup === g2).reduce((sum, t) => sum + calculateLiquidationScore(t, newState.board, player.id), 0);
+      return score1 - score2;
+    });
+
+    const chosenGroup = groupsWithHouses[0];
+    const groupTilesWithHouses = newState.board.filter(t => t.colorGroup === chosenGroup && (t.houses || 0) > 0);
+    const maxHouses = Math.max(...groupTilesWithHouses.map(t => t.houses));
+    const candidateTiles = groupTilesWithHouses.filter(t => t.houses === maxHouses);
+    candidateTiles.sort((a, b) => compareTilesForLiquidation(a, b, newState.board, player.id));
+
+    const tileToSellHouse = candidateTiles[0];
+    if (!tileToSellHouse) break;
+
+    newState = sellHouse(newState, tileToSellHouse.id, player.id);
+    currP = newState.players.find(p => p.id === playerId);
+  }
+
+  // STAGE 2.5: Mortgage newly house-free properties
+  currP = newState.players.find(p => p.id === playerId);
   if (currP && currP.money < 0) {
-    const ownedProperties = newState.board.filter(t => t.ownerId === player.id);
-    for (const prop of ownedProperties) {
-      newState = sellPropertyToBank(newState, prop.id, player.id);
+    const unmortgagedNewlyFree = newState.board
+      .filter(t => t.ownerId === player.id && !t.isMortgaged && (t.houses || 0) === 0 && !colorGroupHasHouses(t.colorGroup))
+      .sort((a, b) => compareTilesForLiquidation(a, b, newState.board, player.id));
+
+    for (const tile of unmortgagedNewlyFree) {
+      if (currP && currP.money >= 0) break;
+      newState = toggleMortgage(newState, tile.id, player.id);
       currP = newState.players.find(p => p.id === playerId);
       if (currP && currP.money >= 0) break;
     }
   }
 
-  // 3. If still in debt (all assets sold), declare bankruptcy!
+  // STAGE 3: Sell Properties to Bank (2/3 Refund)
+  currP = newState.players.find(p => p.id === playerId);
+  if (currP && currP.money < 0) {
+    const ownedProperties = newState.board
+      .filter(t => t.ownerId === player.id)
+      .sort((a, b) => compareTilesForLiquidation(a, b, newState.board, player.id));
+
+    for (const tile of ownedProperties) {
+      if (currP && currP.money >= 0) break;
+      newState = sellPropertyToBank(newState, tile.id, player.id);
+      currP = newState.players.find(p => p.id === playerId);
+      if (currP && currP.money >= 0) break;
+    }
+  }
+
+  // STAGE 4: Bankruptcy if still negative after exhausting all assets
   currP = newState.players.find(p => p.id === playerId);
   if (currP && currP.money < 0) {
     newState = declareBankruptcy(newState, playerId);
@@ -1328,7 +1444,7 @@ export function autoLiquidateDebtOrBankrupt(state: GameState, playerId: string):
     newState.pendingAction = 'NONE';
     newState.actionMessage = undefined;
     if (currP) {
-      addLog(newState, `✨ ${currP.name} mülk satışlarıyla borcunu kapattı (${currP.money}₺ bakiye)!`, 'success');
+      addLog(newState, `🎉 ${currP.name} borcunu başarıyla kapattı (${currP.money}₺ bakiye)! Oyuna devam ediyor.`, 'success');
     }
   }
 

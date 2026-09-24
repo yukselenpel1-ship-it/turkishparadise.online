@@ -463,36 +463,39 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
       currentV = res1.state!.version;
 
       // 2. Resolve pending action if any
-      if (res1.state?.pendingAction === 'BUY_PROPERTY') {
-        const passRes = await executeGameActionPipeline(
-          { actionId: 'seq_act_pass', roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
-          hostGuestActor,
-          { storage }
-        );
-        expect(passRes.success).toBe(true);
-        currentV = passRes.state!.version;
-      } else if (res1.state?.pendingAction === 'CHANCE_CARD') {
-        const confRes = await executeGameActionPipeline(
-          { actionId: 'seq_act_conf', roomId: testRoomId, playerId: hostPlayer.id, type: 'CONFIRM_CHANCE', expectedVersion: currentV },
-          hostGuestActor,
-          { storage }
-        );
-        expect(confRes.success).toBe(true);
-        currentV = confRes.state!.version;
-        if (confRes.state?.pendingAction === 'BUY_PROPERTY') {
+      let currentRoomState = await storage.getRoomState(testRoomId);
+      let actIdx = 100;
+      while (currentRoomState && currentRoomState.pendingAction !== 'NONE') {
+        if (currentRoomState.pendingAction === 'BUY_PROPERTY') {
           const passRes = await executeGameActionPipeline(
-            { actionId: 'seq_act_pass2', roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
+            { actionId: `seq_act_pass_${actIdx++}`, roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
             hostGuestActor,
             { storage }
           );
           expect(passRes.success).toBe(true);
           currentV = passRes.state!.version;
+        } else if (currentRoomState.pendingAction === 'CHANCE_CARD') {
+          const confRes = await executeGameActionPipeline(
+            { actionId: `seq_act_conf_${actIdx++}`, roomId: testRoomId, playerId: hostPlayer.id, type: 'CONFIRM_CHANCE', expectedVersion: currentV },
+            hostGuestActor,
+            { storage }
+          );
+          expect(confRes.success).toBe(true);
+          currentV = confRes.state!.version;
+        } else if (currentRoomState.pendingAction === 'DEBT_SETTLEMENT') {
+          const liqRes = await executeGameActionPipeline(
+            { actionId: `seq_act_liq_${actIdx++}`, roomId: testRoomId, playerId: hostPlayer.id, type: 'AUTO_LIQUIDATE', expectedVersion: currentV },
+            hostGuestActor,
+            { storage }
+          );
+          expect(liqRes.success).toBe(true);
+          currentV = liqRes.state!.version;
         }
+        currentRoomState = await storage.getRoomState(testRoomId);
       }
 
       // If doubles were rolled, roll again
-      const postRollState = await storage.getRoomState(testRoomId);
-      if (postRollState && !postRollState.diceRolled && (postRollState.doublesCount || 0) > 0) {
+      if (currentRoomState && !currentRoomState.diceRolled && (currentRoomState.doublesCount || 0) > 0) {
         const roll2Res = await executeGameActionPipeline(
           { actionId: 'seq_act_roll2', roomId: testRoomId, playerId: hostPlayer.id, type: 'ROLL_DICE', expectedVersion: currentV },
           hostGuestActor,
@@ -500,14 +503,27 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
         );
         expect(roll2Res.success).toBe(true);
         currentV = roll2Res.state!.version;
-        if (roll2Res.state?.pendingAction === 'BUY_PROPERTY') {
-          const passRes = await executeGameActionPipeline(
-            { actionId: 'seq_act_pass3', roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
-            hostGuestActor,
-            { storage }
-          );
-          expect(passRes.success).toBe(true);
-          currentV = passRes.state!.version;
+
+        currentRoomState = await storage.getRoomState(testRoomId);
+        while (currentRoomState && currentRoomState.pendingAction !== 'NONE') {
+          if (currentRoomState.pendingAction === 'BUY_PROPERTY') {
+            const passRes = await executeGameActionPipeline(
+              { actionId: `seq_act_pass_${actIdx++}`, roomId: testRoomId, playerId: hostPlayer.id, type: 'PASS_PROPERTY', expectedVersion: currentV },
+              hostGuestActor,
+              { storage }
+            );
+            expect(passRes.success).toBe(true);
+            currentV = passRes.state!.version;
+          } else if (currentRoomState.pendingAction === 'CHANCE_CARD') {
+            const confRes = await executeGameActionPipeline(
+              { actionId: `seq_act_conf_${actIdx++}`, roomId: testRoomId, playerId: hostPlayer.id, type: 'CONFIRM_CHANCE', expectedVersion: currentV },
+              hostGuestActor,
+              { storage }
+            );
+            expect(confRes.success).toBe(true);
+            currentV = confRes.state!.version;
+          }
+          currentRoomState = await storage.getRoomState(testRoomId);
         }
       }
 

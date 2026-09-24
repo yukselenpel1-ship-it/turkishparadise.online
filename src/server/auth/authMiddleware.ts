@@ -161,7 +161,8 @@ export function resolveAuthenticatedActor(req: any): AuthResolutionResult {
 export function validateActorMatchesPlayer(
   actor: AuthenticatedActor,
   roomState: GameState,
-  playerId: string
+  playerId: string,
+  actionType?: string
 ): { valid: boolean; error?: string; message?: string } {
   if (!roomState || !Array.isArray(roomState.players)) {
     return { valid: false, error: 'MALFORMED_STATE', message: 'Oda durumu geçersiz.' };
@@ -184,17 +185,16 @@ export function validateActorMatchesPlayer(
     return { valid: true };
   }
 
-  // Allow active human player in the room to submit actions for Bot players
-  if (targetPlayer.isBot) {
-    const isActorInRoom = roomState.players.some(
-      p =>
-        p.id === actor.userId ||
-        (p.userId && p.userId === actor.userId) ||
-        (p.participantKey && actor.participantKey && p.participantKey === actor.participantKey)
-    );
-    if (isActorInRoom) {
-      return { valid: true };
-    }
+  const isActorInRoom = roomState.players.some(
+    p =>
+      p.id === actor.userId ||
+      (p.userId && p.userId === actor.userId) ||
+      (p.participantKey && actor.participantKey && p.participantKey === actor.participantKey)
+  );
+
+  // Allow active human player in the room to submit actions for Bot players or timeout recovery actions
+  if (isActorInRoom && (targetPlayer.isBot || actionType === 'SET_AFK' || actionType === 'AUTO_LIQUIDATE')) {
+    return { valid: true };
   }
 
   // In test/dev environment, allow if actor is explicitly marked host or matches

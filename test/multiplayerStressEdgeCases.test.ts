@@ -1020,4 +1020,93 @@ describe('⚡ MULTIPLAYER COMPREHENSIVE EDGE-CASE STRESS TEST SUITE', () => {
       expect(remaining).toBeGreaterThan(0);
     });
   });
+
+  // ==========================================================================
+  // GROUP F: AUTOMATED DEBT LIQUIDATION & OPTIMAL BALANCE RECOVERY
+  // ==========================================================================
+  describe('Group F: Automated Debt Liquidation & Balance Recovery Stress Tests', () => {
+    it('F1: Room host/peer triggers AUTO_LIQUIDATE for timed-out indebted player', async () => {
+      // Set Joiner in debt with 1 unmortgaged property (Tile 1: Hatay, price 60 -> mortgage 30)
+      baseState.players[1].money = -20;
+      baseState.pendingAction = 'DEBT_SETTLEMENT';
+      baseState.board[1].ownerId = joinerPlayer.id;
+      baseState.board[1].price = 60;
+      baseState.board[1].isMortgaged = false;
+      baseState.board[1].houses = 0;
+      await storage.createRoomState('TR-LIQ-TIMEOUT', baseState);
+
+      // Host triggers AUTO_LIQUIDATE on timeout for Joiner
+      const liqRes = await executeGameActionPipeline(
+        { actionId: 'act_timeout_liq_1', roomId: 'TR-LIQ-TIMEOUT', playerId: hostPlayer.id, expectedVersion: 1, type: 'AUTO_LIQUIDATE', payload: { targetPlayerId: joinerPlayer.id } },
+        hostActor,
+        { storage }
+      );
+
+      expect(liqRes.success).toBe(true);
+      const joinerAfter = liqRes.state?.players.find(p => p.id === joinerPlayer.id);
+      expect(joinerAfter?.money).toBe(10); // -20 + 30 = 10
+      expect(liqRes.state?.board[1].isMortgaged).toBe(true);
+      expect(liqRes.state?.pendingAction).toBe('NONE');
+    });
+
+    it('F2: Concurrent duplicate AUTO_LIQUIDATE requests are handled idempotently without duplicate charges', async () => {
+      baseState.players[0].money = -40;
+      baseState.pendingAction = 'DEBT_SETTLEMENT';
+      baseState.board[1].ownerId = hostPlayer.id;
+      baseState.board[1].price = 100; // Mortgage = 50
+      baseState.board[1].isMortgaged = false;
+      baseState.board[1].houses = 0;
+      await storage.createRoomState('TR-LIQ-IDEMPOTENT', baseState);
+
+      const actionPayload = {
+        actionId: 'act_concurrent_liq_1',
+        roomId: 'TR-LIQ-IDEMPOTENT',
+        playerId: hostPlayer.id,
+        expectedVersion: 1,
+        type: 'AUTO_LIQUIDATE' as const
+      };
+
+      // 5 concurrent requests with identical actionId
+      const results = await Promise.all([
+        executeGameActionPipeline(actionPayload, hostActor, { storage }),
+        executeGameActionPipeline(actionPayload, hostActor, { storage }),
+        executeGameActionPipeline(actionPayload, hostActor, { storage }),
+        executeGameActionPipeline(actionPayload, hostActor, { storage }),
+        executeGameActionPipeline(actionPayload, hostActor, { storage })
+      ]);
+
+      const successCount = results.filter(r => r.success).length;
+      expect(successCount).toBeGreaterThanOrEqual(1);
+
+      const savedState = await storage.getRoomState('TR-LIQ-IDEMPOTENT');
+      // Host balance should be exactly 10 (-40 + 50 = 10), NEVER double mortgaged or overcredited
+      expect(savedState?.players[0].money).toBe(10);
+      expect(savedState?.board[1].isMortgaged).toBe(true);
+      expect(savedState?.version).toBe(2);
+    });
+
+    it('F3: Irrecoverable debt leads to bankruptcy, migrates host, and ends game when 1 active player remains', async () => {
+      // 2 players: Host and Joiner. Host has -5000 debt with 0 properties
+      const twoPlayerState: GameState = {
+        ...baseState,
+        players: [baseState.players[0], baseState.players[1]],
+        hostPlayerId: hostPlayer.id
+      };
+      twoPlayerState.players[0].money = -5000;
+      twoPlayerState.pendingAction = 'DEBT_SETTLEMENT';
+      await storage.createRoomState('TR-LIQ-BANKRUPT', twoPlayerState);
+
+      const res = await executeGameActionPipeline(
+        { actionId: 'act_bankrupt_liq', roomId: 'TR-LIQ-BANKRUPT', playerId: hostPlayer.id, expectedVersion: 1, type: 'AUTO_LIQUIDATE' },
+        hostActor,
+        { storage }
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].inGame).toBe(false);
+      expect(res.state?.phase).toBe('ENDED');
+      expect(res.state?.winner?.id).toBe(joinerPlayer.id);
+      expect(res.state?.hostPlayerId).toBe(joinerPlayer.id);
+    });
+  });
 });

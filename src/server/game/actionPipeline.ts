@@ -194,7 +194,7 @@ export async function executeGameActionPipeline(
   // --------------------------------------------------------------------------
   // 4. IDENTITY & ACTOR-TO-PLAYER VALIDATION
   // --------------------------------------------------------------------------
-  const matchResult = validateActorMatchesPlayer(actor, currentState, playerId);
+  const matchResult = validateActorMatchesPlayer(actor, currentState, playerId, type);
   if (!matchResult.valid) {
     return {
       success: false,

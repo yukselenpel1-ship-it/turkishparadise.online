@@ -195,6 +195,265 @@ export function advanceServerTurn(state: GameState): GameState {
 }
 
 /**
+ * Calculates strategic score of a property for liquidation ranking.
+ * Lower score = Less valuable / expendable first.
+ * Higher score = Protected (e.g. monopolies, houses, high rent).
+ */
+export function calculateLiquidationScore(tile: BoardTile, board: BoardTile[], ownerId: string): number {
+  if (!tile || tile.ownerId !== ownerId) return 0;
+
+  let score = tile.price || 0;
+
+  // Rent potential
+  const rent = calculateRent(tile, board);
+  score += rent * 15;
+
+  // Station network
+  if (tile.type === 'station') {
+    const ownedStations = board.filter(t => t.type === 'station' && t.ownerId === ownerId).length;
+    score += ownedStations * 600;
+  }
+
+  // Monopoly & house bonuses
+  if (tile.colorGroup) {
+    const isMonopoly = hasColorGroupMonopoly(board, tile.colorGroup, ownerId);
+    if (isMonopoly) {
+      score += 10000;
+    }
+    const groupTiles = board.filter(t => t.colorGroup === tile.colorGroup);
+    const totalGroupHouses = groupTiles.reduce((sum, t) => sum + (t.houses || 0), 0);
+    score += totalGroupHouses * 1500;
+
+    // Penalty if color group is held/blocked by opponents (no monopoly possible)
+    const opponentPieces = groupTiles.filter(t => t.ownerId && t.ownerId !== ownerId).length;
+    if (opponentPieces > 0) {
+      score -= 200;
+    }
+  }
+
+  score += (tile.houses || 0) * 2000;
+
+  return score;
+}
+
+/**
+ * Deterministic tie-breaker comparator for liquidating properties (ascending: lowest score first).
+ * Tie-breaker 1: Lower score first
+ * Tie-breaker 2: Lower deed price first
+ * Tie-breaker 3: Lower tile id first
+ */
+export function compareTilesForLiquidation(a: BoardTile, b: BoardTile, board: BoardTile[], ownerId: string): number {
+  const scoreA = calculateLiquidationScore(a, board, ownerId);
+  const scoreB = calculateLiquidationScore(b, board, ownerId);
+  if (scoreA !== scoreB) {
+    return scoreA - scoreB;
+  }
+  const priceA = a.price || 0;
+  const priceB = b.price || 0;
+  if (priceA !== priceB) {
+    return priceA - priceB;
+  }
+  return a.id - b.id;
+}
+
+/**
+ * Server-Authoritative Automated Debt Liquidation and Balance Recovery.
+ * Systematically liquidates assets with minimum strategic harm until solvency is restored.
+ * Declares bankruptcy if and only if all assets are exhausted and debt remains.
+ */
+export function autoLiquidateDebt(
+  state: GameState,
+  playerId: string,
+  now: number = Date.now(),
+  actionId?: string
+): { state: GameState; events: ServerGameEvent[] } {
+  const events: ServerGameEvent[] = [];
+  const target = state.players.find(p => p.id === playerId);
+  if (!target || !target.inGame) {
+    return { state, events };
+  }
+
+  // If player is not in debt, simply clear any pending debt settlement status
+  if (target.money >= 0) {
+    if (state.pendingAction === 'DEBT_SETTLEMENT') {
+      state.pendingAction = 'NONE';
+      state.actionMessage = undefined;
+    }
+    return { state, events };
+  }
+
+  addServerLog(state, `⚖️ ${target.name} borçlu olduğu için varlıkları otomatik tasfiye ediliyor... (${target.money}₺)`, 'warning');
+
+  // Helper to check if any property in a color group has houses
+  const colorGroupHasHouses = (colorGroup?: string) => {
+    if (!colorGroup) return false;
+    return state.board.some(t => t.colorGroup === colorGroup && (t.houses || 0) > 0);
+  };
+
+  // --------------------------------------------------------------------------
+  // STAGE 1: Mortgage unmortgaged, house-free properties
+  // --------------------------------------------------------------------------
+  if (target.money < 0) {
+    const unmortgagedProperties = state.board
+      .filter(t => t.ownerId === target.id && !t.isMortgaged && (t.houses || 0) === 0 && !colorGroupHasHouses(t.colorGroup))
+      .sort((a, b) => compareTilesForLiquidation(a, b, state.board, target.id));
+
+    for (const tile of unmortgagedProperties) {
+      if (target.money >= 0) break;
+
+      const mortgageValue = Math.floor((tile.price || 0) / 2);
+      target.money += mortgageValue;
+      tile.isMortgaged = true;
+
+      addServerTransaction(state, target, 'income', 'mortgage', mortgageValue, `"${tile.name}" borç tasfiyesi için ipotek edildi`);
+      addServerLog(state, `🔒 ${target.name}, borcunu ödemek için "${tile.name}" mülkünü ${mortgageValue}₺ karşılığında ipotek etti.`, 'warning');
+      events.push({ type: 'MORTGAGE_TOGGLED', actorPlayerId: target.id, tileId: tile.id, actionId, timestamp: now });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STAGE 2: Sell Houses (Obeying Even-Building / Selling Rule)
+  // --------------------------------------------------------------------------
+  while (target.money < 0) {
+    // Find all owned tiles with houses > 0
+    const tilesWithHouses = state.board.filter(t => t.ownerId === target.id && (t.houses || 0) > 0);
+    if (tilesWithHouses.length === 0) break;
+
+    // Distinct color groups with houses
+    const groupsWithHouses = Array.from(new Set(tilesWithHouses.map(t => t.colorGroup).filter(Boolean) as string[]));
+
+    // Sort color groups by cumulative strategic group score (lowest score first)
+    groupsWithHouses.sort((g1, g2) => {
+      const score1 = state.board.filter(t => t.colorGroup === g1).reduce((sum, t) => sum + calculateLiquidationScore(t, state.board, target.id), 0);
+      const score2 = state.board.filter(t => t.colorGroup === g2).reduce((sum, t) => sum + calculateLiquidationScore(t, state.board, target.id), 0);
+      return score1 - score2;
+    });
+
+    const chosenGroup = groupsWithHouses[0];
+    const groupTilesWithHouses = state.board.filter(t => t.colorGroup === chosenGroup && (t.houses || 0) > 0);
+
+    // Even-selling: find max houses in the chosen group
+    const maxHouses = Math.max(...groupTilesWithHouses.map(t => t.houses));
+    const candidateTiles = groupTilesWithHouses.filter(t => t.houses === maxHouses);
+
+    // Tie-breaker: lowest liquidation score, then lowest tile.id
+    candidateTiles.sort((a, b) => compareTilesForLiquidation(a, b, state.board, target.id));
+    const tileToSellHouse = candidateTiles[0];
+
+    if (!tileToSellHouse) break;
+
+    const refund = Math.floor((tileToSellHouse.houseCost || 100) / 2);
+    tileToSellHouse.houses -= 1;
+    target.money += refund;
+
+    const houseTypeStr = tileToSellHouse.houses === 4 ? 'Otel satıldı (4 Ev kaldı)' : `${tileToSellHouse.houses + 1}. Ev satıldı`;
+    addServerTransaction(state, target, 'income', 'sell_house', refund, `"${tileToSellHouse.name}" üzerinden ${houseTypeStr}`);
+    addServerLog(state, `🏚️ ${target.name}, borcunu ödemek için "${tileToSellHouse.name}" üzerindeki bir evi ${refund}₺ karşılığında sattı.`, 'info');
+    events.push({ type: 'HOUSE_SOLD', actorPlayerId: target.id, tileId: tileToSellHouse.id, amount: refund, actionId, timestamp: now });
+  }
+
+  // --------------------------------------------------------------------------
+  // STAGE 2.5: Mortgage newly house-free properties
+  // --------------------------------------------------------------------------
+  if (target.money < 0) {
+    const unmortgagedNewlyFree = state.board
+      .filter(t => t.ownerId === target.id && !t.isMortgaged && (t.houses || 0) === 0 && !colorGroupHasHouses(t.colorGroup))
+      .sort((a, b) => compareTilesForLiquidation(a, b, state.board, target.id));
+
+    for (const tile of unmortgagedNewlyFree) {
+      if (target.money >= 0) break;
+
+      const mortgageValue = Math.floor((tile.price || 0) / 2);
+      target.money += mortgageValue;
+      tile.isMortgaged = true;
+
+      addServerTransaction(state, target, 'income', 'mortgage', mortgageValue, `"${tile.name}" borç tasfiyesi için ipotek edildi`);
+      addServerLog(state, `🔒 ${target.name}, borcunu ödemek için "${tile.name}" mülkünü ${mortgageValue}₺ karşılığında ipotek etti.`, 'warning');
+      events.push({ type: 'MORTGAGE_TOGGLED', actorPlayerId: target.id, tileId: tile.id, actionId, timestamp: now });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STAGE 3: Sell Properties to Bank (2/3 Refund)
+  // --------------------------------------------------------------------------
+  if (target.money < 0) {
+    const ownedProperties = state.board
+      .filter(t => t.ownerId === target.id)
+      .sort((a, b) => compareTilesForLiquidation(a, b, state.board, target.id));
+
+    for (const tile of ownedProperties) {
+      if (target.money >= 0) break;
+
+      const propertyRefund = Math.floor((tile.price || 0) * (2 / 3));
+      const housesRefund = tile.houses > 0 && tile.houseCost ? Math.floor(tile.houses * tile.houseCost * 0.5) : 0;
+      const totalRefund = propertyRefund + housesRefund;
+
+      target.money += totalRefund;
+      tile.ownerId = undefined;
+      tile.houses = 0;
+      tile.isMortgaged = false;
+
+      addServerTransaction(state, target, 'income', 'bank_sell', totalRefund, `"${tile.name}" borç tasfiyesi için Banka'ya 2/3 fiyatına satıldı`);
+      addServerLog(state, `🏛️ ${target.name}, borcunu ödemek için "${tile.name}" mülkünü Banka'ya ${totalRefund}₺ karşılığında geri sattı.`, 'warning');
+      events.push({ type: 'PROPERTY_PURCHASED', actorPlayerId: target.id, tileId: tile.id, amount: totalRefund, actionId, timestamp: now });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // STAGE 4: Bankruptcy if still negative after exhausting all assets
+  // --------------------------------------------------------------------------
+  if (target.money < 0) {
+    target.inGame = false;
+    target.isHost = false;
+    addServerLog(state, `💀 ${target.name} tüm varlıkları tasfiye edilmesine rağmen borcunu kapatamadı ve iflas etti!`, 'danger');
+
+    // Return any remaining properties to bank
+    state.board.forEach(t => {
+      if (t.ownerId === target.id) {
+        t.ownerId = undefined;
+        t.houses = 0;
+        t.isMortgaged = false;
+      }
+    });
+
+    state.pendingAction = 'NONE';
+    state.actionMessage = undefined;
+
+    // Migrate hostPlayerId if bankrupt player was host
+    if (state.hostPlayerId === target.id) {
+      const nextHost = state.players.find(p => p.id !== target.id && p.inGame && !p.isBot);
+      if (nextHost) {
+        state.hostPlayerId = nextHost.id;
+        state.players.forEach(p => {
+          p.isHost = p.id === nextHost.id;
+        });
+        addServerLog(state, `👑 Oda kuruculuğu ${nextHost.name} oyuncusuna devredildi.`, 'info');
+      }
+    }
+
+    const activePlayers = state.players.filter(p => p.inGame);
+    if (activePlayers.length <= 1) {
+      state.phase = 'ENDED';
+      state.winner = activePlayers[0] || null;
+      if (activePlayers[0]) {
+        addServerLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
+      }
+    } else if (state.players[state.currentTurnIndex]?.id === target.id) {
+      advanceServerTurn(state);
+    }
+
+    events.push({ type: 'BANKRUPTCY', actorPlayerId: target.id, actionId, timestamp: now });
+  } else {
+    // Solvency restored!
+    state.pendingAction = 'NONE';
+    state.actionMessage = undefined;
+    addServerLog(state, `🎉 ${target.name} borcunu başarıyla kapattı (${target.money}₺ bakiye)! Oyuna devam ediyor.`, 'success');
+  }
+
+  return { state, events };
+}
+
+/**
  * Central Server-Side Game Action Dispatcher
  */
 export function applyGameAction(
@@ -1056,6 +1315,21 @@ export function applyGameAction(
       events.push({ type: 'PLAYER_AFK', actorPlayerId: target.id, actionId, timestamp: now });
     }
     return { success: true, state: nextState, events };
+  }
+
+  // --------------------------------------------------------------------------
+  // ACTION: AUTO_LIQUIDATE (Automated Debt Settlement & Balance Recovery)
+  // --------------------------------------------------------------------------
+  if (type === 'AUTO_LIQUIDATE') {
+    const targetPlayerId = action.payload?.targetPlayerId || actingPlayer.id;
+    const target = nextState.players.find(p => p.id === targetPlayerId);
+    if (!target || !target.inGame) {
+      return { success: false, error: 'PLAYER_NOT_FOUND', errorMessage: 'Hedef oyuncu bulunamadı veya oyunda değil.' };
+    }
+
+    const { state: updatedState, events: liquidationEvents } = autoLiquidateDebt(nextState, target.id, now, actionId);
+    events.push(...liquidationEvents);
+    return { success: true, state: updatedState, events };
   }
 
   // Fallback for unhandled / unknown action type

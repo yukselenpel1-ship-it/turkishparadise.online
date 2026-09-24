@@ -1388,6 +1388,20 @@ export const App: React.FC = () => {
 
     // Trigger AFK marking on host or current player client
     if (isMeHost || isMeCurrent) {
+      // If player has unresolved debt when 60s timer expires -> Auto-liquidate debt!
+      if (currentPlayer.money < 0 || gameState.pendingAction === 'DEBT_SETTLEMENT') {
+        if (isServerAuthoritativeEnabled()) {
+          dispatchServerAction('AUTO_LIQUIDATE', isMeHost ? (myPlayerId || undefined) : currentPlayer.id, { targetPlayerId: currentPlayer.id });
+          return;
+        }
+        updateAndBroadcastGameState((prev) => {
+          const p = prev.players[prev.currentTurnIndex];
+          if (!p) return prev;
+          return autoLiquidateDebtOrBankrupt(prev, p.id);
+        });
+        return;
+      }
+
       if (!currentPlayer.isAfk) {
         if (isServerAuthoritativeEnabled()) {
           dispatchServerAction('SET_AFK', isMeHost ? (myPlayerId || undefined) : currentPlayer.id, { targetPlayerId: currentPlayer.id });
@@ -1408,7 +1422,7 @@ export const App: React.FC = () => {
         });
       }
     }
-  }, [turnSecondsRemaining, gameState.phase, gameState.currentTurnIndex, isMoving, myPlayerId]);
+  }, [turnSecondsRemaining, gameState.phase, gameState.currentTurnIndex, gameState.pendingAction, isMoving, myPlayerId]);
 
   // 6.5 Bankruptcy Auto-Recovery: If current turn points to an eliminated/bankrupt player or match has ended, advance immediately
   useEffect(() => {
@@ -1532,6 +1546,10 @@ export const App: React.FC = () => {
       // 0. Pending Debt Settlement Auto-Recovery for Bot or AFK Human
       if (gameState.pendingAction === 'DEBT_SETTLEMENT' || (currentPlayer && currentPlayer.money < 0)) {
         const timer = setTimeout(() => {
+          if (isServerAuthoritativeEnabled()) {
+            dispatchServerAction('AUTO_LIQUIDATE', isMeHost ? (myPlayerId || undefined) : currentPlayer.id, { targetPlayerId: currentPlayer.id });
+            return;
+          }
           updateAndBroadcastGameState((prev) => {
             const p = prev.players[prev.currentTurnIndex];
             if (!p) return prev;

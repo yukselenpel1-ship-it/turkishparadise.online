@@ -571,4 +571,193 @@ describe('Server-Side Game Engine (applyGameAction)', () => {
       expect(res.state?.dice).toEqual([1, 2]); // Injected mock, not [6, 6]
     });
   });
+
+  describe('9. Automated Debt Liquidation (AUTO_LIQUIDATE)', () => {
+    let playingState: GameState;
+
+    beforeEach(() => {
+      const startRes = applyGameAction(
+        initialState,
+        { actionId: 'act_start', roomId: initialState.roomId, playerId: 'player_host', type: 'START_GAME' },
+        hostActor
+      );
+      playingState = startRes.state!;
+    });
+
+    it('returns immediately if player is solvent (money >= 0)', () => {
+      playingState.players[0].money = 200;
+      playingState.pendingAction = 'DEBT_SETTLEMENT';
+
+      const action: GameAction = {
+        actionId: 'act_liq_1',
+        roomId: playingState.roomId,
+        playerId: 'player_host',
+        type: 'AUTO_LIQUIDATE'
+      };
+
+      const res = applyGameAction(playingState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].money).toBe(200);
+      expect(res.state?.pendingAction).toBe('NONE');
+    });
+
+    it('mortgages only the lowest-value property needed and stops immediately once solvent', () => {
+      // Host has 2 properties: cheap property (price: 60 -> mortgage: 30) and valuable property (price: 400 -> mortgage: 200)
+      playingState.board[1].ownerId = 'player_host'; // Adana (price 60)
+      playingState.board[1].price = 60;
+      playingState.board[1].houses = 0;
+      playingState.board[1].isMortgaged = false;
+
+      playingState.board[37].ownerId = 'player_host'; // Istanbul (price 400)
+      playingState.board[37].price = 400;
+      playingState.board[37].houses = 0;
+      playingState.board[37].isMortgaged = false;
+
+      // Host has -20₺ debt. Adana mortgage (+30₺) is sufficient!
+      playingState.players[0].money = -20;
+      playingState.pendingAction = 'DEBT_SETTLEMENT';
+
+      const action: GameAction = {
+        actionId: 'act_liq_2',
+        roomId: playingState.roomId,
+        playerId: 'player_host',
+        type: 'AUTO_LIQUIDATE'
+      };
+
+      const res = applyGameAction(playingState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].money).toBe(10); // -20 + 30 = +10
+      expect(res.state?.board[1].isMortgaged).toBe(true); // Adana mortgaged
+      expect(res.state?.board[37].isMortgaged).toBe(false); // Istanbul untouched!
+      expect(res.state?.pendingAction).toBe('NONE');
+      expect(res.events?.some(e => e.type === 'MORTGAGE_TOGGLED' && e.tileId === 1)).toBe(true);
+    });
+
+    it('protects monopolies and mortgages non-monopoly property first', () => {
+      // Host owns a monopoly on Brown (tiles 1, 2, 3) and single tile 6 (Light Blue)
+      playingState.board[1].ownerId = 'player_host';
+      playingState.board[1].colorGroup = 'brown';
+      playingState.board[1].price = 60;
+      playingState.board[1].houses = 0;
+      playingState.board[1].isMortgaged = false;
+
+      playingState.board[2].ownerId = 'player_host';
+      playingState.board[2].colorGroup = 'brown';
+      playingState.board[2].price = 60;
+      playingState.board[2].houses = 0;
+      playingState.board[2].isMortgaged = false;
+
+      playingState.board[3].ownerId = 'player_host';
+      playingState.board[3].colorGroup = 'brown';
+      playingState.board[3].price = 80;
+      playingState.board[3].houses = 0;
+      playingState.board[3].isMortgaged = false;
+
+      playingState.board[6].ownerId = 'player_host';
+      playingState.board[6].colorGroup = 'lightblue';
+      playingState.board[6].price = 100; // Mortgage = 50
+      playingState.board[6].houses = 0;
+      playingState.board[6].isMortgaged = false;
+
+      // Debt = -40. Tile 6 mortgage (+50) should be chosen before any brown monopoly tile!
+      playingState.players[0].money = -40;
+
+      const action: GameAction = {
+        actionId: 'act_liq_mono',
+        roomId: playingState.roomId,
+        playerId: 'player_host',
+        type: 'AUTO_LIQUIDATE'
+      };
+
+      const res = applyGameAction(playingState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.board[6].isMortgaged).toBe(true);
+      expect(res.state?.board[1].isMortgaged).toBe(false);
+      expect(res.state?.board[2].isMortgaged).toBe(false);
+      expect(res.state?.board[3].isMortgaged).toBe(false);
+      expect(res.state?.players[0].money).toBe(10); // -40 + 50 = 10
+    });
+
+    it('sells houses evenly when mortgage is insufficient', () => {
+      // Host owns monopoly on Brown with 2 houses on tile 1 and 3 houses on tile 2
+      playingState.board[1].ownerId = 'player_host';
+      playingState.board[1].colorGroup = 'brown';
+      playingState.board[1].price = 100;
+      playingState.board[1].houseCost = 100;
+      playingState.board[1].houses = 2;
+      playingState.board[1].isMortgaged = false;
+
+      playingState.board[2].ownerId = 'player_host';
+      playingState.board[2].colorGroup = 'brown';
+      playingState.board[2].price = 100;
+      playingState.board[2].houseCost = 100;
+      playingState.board[2].houses = 3;
+      playingState.board[2].isMortgaged = false;
+
+      // Debt = -40. Selling 1 house from tile 2 (highest house count: 3 -> 2) yields +50
+      playingState.players[0].money = -40;
+
+      const action: GameAction = {
+        actionId: 'act_liq_house',
+        roomId: playingState.roomId,
+        playerId: 'player_host',
+        type: 'AUTO_LIQUIDATE'
+      };
+
+      const res = applyGameAction(playingState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].money).toBe(10); // -40 + 50 = +10
+      expect(res.state?.board[2].houses).toBe(2); // Reduced from 3 to 2
+      expect(res.state?.board[1].houses).toBe(2); // Untouched
+      expect(res.events?.some(e => e.type === 'HOUSE_SOLD' && e.tileId === 2)).toBe(true);
+    });
+
+    it('sells properties to bank at 2/3 refund when all mortgages and house sales are exhausted', () => {
+      // Tile 1 is already mortgaged, no other money
+      playingState.board[1].ownerId = 'player_host';
+      playingState.board[1].price = 120;
+      playingState.board[1].houses = 0;
+      playingState.board[1].isMortgaged = true;
+
+      // Debt = -50. Bank sale gives 120 * 2/3 = 80
+      playingState.players[0].money = -50;
+
+      const action: GameAction = {
+        actionId: 'act_liq_bank',
+        roomId: playingState.roomId,
+        playerId: 'player_host',
+        type: 'AUTO_LIQUIDATE'
+      };
+
+      const res = applyGameAction(playingState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].money).toBe(30); // -50 + 80 = 30
+      expect(res.state?.board[1].ownerId).toBeUndefined(); // Sold to bank
+    });
+
+    it('declares bankruptcy when all assets are insufficient to cover debt', () => {
+      // Total assets: Tile 1 (price 60 -> mortgage 30, bank sale 40)
+      playingState.board[1].ownerId = 'player_host';
+      playingState.board[1].price = 60;
+      playingState.board[1].houses = 0;
+      playingState.board[1].isMortgaged = false;
+
+      // Debt = -1000. Assets total ~70, cannot cover -1000!
+      playingState.players[0].money = -1000;
+
+      const action: GameAction = {
+        actionId: 'act_liq_bankrupt',
+        roomId: playingState.roomId,
+        playerId: 'player_host',
+        type: 'AUTO_LIQUIDATE'
+      };
+
+      const res = applyGameAction(playingState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].inGame).toBe(false);
+      expect(res.state?.phase).toBe('ENDED');
+      expect(res.state?.winner?.id).toBe('player_guest');
+      expect(res.events?.some(e => e.type === 'BANKRUPTCY')).toBe(true);
+    });
+  });
 });
