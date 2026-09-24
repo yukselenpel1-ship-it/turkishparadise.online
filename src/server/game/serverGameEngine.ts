@@ -519,7 +519,12 @@ export function applyGameAction(
     if (!isActorHost) {
       return { success: false, error: 'UNAUTHORIZED_PLAYER', errorMessage: 'Bu işlemi sadece oda kurucusu yapabilir.' };
     }
-    if (nextState.phase !== 'LOBBY') {
+
+    if (type === 'START_GAME') {
+      if (nextState.phase !== 'LOBBY' && nextState.phase !== 'ENDED') {
+        return { success: false, error: 'INVALID_PHASE', errorMessage: 'Bu işlem yalnızca lobi veya oyun sonu aşamasında yapılabilir.' };
+      }
+    } else if (nextState.phase !== 'LOBBY') {
       return { success: false, error: 'INVALID_PHASE', errorMessage: 'Bu işlem yalnızca lobi aşamasında yapılabilir.' };
     }
 
@@ -599,14 +604,29 @@ export function applyGameAction(
       nextState.players = nextState.players.map(p => ({
         ...p,
         money: startMoney,
+        position: 0,
+        isJailed: false,
+        jailTurns: 0,
+        inGame: true,
+        isAfk: false,
         lapsCompleted: 0,
         firstLapPurchases: 0
       }));
+      nextState.board = JSON.parse(JSON.stringify(INITIAL_BOARD));
       nextState.phase = 'PLAYING';
+      nextState.winner = undefined;
       nextState.currentTurnIndex = 0;
+      nextState.dice = [1, 1];
       nextState.diceRolled = false;
       nextState.doublesCount = 0;
+      nextState.pendingAction = 'NONE';
+      nextState.actionMessage = undefined;
+      nextState.activeCard = undefined;
+      nextState.incomingTradeOffer = undefined;
+      nextState.transactions = [];
       nextState.turnStartedAt = now;
+      nextState.gameStartedAt = now;
+      nextState.gameEndedAt = undefined;
       addServerLog(nextState, '🎮 Turkish Paradise oyunu başladı! İyi şanslar!', 'success');
 
       events.push({

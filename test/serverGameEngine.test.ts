@@ -6,8 +6,16 @@ import {
   AuthenticatedActor,
   ServerErrorCode
 } from '../src/server/game/serverGameEngine';
-import { createInitialState, JAIL_TILE_INDEX, TOTAL_TILES } from '../src/engine/gameEngine';
-import { GameState, Player, BoardTile } from '../src/types/game';
+import {
+  createInitialState,
+  JAIL_TILE_INDEX,
+  TOTAL_TILES,
+  calculatePlayerNetWorth,
+  calculatePlayerRentIncome,
+  formatGameDuration,
+  calculateFinalRankings
+} from '../src/engine/gameEngine';
+import { GameState, Player, BoardTile, FinancialTransaction } from '../src/types/game';
 import { GameAction } from '../src/server/storage/roomStorage';
 
 function createTestPlayers(): Player[] {
@@ -1009,6 +1017,158 @@ describe('Server-Side Game Engine (applyGameAction)', () => {
       const res = applyGameAction(chanceState, action, hostActor);
       expect(res.success).toBe(true);
       expect(res.state?.board[3].houses).toBe(3); // Picked tile 3 with 4 houses
+    });
+  });
+
+  describe('Game Over & Final Statistics Calculations', () => {
+    let testPlayers: Player[];
+    let testBoard: BoardTile[];
+
+    beforeEach(() => {
+      const state = createInitialState();
+      testPlayers = createTestPlayers();
+      testBoard = state.board;
+    });
+
+    it('accurately calculates player net worth with cash, properties, and buildings', () => {
+      testPlayers[0].money = 1200;
+      testBoard[1].ownerId = 'player_host';
+      testBoard[1].price = 200;
+      testBoard[1].houses = 3;
+      testBoard[1].houseCost = 100;
+      testBoard[1].isMortgaged = false;
+
+      testBoard[2].ownerId = 'player_host';
+      testBoard[2].price = 300;
+      testBoard[2].houses = 0;
+      testBoard[2].isMortgaged = true; // Mortgage value = 150
+
+      // Net worth = 1200 + (200 + 3*100) + (150) = 1200 + 500 + 150 = 1850
+      const netWorth = calculatePlayerNetWorth(testPlayers[0], testBoard);
+      expect(netWorth).toBe(1850);
+    });
+
+    it('returns 0 net worth for eliminated bankrupt player', () => {
+      testPlayers[0].inGame = false;
+      testPlayers[0].money = -500;
+      const netWorth = calculatePlayerNetWorth(testPlayers[0], testBoard);
+      expect(netWorth).toBe(0);
+    });
+
+    it('calculates total rent income from transactions history', () => {
+      const transactions: FinancialTransaction[] = [
+        {
+          id: 'tx1',
+          playerId: 'player_host',
+          playerName: 'Host Player',
+          playerAvatar: '🏎️',
+          playerColor: '#EF4444',
+          type: 'income',
+          category: 'rent_in',
+          amount: 250,
+          balanceAfter: 1750,
+          description: 'Rent from guest',
+          timestamp: '12:00'
+        },
+        {
+          id: 'tx2',
+          playerId: 'player_host',
+          playerName: 'Host Player',
+          playerAvatar: '🏎️',
+          playerColor: '#EF4444',
+          type: 'income',
+          category: 'salary',
+          amount: 200,
+          balanceAfter: 1950,
+          description: 'Passed GO',
+          timestamp: '12:05'
+        },
+        {
+          id: 'tx3',
+          playerId: 'player_host',
+          playerName: 'Host Player',
+          playerAvatar: '🏎️',
+          playerColor: '#EF4444',
+          type: 'income',
+          category: 'rent_in',
+          amount: 300,
+          balanceAfter: 2250,
+          description: 'Rent from bot',
+          timestamp: '12:10'
+        },
+        {
+          id: 'tx4',
+          playerId: 'player_guest',
+          playerName: 'Guest Player',
+          playerAvatar: '🎩',
+          playerColor: '#3B82F6',
+          type: 'income',
+          category: 'rent_in',
+          amount: 100,
+          balanceAfter: 1600,
+          description: 'Rent from host',
+          timestamp: '12:15'
+        }
+      ];
+
+      const hostRent = calculatePlayerRentIncome('player_host', transactions);
+      expect(hostRent).toBe(550); // 250 + 300
+
+      const guestRent = calculatePlayerRentIncome('player_guest', transactions);
+      expect(guestRent).toBe(100);
+    });
+
+    it('formats game duration correctly in TR and EN', () => {
+      const durationMs = 12 * 60 * 1000 + 45 * 1000; // 12m 45s
+      expect(formatGameDuration(durationMs, 'tr')).toBe('12dk 45sn');
+      expect(formatGameDuration(durationMs, 'en')).toBe('12m 45s');
+    });
+
+    it('calculates deterministic final ranking placing winner at #1 and ordering by net worth', () => {
+      testPlayers[0].money = 2000;
+      testPlayers[1].money = 3500;
+
+      // Without winner specified, guest has higher cash/net worth
+      const ranksNoWinner = calculateFinalRankings(testPlayers, testBoard);
+      expect(ranksNoWinner[0].player.id).toBe('player_guest');
+      expect(ranksNoWinner[0].rank).toBe(1);
+
+      // With host as explicit winner (even if lower cash), winner is always #1
+      const ranksWithWinner = calculateFinalRankings(testPlayers, testBoard, 'player_host');
+      expect(ranksWithWinner[0].player.id).toBe('player_host');
+      expect(ranksWithWinner[0].rank).toBe(1);
+      expect(ranksWithWinner[0].isWinner).toBe(true);
+      expect(ranksWithWinner[1].player.id).toBe('player_guest');
+      expect(ranksWithWinner[1].rank).toBe(2);
+    });
+
+    it('allows host to restart game (TEKRAR OYNA) from ENDED phase cleanly', () => {
+      const endedState = createInitialState();
+      endedState.players = createTestPlayers();
+      endedState.hostPlayerId = 'user_host';
+      endedState.phase = 'ENDED';
+      endedState.winner = endedState.players[0];
+      endedState.players[1].inGame = false;
+      endedState.board[1].ownerId = 'player_host';
+      endedState.board[1].houses = 3;
+
+      const action: GameAction = {
+        actionId: 'act_replay_1',
+        roomId: endedState.roomId,
+        playerId: 'player_host',
+        type: 'START_GAME'
+      };
+
+      const res = applyGameAction(endedState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.phase).toBe('PLAYING');
+      expect(res.state?.winner).toBeUndefined();
+      expect(res.state?.players[0].money).toBe(1500);
+      expect(res.state?.players[1].money).toBe(1500);
+      expect(res.state?.players[1].inGame).toBe(true); // Restored to active
+      expect(res.state?.board[1].ownerId).toBeUndefined(); // Fresh clean board
+      expect(res.state?.board[1].houses).toBe(0);
+      expect(res.events?.some(e => e.type === 'GAME_STARTED')).toBe(true);
     });
   });
 });

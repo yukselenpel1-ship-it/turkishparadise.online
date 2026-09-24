@@ -249,6 +249,8 @@ export interface GameState {
   turnStartedAt?: number;
   spectators?: { id: string; name: string; avatar: string; userId?: string; clientId?: string; tabId?: string; participantKey?: string; joinedAt?: number }[];
   version?: number;
+  gameStartedAt?: number;
+  gameEndedAt?: number;
   createdAt?: number;
   updatedAt?: number;
 }

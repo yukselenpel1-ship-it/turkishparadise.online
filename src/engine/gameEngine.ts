@@ -1736,3 +1736,94 @@ export function runBotTurn(state: GameState): GameState {
   return newState;
 }
 
+/**
+ * Calculates a player's total net worth (Cash + Properties + Buildings).
+ */
+export function calculatePlayerNetWorth(player: Player, board: BoardTile[]): number {
+  if (!player.inGame && (player.money || 0) <= 0) {
+    return 0;
+  }
+  const cash = Math.max(0, player.money || 0);
+  const propertyVal = board
+    .filter(t => t.ownerId === player.id)
+    .reduce((sum, t) => {
+      const basePrice = t.isMortgaged ? Math.floor((t.price || 0) / 2) : (t.price || 0);
+      const houseVal = (t.houses || 0) * (t.houseCost || 100);
+      return sum + basePrice + houseVal;
+    }, 0);
+  return cash + propertyVal;
+}
+
+/**
+ * Calculates total rent income collected by a player from the transactions log.
+ */
+export function calculatePlayerRentIncome(playerId: string, transactions?: FinancialTransaction[]): number {
+  if (!transactions || transactions.length === 0) return 0;
+  return transactions
+    .filter(tx => tx.playerId === playerId && tx.type === 'income' && tx.category === 'rent_in')
+    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+}
+
+/**
+ * Formats game duration into a clean, human-readable string.
+ */
+export function formatGameDuration(durationMs: number, language: 'tr' | 'en' = 'tr'): string {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (language === 'en') {
+    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+  }
+  return `${minutes}dk ${seconds.toString().padStart(2, '0')}sn`;
+}
+
+export interface PlayerFinalRank {
+  rank: number;
+  player: Player;
+  netWorth: number;
+  isWinner: boolean;
+  isBankrupt: boolean;
+}
+
+/**
+ * Computes deterministic final ranking of all players in the game.
+ */
+export function calculateFinalRankings(
+  players: Player[],
+  board: BoardTile[],
+  winnerId?: string
+): PlayerFinalRank[] {
+  if (!players || players.length === 0) return [];
+
+  const rankedItems = players.map(p => {
+    const netWorth = calculatePlayerNetWorth(p, board);
+    const isWinner = Boolean(winnerId ? p.id === winnerId : p.inGame);
+    const isBankrupt = !p.inGame;
+    return { player: p, netWorth, isWinner, isBankrupt };
+  });
+
+  rankedItems.sort((a, b) => {
+    // 1. Winner is always #1
+    if (a.isWinner && !b.isWinner) return -1;
+    if (!a.isWinner && b.isWinner) return 1;
+
+    // 2. Active in-game players come before bankrupt players
+    if (!a.isBankrupt && b.isBankrupt) return -1;
+    if (a.isBankrupt && !b.isBankrupt) return 1;
+
+    // 3. Higher net worth comes first
+    if (b.netWorth !== a.netWorth) return b.netWorth - a.netWorth;
+
+    // 4. Higher cash comes first
+    return (b.player.money || 0) - (a.player.money || 0);
+  });
+
+  return rankedItems.map((item, index) => ({
+    rank: index + 1,
+    player: item.player,
+    netWorth: item.netWorth,
+    isWinner: item.isWinner,
+    isBankrupt: item.isBankrupt
+  }));
+}
+

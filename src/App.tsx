@@ -33,6 +33,7 @@ import {
   executeForceBuy,
   getBotChanceTarget
 } from './engine/gameEngine';
+import { INITIAL_BOARD } from './data/boardData';
 import {
   loginAsGuest,
   logoutUser,
@@ -2829,9 +2830,74 @@ export const App: React.FC = () => {
     updateAndBroadcastGameState((prev) => addChatMessage(prev, mePlayer, sanitizedText));
   };
 
-  // Restart Game
+  // Restart Game (Play Again with current players)
   const handleRestart = () => {
-    terminateGameSession('RESTART', true);
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+
+    // ⚡ SERVER-AUTHORITATIVE MODE
+    if (isServerAuthoritativeEnabled()) {
+      dispatchServerAction('START_GAME', liveMyId || undefined);
+      return;
+    }
+
+    if (!isMeHost) {
+      if (liveState.roomId && liveMyId) {
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'START_GAME');
+      }
+      return;
+    }
+
+    // Local / Host P2P Restart
+    updateAndBroadcastGameState((prev) => {
+      const startMoney = prev.settings?.startingMoney || 1500;
+      const now = Date.now();
+      const updatedPlayers = prev.players.map((p) => ({
+        ...p,
+        money: startMoney,
+        position: 0,
+        isJailed: false,
+        jailTurns: 0,
+        inGame: true,
+        isAfk: false,
+        lapsCompleted: 0,
+        firstLapPurchases: 0
+      }));
+
+      return {
+        ...prev,
+        players: updatedPlayers,
+        board: JSON.parse(JSON.stringify(INITIAL_BOARD)),
+        phase: 'PLAYING' as const,
+        winner: undefined,
+        currentTurnIndex: 0,
+        dice: [1, 1],
+        diceRolled: false,
+        doublesCount: 0,
+        pendingAction: 'NONE',
+        actionMessage: undefined,
+        activeCard: undefined,
+        incomingTradeOffer: undefined,
+        transactions: [],
+        turnStartedAt: now,
+        gameStartedAt: now,
+        gameEndedAt: undefined,
+        logs: [
+          {
+            id: `log_${now}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            text: '🎮 Turkish Paradise oyunu yeniden başladı! İyi şanslar!',
+            type: 'success'
+          }
+        ]
+      };
+    });
+  };
+
+  // Main Menu (Safely leave/close room and return to Lobby)
+  const handleMainMenu = () => {
+    terminateGameSession('MAIN_MENU', true);
   };
 
   const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
@@ -3240,7 +3306,14 @@ export const App: React.FC = () => {
         <WinnerModal
           winner={gameState.winner}
           currentPlayer={me}
+          players={gameState.players}
+          board={gameState.board}
+          transactions={gameState.transactions}
+          gameStartedAt={gameState.gameStartedAt || gameState.createdAt}
+          gameEndedAt={gameState.gameEndedAt}
+          isHost={isPlayerHost(gameState, myPlayerId)}
           onRestart={handleRestart}
+          onMainMenu={handleMainMenu}
           onOpenProfile={() => setIsProfileModalOpen(true)}
         />
       )}

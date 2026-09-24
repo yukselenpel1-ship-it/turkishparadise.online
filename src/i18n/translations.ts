@@ -178,9 +178,18 @@ export interface TranslationDictionary {
   gameOver: string;
   wonDescription: string;
   gameOverDescription: string;
+  championTitle: string;
   championWithBalance: string;
+  totalNetWorth: string;
+  cashStat: string;
+  propertiesCountStat: string;
+  rentIncomeStat: string;
+  durationStat: string;
+  finalRankingTitle: string;
   playAgainBtn: string;
+  mainMenuBtn: string;
   viewStatsBtn: string;
+  waitingHostRestart: string;
 
   // Profile & Social Modal
   profileTitle: string;
@@ -442,9 +451,18 @@ export const translations: Record<Language, TranslationDictionary> = {
     gameOver: '🏆 OYUN TAMAMLANDI!',
     wonDescription: 'Tüm rakiplerinizi eleyerek Turkish Paradise şampiyonu oldunuz!',
     gameOverDescription: 'Turkish Paradise Maç Sonucu',
+    championTitle: 'TURKISH PARADISE ŞAMPİYONU',
     championWithBalance: '₺{amount} Bakiye ile Şampiyon!',
-    playAgainBtn: 'Yeni Oyun Başlat',
+    totalNetWorth: 'Toplam Servet',
+    cashStat: 'Nakit',
+    propertiesCountStat: 'Mülk Sayısı',
+    rentIncomeStat: 'Kira Geliri',
+    durationStat: 'Oyun Süresi',
+    finalRankingTitle: 'Final Sıralaması',
+    playAgainBtn: 'Tekrar Oyna',
+    mainMenuBtn: 'Ana Menü',
     viewStatsBtn: 'Profil ve Zafer İstatistiklerimi Gör',
+    waitingHostRestart: 'Oda kurucusunun oyunu başlatması bekleniyor...',
 
     // Profile & Social Modal
     profileTitle: 'Kullanıcı Profili & İstatistikler',
@@ -704,9 +722,18 @@ export const translations: Record<Language, TranslationDictionary> = {
     gameOver: '🏆 GAME OVER!',
     wonDescription: 'You eliminated all competitors to become the champion of Turkish Paradise!',
     gameOverDescription: 'Turkish Paradise Match Results',
+    championTitle: 'TURKISH PARADISE CHAMPION',
     championWithBalance: 'Champion with ${amount} Net Balance!',
-    playAgainBtn: 'Start New Game',
+    totalNetWorth: 'Total Net Worth',
+    cashStat: 'Cash',
+    propertiesCountStat: 'Properties',
+    rentIncomeStat: 'Rent Income',
+    durationStat: 'Game Duration',
+    finalRankingTitle: 'Final Ranking',
+    playAgainBtn: 'Play Again',
+    mainMenuBtn: 'Main Menu',
     viewStatsBtn: 'View Profile & Stats',
+    waitingHostRestart: 'Waiting for room host to restart game...',
 
     // Profile & Social Modal
     profileTitle: 'User Profile & Statistics',
