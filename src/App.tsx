@@ -86,7 +86,7 @@ import { IncomingTradeModal } from './components/IncomingTradeModal';
 import { ProfileModal, ProfileTab } from './components/ProfileModal';
 import { DiceLogo } from './components/DiceLogo';
 import { useLanguage, LanguageSwitcher } from './i18n/LanguageContext';
-import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins, AlertCircle } from 'lucide-react';
+import { RotateCcw, Volume2, VolumeX, Wifi, Users, UserCheck, MessageSquare, ScrollText, X, Coins, AlertCircle, LogOut } from 'lucide-react';
 
 const SESSION_PLAYER_ID_KEY = 'tp_active_player_id';
 const SESSION_ROOM_ID_KEY = 'tp_active_room_id';
@@ -152,6 +152,7 @@ export const App: React.FC = () => {
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isEndGameModalOpen, setIsEndGameModalOpen] = useState(false);
   const [profileInitialTab, setProfileInitialTab] = useState<ProfileTab>('stats');
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const { t, formatMoney } = useLanguage();
@@ -256,6 +257,7 @@ export const App: React.FC = () => {
     setIsTradeModalOpen(false);
     setIsTransactionsModalOpen(false);
     setIsProfileModalOpen(false);
+    setIsEndGameModalOpen(false);
     setTradeSelectedTile(undefined);
     pendingRemoteStateRef.current = null;
     setIsMoving(false);
@@ -1318,6 +1320,9 @@ export const App: React.FC = () => {
         if (isCurrentHost) return;
 
         console.log('[Multiplayer] Received ROOM_CLOSED from host:', reason);
+        try {
+          alert(t('hostEndedGameNotice'));
+        } catch (e) {}
         terminateGameSession('ROOM_CLOSED', false);
       }
     });
@@ -2900,7 +2905,14 @@ export const App: React.FC = () => {
     terminateGameSession('MAIN_MENU', true);
   };
 
+  // Host End Game Confirmation Action
+  const handleConfirmEndGame = () => {
+    setIsEndGameModalOpen(false);
+    terminateGameSession('HOST_ENDED_GAME', true);
+  };
+
   const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
+  const isMeHost = isPlayerHost(gameState, myPlayerId);
 
   return (
     <div className={`w-full max-w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none relative ${
@@ -3028,14 +3040,16 @@ export const App: React.FC = () => {
                 </span>
               </button>
 
-              <button
-                onClick={handleRestart}
-                className="flex items-center gap-1 text-[10.5px] sm:text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl border border-rose-500/30 transition cursor-pointer active:scale-95 shrink-0"
-                title={t('restartTooltip')}
-              >
-                <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">{t('restartGame')}</span>
-              </button>
+              {isMeHost && (
+                <button
+                  onClick={() => setIsEndGameModalOpen(true)}
+                  className="flex items-center gap-1 text-[10.5px] sm:text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl border border-rose-500/30 transition cursor-pointer active:scale-95 shrink-0"
+                  title={t('endGameTooltip')}
+                >
+                  <LogOut className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">{t('endGameBtn')}</span>
+                </button>
+              )}
             </div>
           </header>
 
@@ -3330,6 +3344,45 @@ export const App: React.FC = () => {
           roomId={gameState.roomId || gameState.settings?.roomCode || 'TR-1001'}
           initialTab={profileInitialTab}
         />
+      )}
+
+      {/* End Game Confirmation Modal (Host Only) */}
+      {isEndGameModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-gradient-to-b from-[#0e1628] to-[#070b14] border border-amber-500/30 rounded-2xl p-6 sm:p-7 max-w-md w-full shadow-[0_10px_40px_rgba(0,0,0,0.8)] text-center relative overflow-hidden">
+            {/* Top decorative gradient glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 bg-gradient-to-r from-transparent via-rose-500 to-transparent" />
+
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto mb-4 text-rose-400 shadow-inner">
+              <LogOut className="w-6 h-6 sm:w-7 sm:h-7" />
+            </div>
+
+            <h3 className="text-base sm:text-lg font-black text-white mb-2">
+              {t('endGameModalTitle')}
+            </h3>
+            
+            <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
+              {t('endGameModalDesc')}
+            </p>
+
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsEndGameModalOpen(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm border border-slate-700 transition active:scale-95 cursor-pointer"
+              >
+                {t('cancelBtn')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmEndGame}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-black text-xs sm:text-sm shadow-lg shadow-rose-900/30 border border-rose-500/50 transition active:scale-95 cursor-pointer"
+              >
+                {t('confirmEndGameBtn')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

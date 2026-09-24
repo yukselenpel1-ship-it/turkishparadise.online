@@ -81,6 +81,13 @@ export interface TranslationDictionary {
   newFriendRequestsAlert: string;
   restartGame: string;
   restartTooltip: string;
+  endGameBtn: string;
+  endGameTooltip: string;
+  endGameModalTitle: string;
+  endGameModalDesc: string;
+  cancelBtn: string;
+  confirmEndGameBtn: string;
+  hostEndedGameNotice: string;
 
   // Board & Center Controls
   turnOf: string;
@@ -354,6 +361,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     newFriendRequestsAlert: '{count} yeni arkadaşlık isteği!',
     restartGame: 'Yeniden',
     restartTooltip: 'Oyunu Yeniden Başlat / Lobiye Dön',
+    endGameBtn: 'Oyunu Bitir',
+    endGameTooltip: 'Oyunu sonlandır ve odayı kapat',
+    endGameModalTitle: 'Oyunu bitirmek istediğinize emin misiniz?',
+    endGameModalDesc: 'Bu işlem mevcut oyunu ve odayı sonlandıracak, tüm oyuncuları ana menüye yönlendirecektir.',
+    cancelBtn: 'Hayır',
+    confirmEndGameBtn: 'Evet, Oyunu Bitir',
+    hostEndedGameNotice: 'Kurucu oyunu sonlandırdı.',
 
     // Board & Center Controls
     turnOf: 'Sıra: {name}',
@@ -625,6 +639,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     newFriendRequestsAlert: '{count} new friend requests!',
     restartGame: 'Restart',
     restartTooltip: 'Restart Game / Return to Lobby',
+    endGameBtn: 'End Game',
+    endGameTooltip: 'End game and close room',
+    endGameModalTitle: 'Are you sure you want to end the game?',
+    endGameModalDesc: 'This will end the current game session and return all players to the main menu.',
+    cancelBtn: 'No',
+    confirmEndGameBtn: 'Yes, End Game',
+    hostEndedGameNotice: 'The host ended the game.',
 
     // Board & Center Controls
     turnOf: "Turn: {name}",
