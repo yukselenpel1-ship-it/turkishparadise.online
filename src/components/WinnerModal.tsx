@@ -42,7 +42,7 @@ export const WinnerModal: React.FC<WinnerModalProps> = ({
   // 1. Calculate Winner Metrics
   const winnerNetWorth = calculatePlayerNetWorth(winner, board);
   const winnerPropertiesCount = board.filter((tile) => tile.ownerId === winner.id).length;
-  const winnerRentIncome = calculatePlayerRentIncome(winner.id, transactions);
+  const winnerRentIncome = calculatePlayerRentIncome(winner, transactions, players);
 
   // 2. Calculate Game Duration
   const now = Date.now();

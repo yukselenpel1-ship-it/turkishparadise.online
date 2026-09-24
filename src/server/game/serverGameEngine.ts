@@ -783,6 +783,7 @@ export function applyGameAction(
         if (owner && rent > 0) {
           actingPlayer.money -= rent;
           owner.money += rent;
+          owner.totalRentCollected = (owner.totalRentCollected || 0) + rent;
           addServerTransaction(nextState, actingPlayer, 'expense', 'rent_out', rent, `${owner.name} kullanıcısına "${currentTile.name}" kirası ödendi`);
           addServerTransaction(nextState, owner, 'income', 'rent_in', rent, `${actingPlayer.name} kullanıcısından "${currentTile.name}" kirası tahsil edildi`);
           addServerLog(nextState, `🏠 ${actingPlayer.name}, ${owner.name} kullanıcısına "${currentTile.name}" için ${rent}₺ kira ödedi.`, 'warning');
@@ -1181,11 +1182,10 @@ export function applyGameAction(
 
       case 'SEND_TO_JAIL': {
         let targetPlayerId = action.payload?.targetPlayerId;
-        if (!targetPlayerId && (actingPlayer.isBot || actingPlayer.isAfk)) {
-          targetPlayerId = getBotChanceTarget(nextState, actingPlayer.id, card).targetPlayerId;
+        if (!targetPlayerId) {
+          const botTarget = getBotChanceTarget(nextState, actingPlayer.id, card).targetPlayerId;
+          targetPlayerId = botTarget || nextState.players.find(p => p.id !== actingPlayer.id && p.inGame && !p.isJailed)?.id;
         }
-
-        const eligibleTargets = nextState.players.filter(p => p.id !== actingPlayer.id && p.inGame && !p.isJailed);
 
         if (targetPlayerId) {
           const target = nextState.players.find(p => p.id === targetPlayerId);
@@ -1198,8 +1198,6 @@ export function applyGameAction(
           target.jailTurns = 0;
           addServerLog(nextState, `🚨 ${actingPlayer.name}, Şans Kartı ile ${target.name} oyuncusunu Kodese gönderdi!`, 'danger');
           events.push({ type: 'JAIL_STATUS', actorPlayerId: actingPlayer.id, targetPlayerId: target.id, actionId, timestamp: now });
-        } else if (eligibleTargets.length > 0) {
-          return { success: false, error: 'INVALID_TARGET', errorMessage: 'Kodese göndermek için bir hedef oyuncu seçmelisiniz.' };
         } else {
           addServerLog(nextState, `🔒 Kodese gönderilecek uygun rakip oyuncu bulunamadı.`, 'info');
         }
@@ -1208,13 +1206,10 @@ export function applyGameAction(
 
       case 'DEMOLISH_BUILDING': {
         let tileId = action.payload?.tileId;
-        if (tileId === undefined && (actingPlayer.isBot || actingPlayer.isAfk)) {
-          tileId = getBotChanceTarget(nextState, actingPlayer.id, card).tileId;
+        if (tileId === undefined) {
+          const botTile = getBotChanceTarget(nextState, actingPlayer.id, card).tileId;
+          tileId = botTile !== undefined ? botTile : nextState.board.find(t => t.ownerId && t.ownerId !== actingPlayer.id && (t.houses || 0) > 0 && !t.isMortgaged)?.id;
         }
-
-        const eligibleTiles = nextState.board.filter(
-          t => t.ownerId && t.ownerId !== actingPlayer.id && (t.houses || 0) > 0 && !t.isMortgaged
-        );
 
         if (tileId !== undefined) {
           if (typeof tileId !== 'number' || !Number.isInteger(tileId) || tileId < 0 || tileId >= TOTAL_TILES) {
@@ -1237,8 +1232,6 @@ export function applyGameAction(
           const remainingType = targetTile.houses === 4 ? 'Otel yıkıldı (4 Ev kaldı)' : `${targetTile.houses + 1}. Ev yıkıldı (${targetTile.houses} Ev kaldı)`;
           addServerLog(nextState, `💥 ${actingPlayer.name}, Şans Kartı ile ${targetOwner.name} oyuncusunun "${targetTile.name}" mülkündeki 1 yapıyı yıktı! (${remainingType})`, 'warning');
           events.push({ type: 'HOUSE_SOLD', actorPlayerId: actingPlayer.id, targetPlayerId: targetOwner.id, tileId: targetTile.id, amount: 0, actionId, timestamp: now });
-        } else if (eligibleTiles.length > 0) {
-          return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Yıkmak için geçerli bir mülk seçmelisiniz.' };
         } else {
           addServerLog(nextState, `🏚️ Yıkılacak rakip yapı bulunamadı.`, 'info');
         }

@@ -895,6 +895,7 @@ export function handleTileLanding(
         if (owner && rent > 0) {
           player.money -= rent;
           owner.money += rent;
+          owner.totalRentCollected = (owner.totalRentCollected || 0) + rent;
           addTransaction(state, player, 'expense', 'rent_out', rent, `${owner.name} kullanıcısına "${tile.name}" kirası ödendi`);
           addTransaction(state, owner, 'income', 'rent_in', rent, `${player.name} kullanıcısından "${tile.name}" kirası tahsil edildi`);
           addLog(state, `🏠 ${player.name}, ${owner.name} kullanıcısına "${tile.name}" için ${rent}₺ kira ödedi.`, 'warning');
@@ -1755,13 +1756,34 @@ export function calculatePlayerNetWorth(player: Player, board: BoardTile[]): num
 }
 
 /**
- * Calculates total rent income collected by a player from the transactions log.
+ * Calculates total rent income collected by a player.
+ * Uses the cumulative stat `player.totalRentCollected` when available to guarantee
+ * full game accuracy across bounded transaction logs, falling back to summing transactions.
  */
-export function calculatePlayerRentIncome(playerId: string, transactions?: FinancialTransaction[]): number {
-  if (!transactions || transactions.length === 0) return 0;
-  return transactions
-    .filter(tx => tx.playerId === playerId && tx.type === 'income' && tx.category === 'rent_in')
-    .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+export function calculatePlayerRentIncome(
+  playerOrId: Player | string,
+  transactions?: FinancialTransaction[],
+  players?: Player[]
+): number {
+  let player: Player | undefined;
+  if (typeof playerOrId === 'object' && playerOrId !== null) {
+    player = playerOrId;
+  } else if (players) {
+    player = players.find(p => p.id === playerOrId);
+  }
+
+  if (player && typeof player.totalRentCollected === 'number') {
+    return player.totalRentCollected;
+  }
+
+  const playerId = typeof playerOrId === 'string' ? playerOrId : playerOrId.id;
+  if (transactions && transactions.length > 0) {
+    return transactions
+      .filter(tx => tx.playerId === playerId && tx.type === 'income' && tx.category === 'rent_in')
+      .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+  }
+
+  return 0;
 }
 
 /**

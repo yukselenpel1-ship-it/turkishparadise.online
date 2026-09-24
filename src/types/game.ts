@@ -91,6 +91,7 @@ export interface Player {
   botDifficulty?: BotDifficulty;
   lapsCompleted: number;
   firstLapPurchases: number;
+  totalRentCollected?: number;
   isHost?: boolean;
   isOnline?: boolean;
   isAfk?: boolean;

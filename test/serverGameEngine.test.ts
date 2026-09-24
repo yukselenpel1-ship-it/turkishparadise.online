@@ -1118,6 +1118,34 @@ describe('Server-Side Game Engine (applyGameAction)', () => {
       expect(guestRent).toBe(100);
     });
 
+    it('preserves cumulative totalRentCollected accurately even when transactions log is bounded or sliced', () => {
+      testPlayers[0].totalRentCollected = 4850;
+      // Transactions array only contains last 2 transactions (totaling 300)
+      const boundedTransactions: FinancialTransaction[] = [
+        {
+          id: 'tx_recent',
+          playerId: 'player_host',
+          playerName: 'Host Player',
+          playerAvatar: '🏎️',
+          playerColor: '#EF4444',
+          type: 'income',
+          category: 'rent_in',
+          amount: 300,
+          balanceAfter: 2000,
+          description: 'Recent rent',
+          timestamp: '12:50'
+        }
+      ];
+
+      // With player object passed:
+      const fullRentFromObj = calculatePlayerRentIncome(testPlayers[0], boundedTransactions);
+      expect(fullRentFromObj).toBe(4850);
+
+      // With playerId + players array passed:
+      const fullRentFromId = calculatePlayerRentIncome('player_host', boundedTransactions, testPlayers);
+      expect(fullRentFromId).toBe(4850);
+    });
+
     it('formats game duration correctly in TR and EN', () => {
       const durationMs = 12 * 60 * 1000 + 45 * 1000; // 12m 45s
       expect(formatGameDuration(durationMs, 'tr')).toBe('12dk 45sn');
