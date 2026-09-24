@@ -42,6 +42,11 @@ export interface TranslationDictionary {
   maxHousesLabel: string;
   unlimitedHouses: string;
   housesCount: string;
+  firstLapBuyLimitLabel: string;
+  firstLapBuyLimitTooltip: string;
+  unlimitedFirstLap: string;
+  firstLapCount: string;
+  passGoSalaryLabel: string;
   botDifficultyLabel: string;
   botEasy: string;
   botMedium: string;
@@ -331,6 +336,11 @@ export const translations: Record<Language, TranslationDictionary> = {
     maxHousesLabel: 'Maksimum Ev Sayısı',
     unlimitedHouses: 'Sınırsız (Klasik)',
     housesCount: '{count} Adet Yer',
+    firstLapBuyLimitLabel: 'İlk Tur Alım Limiti',
+    firstLapBuyLimitTooltip: 'Başlangıç noktasını ilk kez geçmeden önce alınabilecek maksimum mülk sayısı.',
+    unlimitedFirstLap: 'Sınırsız (Klasik)',
+    firstLapCount: '{count} Adet Mülk',
+    passGoSalaryLabel: 'Başlangıç Geçiş Ödülü',
     botDifficultyLabel: 'Bot Zorluğu',
     botEasy: '🟢 Kolay Bot',
     botMedium: '🟡 Orta Bot',
@@ -618,6 +628,11 @@ export const translations: Record<Language, TranslationDictionary> = {
     maxHousesLabel: 'Max Houses Limit',
     unlimitedHouses: 'Unlimited (Classic)',
     housesCount: '{count} Per Property',
+    firstLapBuyLimitLabel: 'First Lap Buy Limit',
+    firstLapBuyLimitTooltip: 'Maximum properties that can be purchased before passing GO for the first time.',
+    unlimitedFirstLap: 'Unlimited (Classic)',
+    firstLapCount: '{count} Properties',
+    passGoSalaryLabel: 'Pass GO Salary',
     botDifficultyLabel: 'Bot Difficulty',
     botEasy: '🟢 Easy Bot',
     botMedium: '🟡 Medium Bot',

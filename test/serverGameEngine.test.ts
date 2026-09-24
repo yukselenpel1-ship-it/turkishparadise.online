@@ -196,6 +196,26 @@ describe('Server-Side Game Engine (applyGameAction)', () => {
       expect(res.state?.players[0].lapsCompleted).toBe(1);
     });
 
+    it('awards custom pass-go salary when configured in room settings', () => {
+      playingState.settings.passGoSalary = 500;
+      playingState.players[0].position = 36;
+      const initialMoney = playingState.players[0].money;
+      const mockRng = () => [2, 3] as [number, number];
+
+      const action: GameAction = {
+        actionId: 'act_roll_lap_custom_salary',
+        roomId: playingState.roomId,
+        playerId: 'player_host',
+        type: 'ROLL_DICE'
+      };
+
+      const res = applyGameAction(playingState, action, hostActor, { rng: mockRng });
+      expect(res.success).toBe(true);
+      expect(res.state?.players[0].position).toBe(3);
+      expect(res.state?.players[0].money).toBe(initialMoney + 500); // 500 passGoSalary
+      expect(res.state?.players[0].lapsCompleted).toBe(1);
+    });
+
     it('penalizes 3 consecutive doubles by sending player to jail', () => {
       playingState.doublesCount = 2; // Already rolled 2 doubles
       const mockRng = () => [4, 4] as [number, number]; // 3rd double

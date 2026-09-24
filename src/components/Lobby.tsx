@@ -710,7 +710,7 @@ export const Lobby: React.FC<LobbyProps> = ({
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      {/* Starting Money */}
+                      {/* 1. Starting Money */}
                       <div>
                         <label className="text-slate-400 font-bold text-[10px] block mb-1">
                           {t('startMoneyLabel')}
@@ -728,27 +728,48 @@ export const Lobby: React.FC<LobbyProps> = ({
                         </select>
                       </div>
 
-                      {/* Max Houses / Buy Limit */}
+                      {/* 2. First Lap Buy Limit */}
                       <div>
-                        <label className="text-slate-400 font-bold text-[10px] block mb-1">
-                          {t('maxHousesLabel')}
+                        <label 
+                          className="text-slate-400 font-bold text-[10px] block mb-1 truncate"
+                          title={t('firstLapBuyLimitTooltip')}
+                        >
+                          {t('firstLapBuyLimitLabel')}
                         </label>
                         <select
-                          value={settings.firstLapBuyLimit}
+                          value={settings.firstLapBuyLimit ?? 0}
                           onChange={(e) => onUpdateSettings({ ...settings, firstLapBuyLimit: Number(e.target.value) })}
                           className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
+                          title={t('firstLapBuyLimitTooltip')}
                         >
-                          <option value={0}>{t('unlimitedHouses')}</option>
-                          <option value={1}>{t('housesCount', { count: 1 })}</option>
-                          <option value={2}>{t('housesCount', { count: 2 })}</option>
-                          <option value={3}>{t('housesCount', { count: 3 })}</option>
-                          <option value={4}>{t('housesCount', { count: 4 })}</option>
+                          <option value={0}>{t('unlimitedFirstLap')}</option>
+                          <option value={1}>{t('firstLapCount', { count: 1 })}</option>
+                          <option value={2}>{t('firstLapCount', { count: 2 })}</option>
+                          <option value={3}>{t('firstLapCount', { count: 3 })}</option>
+                          <option value={4}>{t('firstLapCount', { count: 4 })}</option>
                         </select>
                       </div>
 
-                      {/* Bot Difficulty */}
+                      {/* 3. Pass GO Salary */}
                       <div>
-                        <label className="text-slate-400 font-bold text-[10px] block mb-1">
+                        <label className="text-slate-400 font-bold text-[10px] block mb-1 truncate">
+                          {t('passGoSalaryLabel')}
+                        </label>
+                        <select
+                          value={settings.passGoSalary ?? 200}
+                          onChange={(e) => onUpdateSettings({ ...settings, passGoSalary: Number(e.target.value) })}
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-lg py-1 px-2 text-xs text-white font-bold outline-none cursor-pointer"
+                        >
+                          <option value={200}>{formatMoney(200)}</option>
+                          <option value={300}>{formatMoney(300)}</option>
+                          <option value={400}>{formatMoney(400)}</option>
+                          <option value={500}>{formatMoney(500)}</option>
+                        </select>
+                      </div>
+
+                      {/* 4. Bot Difficulty */}
+                      <div>
+                        <label className="text-slate-400 font-bold text-[10px] block mb-1 truncate">
                           {t('botDifficultyLabel')}
                         </label>
                         <select
