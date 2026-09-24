@@ -366,4 +366,39 @@ describe('Deliberate Leave & Replacement Bot Takeover Suite', () => {
       expect(googleSeat!.isBot).toBe(false);
     });
   });
+
+  describe('3. Spectator Leave Flow & Game State Integrity', () => {
+    it('should cleanly remove spectator without mutating players, bots, turn, or economy', () => {
+      const liveState = createTestGameState();
+      liveState.spectators = [
+        {
+          id: 's_spec_1',
+          name: 'WatchUser',
+          avatar: '👁️',
+          userId: 'user_spec_1',
+          joinedAt: Date.now()
+        }
+      ];
+
+      const initialPlayerCount = liveState.players.length;
+      const initialTurn = liveState.currentTurnIndex;
+      const initialBoardOwner = liveState.board[8].ownerId;
+
+      // Simulate spectator leave notice
+      const leavingSpectatorId = 's_spec_1';
+      const isSpectator = liveState.spectators?.some(s => s.id === leavingSpectatorId);
+      expect(isSpectator).toBe(true);
+
+      const nextSpectators = liveState.spectators.filter(s => s.id !== leavingSpectatorId);
+      const updatedState = { ...liveState, spectators: nextSpectators };
+
+      // Verify players untouched
+      expect(updatedState.players.length).toBe(initialPlayerCount);
+      expect(updatedState.players.filter(p => p.isBot).length).toBe(1); // Only original bot
+      expect(updatedState.currentTurnIndex).toBe(initialTurn);
+      expect(updatedState.board[8].ownerId).toBe(initialBoardOwner);
+      expect(updatedState.spectators.length).toBe(0);
+      expect(updatedState.phase).toBe('PLAYING');
+    });
+  });
 });

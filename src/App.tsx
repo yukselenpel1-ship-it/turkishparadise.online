@@ -2979,8 +2979,20 @@ export const App: React.FC = () => {
     terminateGameSession('PLAYER_LEFT_REPLACED', false);
   };
 
+  // Spectator Exit Action (Cleanly leave watch session without modifying room or players)
+  const handleSpectatorLeave = () => {
+    terminateGameSession('SPECTATOR_LEAVE', true);
+  };
+
   const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
   const isMeHost = isPlayerHost(gameState, myPlayerId);
+  const isMeSpectator = Boolean(
+    myPlayerId && (
+      myPlayerId.startsWith('s_') ||
+      gameState.spectators?.some(s => s.id === myPlayerId) ||
+      (!isMeHost && !gameState.players.some(p => p.id === myPlayerId))
+    )
+  );
 
   return (
     <div className={`w-full max-w-full bg-[#050811] text-white font-['Fredoka',sans-serif] flex flex-col select-none relative ${
@@ -3116,6 +3128,15 @@ export const App: React.FC = () => {
                 >
                   <LogOut className="w-3.5 h-3.5 shrink-0" />
                   <span className="hidden sm:inline">{t('endGameBtn')}</span>
+                </button>
+              ) : isMeSpectator ? (
+                <button
+                  onClick={handleSpectatorLeave}
+                  className="flex items-center gap-1 text-[10.5px] sm:text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl border border-slate-700 transition cursor-pointer active:scale-95 shrink-0"
+                  title={t('spectatorLeaveTooltip')}
+                >
+                  <LogOut className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">{t('spectatorLeaveBtn')}</span>
                 </button>
               ) : (
                 gameState.phase === 'PLAYING' && me && me.inGame && (

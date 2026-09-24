@@ -95,6 +95,8 @@ export interface TranslationDictionary {
   confirmLeaveGameBtn: string;
   replacementBotBadge: string;
   replacementBotShortBadge: string;
+  spectatorLeaveBtn: string;
+  spectatorLeaveTooltip: string;
 
   // Board & Center Controls
   turnOf: string;
@@ -382,6 +384,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     confirmLeaveGameBtn: 'Evet, Oyundan Çık',
     replacementBotBadge: 'Yerine Bot (Oyuncu ayrıldı)',
     replacementBotShortBadge: 'Yerine Bot',
+    spectatorLeaveBtn: 'Çık',
+    spectatorLeaveTooltip: 'İzlemeyi bırak ve ana menüye dön',
 
     // Board & Center Controls
     turnOf: 'Sıra: {name}',
@@ -667,6 +671,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     confirmLeaveGameBtn: 'Yes, Leave Game',
     replacementBotBadge: 'Replacement Bot (Player left)',
     replacementBotShortBadge: 'Replacement Bot',
+    spectatorLeaveBtn: 'Leave',
+    spectatorLeaveTooltip: 'Stop watching and return to main menu',
 
     // Board & Center Controls
     turnOf: "Turn: {name}",
