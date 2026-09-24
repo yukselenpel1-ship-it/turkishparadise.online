@@ -112,11 +112,13 @@ export interface TradeOffer {
   requestedMoney: number;
 }
 
+export type ChanceActionType = 'MONEY' | 'MOVE' | 'MOVE_TO' | 'JAIL' | 'REPAIR' | 'SEND_TO_JAIL' | 'DEMOLISH_BUILDING';
+
 export interface ChanceCard {
   id: string;
   title: string;
   description: string;
-  actionType: 'MONEY' | 'MOVE' | 'MOVE_TO' | 'JAIL' | 'REPAIR';
+  actionType: ChanceActionType;
   amount?: number;
   targetTileId?: number;
 }

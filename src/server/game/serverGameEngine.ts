@@ -26,6 +26,7 @@ import {
   isPlayerHost,
   executeTrade,
   evaluateTradeOfferByBot,
+  getBotChanceTarget,
   PLAYER_COLORS,
   PLAYER_AVATARS
 } from '../../engine/gameEngine';
@@ -43,6 +44,7 @@ export interface AuthenticatedActor {
 export type ServerErrorCode =
   | 'NOT_YOUR_TURN'
   | 'INVALID_ACTION'
+  | 'INVALID_TARGET'
   | 'INVALID_PHASE'
   | 'PLAYER_NOT_FOUND'
   | 'UNAUTHORIZED_PLAYER'
@@ -1156,6 +1158,72 @@ export function applyGameAction(
           addServerLog(nextState, `🛠️ ${actingPlayer.name} binaları için ${cost}₺ bakım ödedi.`, 'warning');
         }
         break;
+
+      case 'SEND_TO_JAIL': {
+        let targetPlayerId = action.payload?.targetPlayerId;
+        if (!targetPlayerId && (actingPlayer.isBot || actingPlayer.isAfk)) {
+          targetPlayerId = getBotChanceTarget(nextState, actingPlayer.id, card).targetPlayerId;
+        }
+
+        const eligibleTargets = nextState.players.filter(p => p.id !== actingPlayer.id && p.inGame && !p.isJailed);
+
+        if (targetPlayerId) {
+          const target = nextState.players.find(p => p.id === targetPlayerId);
+          if (!target || !target.inGame || target.id === actingPlayer.id || target.isJailed) {
+            return { success: false, error: 'INVALID_TARGET', errorMessage: 'Geçersiz hedef oyuncu seçimi.' };
+          }
+
+          target.position = JAIL_TILE_INDEX;
+          target.isJailed = true;
+          target.jailTurns = 0;
+          addServerLog(nextState, `🚨 ${actingPlayer.name}, Şans Kartı ile ${target.name} oyuncusunu Kodese gönderdi!`, 'danger');
+          events.push({ type: 'JAIL_STATUS', actorPlayerId: actingPlayer.id, targetPlayerId: target.id, actionId, timestamp: now });
+        } else if (eligibleTargets.length > 0) {
+          return { success: false, error: 'INVALID_TARGET', errorMessage: 'Kodese göndermek için bir hedef oyuncu seçmelisiniz.' };
+        } else {
+          addServerLog(nextState, `🔒 Kodese gönderilecek uygun rakip oyuncu bulunamadı.`, 'info');
+        }
+        break;
+      }
+
+      case 'DEMOLISH_BUILDING': {
+        let tileId = action.payload?.tileId;
+        if (tileId === undefined && (actingPlayer.isBot || actingPlayer.isAfk)) {
+          tileId = getBotChanceTarget(nextState, actingPlayer.id, card).tileId;
+        }
+
+        const eligibleTiles = nextState.board.filter(
+          t => t.ownerId && t.ownerId !== actingPlayer.id && (t.houses || 0) > 0 && !t.isMortgaged
+        );
+
+        if (tileId !== undefined) {
+          if (typeof tileId !== 'number' || !Number.isInteger(tileId) || tileId < 0 || tileId >= TOTAL_TILES) {
+            return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Yıkmak için geçerli bir mülk seçmelisiniz.' };
+          }
+          const targetTile = nextState.board[tileId];
+          const targetOwner = targetTile?.ownerId ? nextState.players.find(p => p.id === targetTile.ownerId) : undefined;
+          if (
+            !targetTile ||
+            !targetOwner ||
+            !targetOwner.inGame ||
+            targetOwner.id === actingPlayer.id ||
+            (targetTile.houses || 0) <= 0 ||
+            targetTile.isMortgaged
+          ) {
+            return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Bu yapı yıkılamaz veya geçerli değil.' };
+          }
+
+          targetTile.houses -= 1;
+          const remainingType = targetTile.houses === 4 ? 'Otel yıkıldı (4 Ev kaldı)' : `${targetTile.houses + 1}. Ev yıkıldı (${targetTile.houses} Ev kaldı)`;
+          addServerLog(nextState, `💥 ${actingPlayer.name}, Şans Kartı ile ${targetOwner.name} oyuncusunun "${targetTile.name}" mülkündeki 1 yapıyı yıktı! (${remainingType})`, 'warning');
+          events.push({ type: 'HOUSE_SOLD', actorPlayerId: actingPlayer.id, targetPlayerId: targetOwner.id, tileId: targetTile.id, amount: 0, actionId, timestamp: now });
+        } else if (eligibleTiles.length > 0) {
+          return { success: false, error: 'INVALID_PROPERTY', errorMessage: 'Yıkmak için geçerli bir mülk seçmelisiniz.' };
+        } else {
+          addServerLog(nextState, `🏚️ Yıkılacak rakip yapı bulunamadı.`, 'info');
+        }
+        break;
+      }
     }
 
     nextState.activeCard = undefined;

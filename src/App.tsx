@@ -30,7 +30,8 @@ import {
   declareBankruptcy,
   evaluateTradeOfferByBot,
   autoLiquidateDebtOrBankrupt,
-  executeForceBuy
+  executeForceBuy,
+  getBotChanceTarget
 } from './engine/gameEngine';
 import {
   loginAsGuest,
@@ -1212,7 +1213,7 @@ export const App: React.FC = () => {
         } else if (actionType === 'CONFIRM_CHANCE') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
           if (liveState.pendingAction === 'CHANCE_CARD') {
-            handleConfirmChanceCard();
+            handleConfirmChanceCard(payload);
           }
         } else if (
           actionType === 'SELL_TO_BANK' &&
@@ -2645,14 +2646,24 @@ export const App: React.FC = () => {
   };
 
   // Apply Chance Card
-  const handleConfirmChanceCard = () => {
+  const handleConfirmChanceCard = (payload?: { targetPlayerId?: string; tileId?: number }) => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
     const isMeHost = isPlayerHost(liveState, liveMyId);
+    const currentTurnPlayer = liveState.players[liveState.currentTurnIndex];
+    const actingActorId = currentTurnPlayer?.isBot || currentTurnPlayer?.isAfk
+      ? currentTurnPlayer.id
+      : (liveMyId || currentTurnPlayer?.id);
+
+    // Compute bot target payload if bot/afk and no payload provided
+    let finalPayload = payload;
+    if (!finalPayload && currentTurnPlayer && (currentTurnPlayer.isBot || currentTurnPlayer.isAfk) && liveState.activeCard) {
+      finalPayload = getBotChanceTarget(liveState, currentTurnPlayer.id, liveState.activeCard);
+    }
 
     // ⚡ SERVER-AUTHORITATIVE MODE
     if (isServerAuthoritativeEnabled()) {
-      dispatchServerAction('CONFIRM_CHANCE', liveMyId || undefined);
+      dispatchServerAction('CONFIRM_CHANCE', actingActorId || undefined, finalPayload);
       return;
     }
 
@@ -2660,11 +2671,11 @@ export const App: React.FC = () => {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
       if (liveState.roomId && liveMyId) {
-        syncManager.sendGameAction(liveState.roomId, liveMyId, 'CONFIRM_CHANCE');
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'CONFIRM_CHANCE', finalPayload);
       }
       return;
     }
-    updateAndBroadcastGameState((prev) => applyChanceCard(prev));
+    updateAndBroadcastGameState((prev) => applyChanceCard(prev, finalPayload));
   };
 
   // Trade Offer Action (Human-to-Bot or Human-to-Human)
@@ -3215,7 +3226,13 @@ export const App: React.FC = () => {
 
       {/* Chance Card Modal */}
       {gameState.pendingAction === 'CHANCE_CARD' && gameState.activeCard && (
-        <ChanceModal card={gameState.activeCard} onConfirm={handleConfirmChanceCard} />
+        <ChanceModal
+          card={gameState.activeCard}
+          currentPlayer={me}
+          players={gameState.players}
+          board={gameState.board}
+          onConfirm={handleConfirmChanceCard}
+        />
       )}
 
       {/* Winner Modal */}

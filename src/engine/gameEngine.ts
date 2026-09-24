@@ -914,7 +914,52 @@ export function handleTileLanding(
   return state;
 }
 
-export function applyChanceCard(state: GameState): GameState {
+/**
+ * Deterministic Bot Target Selection for Interactive Chance Cards
+ */
+export function getBotChanceTarget(
+  state: GameState,
+  botPlayerId: string,
+  card: ChanceCard
+): { targetPlayerId?: string; tileId?: number } {
+  if (card.actionType === 'SEND_TO_JAIL') {
+    const candidates = state.players.filter(p => p.id !== botPlayerId && p.inGame && !p.isJailed);
+    if (candidates.length === 0) return {};
+
+    // Rank opponents by net worth (cash + property values + house costs)
+    const scoredCandidates = candidates.map(p => {
+      const cash = p.money || 0;
+      const propertyVal = state.board
+        .filter(t => t.ownerId === p.id)
+        .reduce((sum, t) => sum + (t.price || 0) + ((t.houses || 0) * (t.houseCost || 100)), 0);
+      return { player: p, netWorth: cash + propertyVal };
+    });
+
+    scoredCandidates.sort((a, b) => b.netWorth - a.netWorth || (b.player.money || 0) - (a.player.money || 0));
+    return { targetPlayerId: scoredCandidates[0].player.id };
+  }
+
+  if (card.actionType === 'DEMOLISH_BUILDING') {
+    const candidateTiles = state.board.filter(
+      t => t.ownerId && t.ownerId !== botPlayerId && (t.houses || 0) > 0 && !t.isMortgaged
+    );
+    if (candidateTiles.length === 0) return {};
+
+    // Rank opponent property tiles by strategic rent and house investment
+    const scoredTiles = candidateTiles.map(t => {
+      const rent = calculateRent(t, state.board);
+      const score = rent * 10 + (t.houses || 0) * (t.houseCost || 100) + (t.price || 0);
+      return { tile: t, score };
+    });
+
+    scoredTiles.sort((a, b) => b.score - a.score || (b.tile.houses || 0) - (a.tile.houses || 0) || a.tile.id - b.tile.id);
+    return { tileId: scoredTiles[0].tile.id };
+  }
+
+  return {};
+}
+
+export function applyChanceCard(state: GameState, payload?: { targetPlayerId?: string; tileId?: number }): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
   const player = newState.players[newState.currentTurnIndex];
   const card = newState.activeCard;
@@ -987,6 +1032,47 @@ export function applyChanceCard(state: GameState): GameState {
         checkBankruptcy(newState, player);
       }
       break;
+
+    case 'SEND_TO_JAIL': {
+      let targetPlayerId = payload?.targetPlayerId;
+      if (!targetPlayerId && (player.isBot || player.isAfk)) {
+        targetPlayerId = getBotChanceTarget(newState, player.id, card).targetPlayerId;
+      }
+      const targetPlayer = targetPlayerId ? newState.players.find(p => p.id === targetPlayerId && p.inGame && !p.isJailed && p.id !== player.id) : undefined;
+      if (targetPlayer) {
+        targetPlayer.position = JAIL_TILE_INDEX;
+        targetPlayer.isJailed = true;
+        targetPlayer.jailTurns = 0;
+        addLog(newState, `🚨 ${player.name}, Şans Kartı ile ${targetPlayer.name} oyuncusunu Kodese gönderdi!`, 'danger');
+      } else {
+        addLog(newState, `🔒 Kodese gönderilecek uygun rakip oyuncu bulunamadı.`, 'info');
+      }
+      break;
+    }
+
+    case 'DEMOLISH_BUILDING': {
+      let tileId = payload?.tileId;
+      if (tileId === undefined && (player.isBot || player.isAfk)) {
+        tileId = getBotChanceTarget(newState, player.id, card).tileId;
+      }
+      const targetTile = tileId !== undefined ? newState.board[tileId] : undefined;
+      const targetOwner = targetTile?.ownerId ? newState.players.find(p => p.id === targetTile.ownerId) : undefined;
+      if (
+        targetTile &&
+        targetOwner &&
+        targetOwner.inGame &&
+        targetOwner.id !== player.id &&
+        (targetTile.houses || 0) > 0 &&
+        !targetTile.isMortgaged
+      ) {
+        targetTile.houses -= 1;
+        const remainingType = targetTile.houses === 4 ? 'Otel yıkıldı (4 Ev kaldı)' : `${targetTile.houses + 1}. Ev yıkıldı (${targetTile.houses} Ev kaldı)`;
+        addLog(newState, `💥 ${player.name}, Şans Kartı ile ${targetOwner.name} oyuncusunun "${targetTile.name}" mülkündeki 1 yapıyı yıktı! (${remainingType})`, 'warning');
+      } else {
+        addLog(newState, `🏚️ Yıkılacak rakip yapı bulunamadı.`, 'info');
+      }
+      break;
+    }
   }
 
   newState.activeCard = undefined;

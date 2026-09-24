@@ -104,5 +104,17 @@ export const CHANCE_CARDS: ChanceCard[] = [
     description: 'Vapur iskelesinde unutulmuş cüzdan buldunuz ve teslim ödülü olarak 50₺ aldınız!',
     actionType: 'MONEY',
     amount: 50
+  },
+  {
+    id: 'c16',
+    title: 'Bir Oyuncuyu Kodese Gönder',
+    description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!',
+    actionType: 'SEND_TO_JAIL'
+  },
+  {
+    id: 'c17',
+    title: 'Bir Yapıyı Yık',
+    description: 'Bir rakibinizin mülkündeki 1 adet yapıyı (ev veya otel) yıkın!',
+    actionType: 'DEMOLISH_BUILDING'
   }
 ];

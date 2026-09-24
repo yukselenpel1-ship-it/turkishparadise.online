@@ -215,6 +215,14 @@ export function validateActionRequest(body: any): SchemaValidationResult {
   } else if (type === 'SET_AFK' || type === 'AUTO_LIQUIDATE') {
     const targetPlayerId = typeof payload?.targetPlayerId === 'string' ? payload.targetPlayerId.trim() : undefined;
     sanitizedPayload = { targetPlayerId };
+  } else if (type === 'CONFIRM_CHANCE') {
+    const targetPlayerId = typeof payload?.targetPlayerId === 'string' && payload.targetPlayerId.trim().length > 0
+      ? payload.targetPlayerId.trim()
+      : undefined;
+    const tileId = typeof payload?.tileId === 'number' && Number.isInteger(payload.tileId) && payload.tileId >= 0 && payload.tileId < TOTAL_TILES
+      ? payload.tileId
+      : undefined;
+    sanitizedPayload = { targetPlayerId, tileId };
   } else if (payload && typeof payload === 'object') {
     sanitizedPayload = {};
   }

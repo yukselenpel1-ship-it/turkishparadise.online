@@ -4,7 +4,7 @@ import { InMemoryRoomStorage, UnavailableRoomStorage, getRoomStateKey } from '..
 import { AuthenticatedActor, resolveAuthenticatedActor, validateRoomReadAccess } from '../src/server/auth/authMiddleware';
 import { signUserToken, signGuestToken } from '../src/server/auth/tokenUtil';
 import { registerNotificationListener, clearNotificationListeners, RoomStateUpdateNotification } from '../src/server/notification/mqttNotifier';
-import { createInitialState } from '../src/engine/gameEngine';
+import { createInitialState, JAIL_TILE_INDEX } from '../src/engine/gameEngine';
 import { GameState, Player } from '../src/types/game';
 
 function createMockRoomState(roomId = 'TR-1001'): GameState {
@@ -456,6 +456,91 @@ describe('Serverless Action Endpoint & Middleware (/api/game/action & /api/game/
       const saved = await storage.getRoomState('TR-1001');
       expect(saved?.players[0].money).toBe(10);
       expect(saved?.board[1].isMortgaged).toBe(true);
+    });
+  });
+
+  describe('10. Server-Authoritative CONFIRM_CHANCE Pipeline (SEND_TO_JAIL and DEMOLISH_BUILDING)', () => {
+    it('processes CONFIRM_CHANCE with SEND_TO_JAIL payload end-to-end and updates Redis canonical state', async () => {
+      // Start game
+      await executeGameActionPipeline(
+        { actionId: 'act_start_game', roomId: 'TR-1001', playerId: 'p_host', expectedVersion: 1, type: 'START_GAME' },
+        hostActor,
+        { storage }
+      );
+
+      const state = await storage.getRoomState('TR-1001');
+      state!.pendingAction = 'CHANCE_CARD';
+      state!.activeCard = {
+        id: 'c16',
+        title: 'Bir Oyuncuyu Kodese Gönder',
+        description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!',
+        actionType: 'SEND_TO_JAIL'
+      };
+      await storage.saveRoomStateWithVersion('TR-1001', 2, state!);
+
+      const res = await executeGameActionPipeline(
+        {
+          actionId: 'act_confirm_jail_pipeline',
+          roomId: 'TR-1001',
+          playerId: 'p_host',
+          expectedVersion: 3,
+          type: 'CONFIRM_CHANCE',
+          payload: { targetPlayerId: 'p_guest' }
+        },
+        hostActor,
+        { storage }
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.state?.players[1].isJailed).toBe(true);
+      expect(res.state?.players[1].position).toBe(JAIL_TILE_INDEX);
+      expect(res.state?.pendingAction).toBe('NONE');
+      expect(res.state?.version).toBe(4);
+
+      const saved = await storage.getRoomState('TR-1001');
+      expect(saved?.players[1].isJailed).toBe(true);
+    });
+
+    it('processes CONFIRM_CHANCE with DEMOLISH_BUILDING payload end-to-end and updates Redis canonical state', async () => {
+      // Start game
+      await executeGameActionPipeline(
+        { actionId: 'act_start_game', roomId: 'TR-1001', playerId: 'p_host', expectedVersion: 1, type: 'START_GAME' },
+        hostActor,
+        { storage }
+      );
+
+      const state = await storage.getRoomState('TR-1001');
+      state!.pendingAction = 'CHANCE_CARD';
+      state!.board[1].ownerId = 'p_guest';
+      state!.board[1].houses = 2;
+      state!.activeCard = {
+        id: 'c17',
+        title: 'Bir Yapıyı Yık',
+        description: 'Bir rakibinizin mülkündeki 1 adet yapıyı yıkın!',
+        actionType: 'DEMOLISH_BUILDING'
+      };
+      await storage.saveRoomStateWithVersion('TR-1001', 2, state!);
+
+      const res = await executeGameActionPipeline(
+        {
+          actionId: 'act_confirm_demo_pipeline',
+          roomId: 'TR-1001',
+          playerId: 'p_host',
+          expectedVersion: 3,
+          type: 'CONFIRM_CHANCE',
+          payload: { tileId: 1 }
+        },
+        hostActor,
+        { storage }
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.state?.board[1].houses).toBe(1);
+      expect(res.state?.pendingAction).toBe('NONE');
+      expect(res.state?.version).toBe(4);
+
+      const saved = await storage.getRoomState('TR-1001');
+      expect(saved?.board[1].houses).toBe(1);
     });
   });
 });

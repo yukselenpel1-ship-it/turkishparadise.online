@@ -760,4 +760,255 @@ describe('Server-Side Game Engine (applyGameAction)', () => {
       expect(res.events?.some(e => e.type === 'BANKRUPTCY')).toBe(true);
     });
   });
+
+  describe('New Chance Cards: SEND_TO_JAIL and DEMOLISH_BUILDING', () => {
+    let chanceState: GameState;
+
+    beforeEach(() => {
+      chanceState = createInitialState();
+      chanceState.players = createTestPlayers();
+      chanceState.hostPlayerId = 'user_host';
+      chanceState.phase = 'PLAYING';
+      chanceState.currentTurnIndex = 0; // Host's turn
+      chanceState.diceRolled = true;
+      chanceState.pendingAction = 'CHANCE_CARD';
+    });
+
+    it('successfully sends selected target player to jail with SEND_TO_JAIL card', () => {
+      chanceState.activeCard = {
+        id: 'c16',
+        title: 'Bir Oyuncuyu Kodese Gönder',
+        description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!',
+        actionType: 'SEND_TO_JAIL'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_jail_1',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE',
+        payload: { targetPlayerId: 'player_guest' }
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.players[1].isJailed).toBe(true);
+      expect(res.state?.players[1].jailTurns).toBe(0);
+      expect(res.state?.players[1].position).toBe(JAIL_TILE_INDEX);
+      expect(res.state?.players[0].isJailed).toBe(false); // Host is NOT jailed
+      expect(res.state?.pendingAction).toBe('NONE');
+      expect(res.events?.some(e => e.type === 'JAIL_STATUS' && e.targetPlayerId === 'player_guest')).toBe(true);
+    });
+
+    it('rejects targeting oneself with SEND_TO_JAIL', () => {
+      chanceState.activeCard = {
+        id: 'c16',
+        title: 'Bir Oyuncuyu Kodese Gönder',
+        description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!',
+        actionType: 'SEND_TO_JAIL'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_jail_self',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE',
+        payload: { targetPlayerId: 'player_host' }
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('INVALID_TARGET');
+    });
+
+    it('rejects targeting an already jailed player with SEND_TO_JAIL', () => {
+      chanceState.players[1].isJailed = true;
+      chanceState.activeCard = {
+        id: 'c16',
+        title: 'Bir Oyuncuyu Kodese Gönder',
+        description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!',
+        actionType: 'SEND_TO_JAIL'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_jail_already',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE',
+        payload: { targetPlayerId: 'player_guest' }
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('INVALID_TARGET');
+    });
+
+    it('completes cleanly when no eligible opponents exist for SEND_TO_JAIL', () => {
+      chanceState.players[1].isJailed = true; // No free opponent
+      chanceState.activeCard = {
+        id: 'c16',
+        title: 'Bir Oyuncuyu Kodese Gönder',
+        description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!',
+        actionType: 'SEND_TO_JAIL'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_jail_none',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE'
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.pendingAction).toBe('NONE');
+    });
+
+    it('bot automatically selects wealthiest opponent for SEND_TO_JAIL', () => {
+      chanceState.players[0].isBot = true;
+      chanceState.players[1].money = 2500;
+      chanceState.activeCard = {
+        id: 'c16',
+        title: 'Bir Oyuncuyu Kodese Gönder',
+        description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!',
+        actionType: 'SEND_TO_JAIL'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_jail_bot',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE'
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.players[1].isJailed).toBe(true);
+    });
+
+    it('successfully demolishes 1 building on opponent property with DEMOLISH_BUILDING card and provides NO refund', () => {
+      chanceState.board[1].ownerId = 'player_guest';
+      chanceState.board[1].houses = 3;
+      const initialGuestMoney = chanceState.players[1].money;
+
+      chanceState.activeCard = {
+        id: 'c17',
+        title: 'Bir Yapıyı Yık',
+        description: 'Bir rakibinizin mülkündeki 1 adet yapıyı yıkın!',
+        actionType: 'DEMOLISH_BUILDING'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_demo_1',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE',
+        payload: { tileId: 1 }
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.board[1].houses).toBe(2); // Reduced from 3 to 2
+      expect(res.state?.players[1].money).toBe(initialGuestMoney); // NO cash refund!
+      expect(res.state?.pendingAction).toBe('NONE');
+      expect(res.events?.some(e => e.type === 'HOUSE_SOLD' && e.tileId === 1 && e.amount === 0)).toBe(true);
+    });
+
+    it('rejects demolishing on own property', () => {
+      chanceState.board[1].ownerId = 'player_host';
+      chanceState.board[1].houses = 2;
+
+      chanceState.activeCard = {
+        id: 'c17',
+        title: 'Bir Yapıyı Yık',
+        description: 'Bir rakibinizin mülkündeki 1 adet yapıyı yıkın!',
+        actionType: 'DEMOLISH_BUILDING'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_demo_own',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE',
+        payload: { tileId: 1 }
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('INVALID_PROPERTY');
+    });
+
+    it('rejects demolishing on property with 0 houses', () => {
+      chanceState.board[1].ownerId = 'player_guest';
+      chanceState.board[1].houses = 0;
+
+      chanceState.activeCard = {
+        id: 'c17',
+        title: 'Bir Yapıyı Yık',
+        description: 'Bir rakibinizin mülkündeki 1 adet yapıyı yıkın!',
+        actionType: 'DEMOLISH_BUILDING'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_demo_zero',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE',
+        payload: { tileId: 1 }
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('INVALID_PROPERTY');
+    });
+
+    it('completes cleanly when no opponent properties have buildings', () => {
+      chanceState.activeCard = {
+        id: 'c17',
+        title: 'Bir Yapıyı Yık',
+        description: 'Bir rakibinizin mülkündeki 1 adet yapıyı yıkın!',
+        actionType: 'DEMOLISH_BUILDING'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_demo_nobuildings',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE'
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.pendingAction).toBe('NONE');
+    });
+
+    it('bot automatically selects highest rent opponent property for DEMOLISH_BUILDING', () => {
+      chanceState.players[0].isBot = true;
+      chanceState.board[1].ownerId = 'player_guest';
+      chanceState.board[1].houses = 1;
+      chanceState.board[1].rent = [10, 40, 100, 200, 300, 450];
+
+      chanceState.board[3].ownerId = 'player_guest';
+      chanceState.board[3].houses = 4;
+      chanceState.board[3].rent = [20, 80, 200, 400, 600, 900];
+
+      chanceState.activeCard = {
+        id: 'c17',
+        title: 'Bir Yapıyı Yık',
+        description: 'Bir rakibinizin mülkündeki 1 adet yapıyı yıkın!',
+        actionType: 'DEMOLISH_BUILDING'
+      };
+
+      const action: GameAction = {
+        actionId: 'act_demo_bot',
+        roomId: chanceState.roomId,
+        playerId: 'player_host',
+        type: 'CONFIRM_CHANCE'
+      };
+
+      const res = applyGameAction(chanceState, action, hostActor);
+      expect(res.success).toBe(true);
+      expect(res.state?.board[3].houses).toBe(3); // Picked tile 3 with 4 houses
+    });
+  });
 });

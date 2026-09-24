@@ -806,7 +806,9 @@ export const CHANCE_CARDS_TRANSLATIONS: Record<Language, Record<string, { title:
     c12: { title: 'Hayır Kurumu Bağışı', description: 'Şehir vakfına 60₺ bağışta bulundunuz.' },
     c13: { title: 'Tatil Köyü Geliri', description: 'Antalya\'daki turizm yatırımlarınızdan 120₺ kar payı aldınız.' },
     c14: { title: 'Belediye Harç Ödemesi', description: 'Ruhsat ve çevre temizlik harcı olarak 70₺ ödeyin.' },
-    c15: { title: 'Şanslı Buluntu', description: 'Vapur iskelesinde unutulmuş cüzdan buldunuz ve teslim ödülü olarak 50₺ aldınız!' }
+    c15: { title: 'Şanslı Buluntu', description: 'Vapur iskelesinde unutulmuş cüzdan buldunuz ve teslim ödülü olarak 50₺ aldınız!' },
+    c16: { title: 'Bir Oyuncuyu Kodese Gönder', description: 'İstediğiniz bir rakip oyuncuyu doğrudan Kodese gönderin!' },
+    c17: { title: 'Bir Yapıyı Yık', description: 'Bir rakibinizin mülkündeki 1 adet yapıyı (ev veya otel) yıkın!' }
   },
   en: {
     c1: { title: 'Bank Dividend', description: 'Your government bonds matured. Collect $200 from the bank.' },
@@ -823,7 +825,9 @@ export const CHANCE_CARDS_TRANSLATIONS: Record<Language, Record<string, { title:
     c12: { title: 'Charity Donation', description: 'You made a donation of $60 to the local charity foundation.' },
     c13: { title: 'Resort Profits', description: 'You received a $120 dividend from your tourism investments in Antalya.' },
     c14: { title: 'Municipal Fee', description: 'Pay $70 for business licensing and environmental sanitation fees.' },
-    c15: { title: 'Lucky Find', description: 'You returned a lost wallet at the ferry pier and received a $50 reward!' }
+    c15: { title: 'Lucky Find', description: 'You returned a lost wallet at the ferry pier and received a $50 reward!' },
+    c16: { title: 'Send a Player to Jail', description: 'Send any rival player of your choice directly to Jail!' },
+    c17: { title: 'Demolish a Building', description: 'Demolish 1 building (house or hotel) on any rival\'s property!' }
   }
 };
 
