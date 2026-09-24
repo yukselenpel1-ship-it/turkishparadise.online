@@ -57,7 +57,8 @@ export type ServerErrorCode =
   | 'DUPLICATE_ACTION'
   | 'STORAGE_UNAVAILABLE'
   | 'DICE_ALREADY_ROLLED'
-  | 'DICE_NOT_ROLLED';
+  | 'DICE_NOT_ROLLED'
+  | 'SEAT_ALREADY_TAKEN';
 
 export interface ServerGameEvent {
   type:
@@ -75,7 +76,9 @@ export interface ServerGameEvent {
     | 'TURN_CHANGED'
     | 'GAME_STARTED'
     | 'PLAYER_ACTIVE'
-    | 'PLAYER_AFK';
+    | 'PLAYER_AFK'
+    | 'PLAYER_REPLACED_WITH_BOT'
+    | 'BOT_TAKEN_OVER';
   actorPlayerId: string;
   targetPlayerId?: string;
   tileId?: number;
@@ -554,6 +557,8 @@ export function applyGameAction(
         jailTurns: 0,
         inGame: true,
         isBot: true,
+        isReplacementBot: false,
+        botOrigin: 'HOST_ADDED',
         botDifficulty,
         isHost: false,
         lapsCompleted: 0,
@@ -647,6 +652,51 @@ export function applyGameAction(
     return { success: false, error: 'INVALID_PHASE', errorMessage: 'Oyun henüz başlamadı veya sona erdi.' };
   }
 
+  // ACTION: TAKE_OVER_REPLACEMENT_BOT (New player takes over a vacant replacement bot seat)
+  if (type === 'TAKE_OVER_REPLACEMENT_BOT') {
+    const targetId = action.payload?.targetPlayerId || action.playerId;
+    const targetSlot = nextState.players.find(p => p.id === targetId);
+    if (!targetSlot) {
+      return { success: false, error: 'PLAYER_NOT_FOUND', errorMessage: 'Devralınacak koltuk bulunamadı.' };
+    }
+    if (!targetSlot.inGame || !targetSlot.isBot || (!targetSlot.isReplacementBot && targetSlot.botOrigin !== 'PLAYER_REPLACEMENT')) {
+      return { success: false, error: 'INVALID_ACTION', errorMessage: 'Yalnızca ayrılan oyuncuların bot koltukları devralınabilir.' };
+    }
+    if (!targetSlot.isBot) {
+      return { success: false, error: 'SEAT_ALREADY_TAKEN', errorMessage: 'Bu koltuk başka bir oyuncu tarafından devralındı.' };
+    }
+
+    const newName = action.payload?.name || authenticatedActor.displayName || 'Yeni Oyuncu';
+    const newAvatar = action.payload?.avatar || '👤';
+    const newColor = action.payload?.color || targetSlot.color;
+    const newUserId = authenticatedActor.userId || action.payload?.userId;
+    const newPKey = authenticatedActor.participantKey || action.payload?.participantKey;
+    const newClientId = action.payload?.clientId;
+    const newTabId = action.payload?.tabId;
+
+    targetSlot.name = newName;
+    targetSlot.avatar = newAvatar;
+    targetSlot.color = newColor;
+    targetSlot.userId = newUserId;
+    targetSlot.participantKey = newPKey;
+    targetSlot.clientId = newClientId;
+    targetSlot.tabId = newTabId;
+    targetSlot.isBot = false;
+    targetSlot.isReplacementBot = false;
+    targetSlot.botOrigin = undefined;
+    targetSlot.isAfk = false;
+    targetSlot.lastActivityAt = now;
+
+    addServerLog(nextState, `🎮 ${newName} devam eden oyuna katıldı ve bot koltuğunu devraldı.`, 'success');
+    events.push({
+      type: 'BOT_TAKEN_OVER',
+      actorPlayerId: targetSlot.id,
+      actionId,
+      timestamp: now
+    });
+    return { success: true, state: nextState, events };
+  }
+
   // Resolve Acting Player
   const actingPlayer = nextState.players.find(p => p.id === action.playerId);
   if (!actingPlayer) {
@@ -660,6 +710,33 @@ export function applyGameAction(
 
   if (!matchesUserId && !matchesParticipantKey && !matchesDirectId && process.env.NODE_ENV === 'production') {
     return { success: false, error: 'UNAUTHORIZED_PLAYER', errorMessage: 'Kimlik doğrulaması başarısız: Yetkisiz oyuncu.' };
+  }
+
+  // ACTION: LEAVE_AND_REPLACE_WITH_BOT (Player deliberately leaves and delegates seat to Bot)
+  if (type === 'LEAVE_AND_REPLACE_WITH_BOT') {
+    if (!actingPlayer.inGame) {
+      return { success: false, error: 'INVALID_ACTION', errorMessage: 'Elenen oyuncular bu işlemi yapamaz.' };
+    }
+    const originalName = actingPlayer.name;
+    actingPlayer.isBot = true;
+    actingPlayer.isReplacementBot = true;
+    actingPlayer.botOrigin = 'PLAYER_REPLACEMENT';
+    actingPlayer.isAfk = false;
+    actingPlayer.replacedPlayerName = originalName;
+    actingPlayer.userId = undefined;
+    actingPlayer.participantKey = undefined;
+    actingPlayer.clientId = undefined;
+    actingPlayer.tabId = undefined;
+    actingPlayer.connectionId = undefined;
+
+    addServerLog(nextState, `👋 ${originalName} oyundan ayrıldı. Yerini bot devraldı.`, 'warning');
+    events.push({
+      type: 'PLAYER_REPLACED_WITH_BOT',
+      actorPlayerId: action.playerId,
+      actionId,
+      timestamp: now
+    });
+    return { success: true, state: nextState, events };
   }
 
   if (!actingPlayer.inGame) {

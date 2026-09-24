@@ -72,6 +72,8 @@ export interface ChatMessage {
   isSystem?: boolean;
 }
 
+export type BotOrigin = 'HOST_ADDED' | 'PLAYER_REPLACEMENT';
+
 export interface Player {
   id: string;
   userId?: string;
@@ -89,12 +91,16 @@ export interface Player {
   inGame: boolean;
   isBot: boolean;
   botDifficulty?: BotDifficulty;
+  isReplacementBot?: boolean;
+  botOrigin?: BotOrigin;
+  replacedPlayerName?: string;
   lapsCompleted: number;
   firstLapPurchases: number;
   totalRentCollected?: number;
   isHost?: boolean;
   isOnline?: boolean;
   isAfk?: boolean;
+  lastActivityAt?: number;
 }
 
 export interface GameLog {

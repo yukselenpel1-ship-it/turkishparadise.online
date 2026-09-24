@@ -31,7 +31,9 @@ import {
   evaluateTradeOfferByBot,
   autoLiquidateDebtOrBankrupt,
   executeForceBuy,
-  getBotChanceTarget
+  getBotChanceTarget,
+  leaveAndReplaceWithBot,
+  takeOverReplacementBot
 } from './engine/gameEngine';
 import { INITIAL_BOARD } from './data/boardData';
 import {
@@ -153,6 +155,7 @@ export const App: React.FC = () => {
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isEndGameModalOpen, setIsEndGameModalOpen] = useState(false);
+  const [isLeaveGameModalOpen, setIsLeaveGameModalOpen] = useState(false);
   const [profileInitialTab, setProfileInitialTab] = useState<ProfileTab>('stats');
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
   const { t, formatMoney } = useLanguage();
@@ -258,6 +261,7 @@ export const App: React.FC = () => {
     setIsTransactionsModalOpen(false);
     setIsProfileModalOpen(false);
     setIsEndGameModalOpen(false);
+    setIsLeaveGameModalOpen(false);
     setTradeSelectedTile(undefined);
     pendingRemoteStateRef.current = null;
     setIsMoving(false);
@@ -778,6 +782,44 @@ export const App: React.FC = () => {
 
         // Capacity & Phase Checks
         if (liveState.phase !== 'LOBBY') {
+          if (liveState.phase === 'PLAYING') {
+            const replacementBot = currentPlayers.find(
+              (p) => p.inGame && p.isBot && (p.isReplacementBot === true || p.botOrigin === 'PLAYER_REPLACEMENT')
+            );
+            if (replacementBot) {
+              const targetBotId = replacementBot.id;
+              const rawName = (newPlayer.name || 'Oyuncu').trim().substring(0, 30);
+              const sanitizedName = rawName.replace(/[<>]/g, '') || 'Oyuncu';
+
+              if (isServerAuthoritativeEnabled()) {
+                dispatchServerAction('TAKE_OVER_REPLACEMENT_BOT', targetBotId, {
+                  targetPlayerId: targetBotId,
+                  name: sanitizedName,
+                  avatar: newPlayer.avatar,
+                  color: newPlayer.color,
+                  userId: newPlayer.userId,
+                  participantKey: pKey,
+                  clientId: newPlayer.clientId,
+                  tabId: newPlayer.tabId
+                });
+              } else {
+                const updatedState = takeOverReplacementBot(liveState, targetBotId, {
+                  name: sanitizedName,
+                  avatar: newPlayer.avatar,
+                  color: newPlayer.color,
+                  userId: newPlayer.userId,
+                  participantKey: pKey,
+                  clientId: newPlayer.clientId,
+                  tabId: newPlayer.tabId
+                });
+                gameStateRef.current = updatedState;
+                setGameState(updatedState);
+                syncRoomState(liveState.roomId || '', updatedState);
+              }
+              syncManager.sendJoinAccept(liveState.roomId || '', targetBotId, gameStateRef.current, requestId, pKey);
+              return;
+            }
+          }
           syncManager.sendJoinRejected(liveState.roomId || '', newPlayer.id, 'Oyun zaten başladı! İzleyici olarak katılabilirsiniz.', requestId, pKey);
           return;
         }
@@ -1240,6 +1282,8 @@ export const App: React.FC = () => {
           ) {
             handleDeclineIncomingTrade();
           }
+        } else if (actionType === 'LEAVE_AND_REPLACE_WITH_BOT') {
+          updateAndBroadcastGameState((prev) => leaveAndReplaceWithBot(prev, senderPlayerId));
         } else if (actionType === 'CHAT_MESSAGE' && payload?.text && typeof payload.text === 'string') {
           const sanitizedText = payload.text.trim().substring(0, 250);
           if (sanitizedText.length > 0) {
@@ -2121,6 +2165,8 @@ export const App: React.FC = () => {
       firstLapPurchases: 0,
       inGame: true,
       isBot: true,
+      isReplacementBot: false,
+      botOrigin: 'HOST_ADDED',
       botDifficulty: difficulty,
       isAfk: false
     };
@@ -2911,6 +2957,28 @@ export const App: React.FC = () => {
     terminateGameSession('HOST_ENDED_GAME', true);
   };
 
+  // Non-Host Deliberate Leave Game Action (Delegates seat to Bot)
+  const handleLeaveAndReplaceWithBot = async () => {
+    setIsLeaveGameModalOpen(false);
+    const liveMyId = myPlayerIdRef.current;
+    const liveState = gameStateRef.current;
+    const roomId = liveState.roomId || liveState.settings?.roomCode;
+
+    if (liveMyId && roomId) {
+      if (isServerAuthoritativeEnabled()) {
+        try {
+          await dispatchServerAction('LEAVE_AND_REPLACE_WITH_BOT', liveMyId);
+        } catch (e) {}
+      } else {
+        syncManager.sendGameAction(roomId, liveMyId, 'LEAVE_AND_REPLACE_WITH_BOT');
+        updateAndBroadcastGameState((prev) => leaveAndReplaceWithBot(prev, liveMyId), true);
+      }
+    }
+
+    // Invalidate local credentials and navigate safely to Lobby
+    terminateGameSession('PLAYER_LEFT_REPLACED', false);
+  };
+
   const me = myPlayerId ? gameState.players.find((p) => p.id === myPlayerId) : undefined;
   const isMeHost = isPlayerHost(gameState, myPlayerId);
 
@@ -3040,7 +3108,7 @@ export const App: React.FC = () => {
                 </span>
               </button>
 
-              {isMeHost && (
+              {isMeHost ? (
                 <button
                   onClick={() => setIsEndGameModalOpen(true)}
                   className="flex items-center gap-1 text-[10.5px] sm:text-xs font-bold bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl border border-rose-500/30 transition cursor-pointer active:scale-95 shrink-0"
@@ -3049,6 +3117,17 @@ export const App: React.FC = () => {
                   <LogOut className="w-3.5 h-3.5 shrink-0" />
                   <span className="hidden sm:inline">{t('endGameBtn')}</span>
                 </button>
+              ) : (
+                gameState.phase === 'PLAYING' && me && me.inGame && (
+                  <button
+                    onClick={() => setIsLeaveGameModalOpen(true)}
+                    className="flex items-center gap-1 text-[10.5px] sm:text-xs font-bold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl border border-amber-500/30 transition cursor-pointer active:scale-95 shrink-0"
+                    title={t('leaveGameTooltip')}
+                  >
+                    <LogOut className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">{t('leaveGameBtn')}</span>
+                  </button>
+                )
               )}
             </div>
           </header>
@@ -3379,6 +3458,45 @@ export const App: React.FC = () => {
                 className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-black text-xs sm:text-sm shadow-lg shadow-rose-900/30 border border-rose-500/50 transition active:scale-95 cursor-pointer"
               >
                 {t('confirmEndGameBtn')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leave Game Confirmation Modal (Non-Host Players) */}
+      {isLeaveGameModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-gradient-to-b from-[#0e1628] to-[#070b14] border border-amber-500/30 rounded-2xl p-6 sm:p-7 max-w-md w-full shadow-[0_10px_40px_rgba(0,0,0,0.8)] text-center relative overflow-hidden">
+            {/* Top decorative gradient glow */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 bg-gradient-to-r from-transparent via-amber-500 to-transparent" />
+
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4 text-amber-400 shadow-inner">
+              <LogOut className="w-6 h-6 sm:w-7 sm:h-7" />
+            </div>
+
+            <h3 className="text-base sm:text-lg font-black text-white mb-2">
+              {t('leaveGameModalTitle')}
+            </h3>
+            
+            <p className="text-xs sm:text-sm text-slate-300 mb-6 leading-relaxed">
+              {t('leaveGameModalDesc')}
+            </p>
+
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsLeaveGameModalOpen(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm border border-slate-700 transition active:scale-95 cursor-pointer"
+              >
+                {t('cancelBtn')}
+              </button>
+              <button
+                type="button"
+                onClick={handleLeaveAndReplaceWithBot}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-900/30 border border-amber-400/50 transition active:scale-95 cursor-pointer"
+              >
+                {t('confirmLeaveGameBtn')}
               </button>
             </div>
           </div>

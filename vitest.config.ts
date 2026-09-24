@@ -8,7 +8,8 @@ export default defineConfig({
       'test/securityParityAudit.test.ts',
       'test/serverActionEndpoint.test.ts',
       'test/serverGameEngine.test.ts',
-      'test/multiplayerStressEdgeCases.test.ts'
+      'test/multiplayerStressEdgeCases.test.ts',
+      'test/replacementBotTakeover.test.ts'
     ]
   }
 });

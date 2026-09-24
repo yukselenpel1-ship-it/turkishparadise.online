@@ -63,7 +63,19 @@ export const PlayerList: React.FC<PlayerListProps> = ({
                         {t('youBadge')}
                       </span>
                     )}
-                    {p.isBot && <Bot className="w-3 h-3 text-emerald-400 shrink-0" />}
+                    {p.isBot && (
+                      p.isReplacementBot || p.botOrigin === 'PLAYER_REPLACEMENT' ? (
+                        <span
+                          className="text-[8px] bg-indigo-500/30 text-indigo-300 font-bold px-1 rounded border border-indigo-500/40 shrink-0 flex items-center gap-0.5"
+                          title={t('replacementBotBadge')}
+                        >
+                          <Bot className="w-2.5 h-2.5" />
+                          <span>{t('replacementBotShortBadge')}</span>
+                        </span>
+                      ) : (
+                        <Bot className="w-3 h-3 text-emerald-400 shrink-0" />
+                      )
+                    )}
                     {p.isAfk && (
                       <span className="text-[8px] bg-amber-500/30 text-amber-300 font-bold px-1 rounded border border-amber-500/40 shrink-0 animate-pulse">
                         {t('afkBadge')}

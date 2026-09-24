@@ -522,6 +522,14 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
             );
             expect(confRes.success).toBe(true);
             currentV = confRes.state!.version;
+          } else if (currentRoomState.pendingAction === 'DEBT_SETTLEMENT') {
+            const liqRes = await executeGameActionPipeline(
+              { actionId: `seq_act_liq_${actIdx++}`, roomId: testRoomId, playerId: hostPlayer.id, type: 'AUTO_LIQUIDATE', expectedVersion: currentV },
+              hostGuestActor,
+              { storage }
+            );
+            expect(liqRes.success).toBe(true);
+            currentV = liqRes.state!.version;
           }
           currentRoomState = await storage.getRoomState(testRoomId);
         }

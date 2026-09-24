@@ -88,6 +88,13 @@ export interface TranslationDictionary {
   cancelBtn: string;
   confirmEndGameBtn: string;
   hostEndedGameNotice: string;
+  leaveGameBtn: string;
+  leaveGameTooltip: string;
+  leaveGameModalTitle: string;
+  leaveGameModalDesc: string;
+  confirmLeaveGameBtn: string;
+  replacementBotBadge: string;
+  replacementBotShortBadge: string;
 
   // Board & Center Controls
   turnOf: string;
@@ -368,6 +375,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     cancelBtn: 'Hayır',
     confirmEndGameBtn: 'Evet, Oyunu Bitir',
     hostEndedGameNotice: 'Kurucu oyunu sonlandırdı.',
+    leaveGameBtn: 'Oyundan Çık',
+    leaveGameTooltip: 'Oyundan ayrıl ve yerini bota devret',
+    leaveGameModalTitle: 'Oyundan çıkmak istediğinize emin misiniz?',
+    leaveGameModalDesc: 'Oyundan ayrılırsanız yerinizi bir bot devralacak.',
+    confirmLeaveGameBtn: 'Evet, Oyundan Çık',
+    replacementBotBadge: 'Yerine Bot (Oyuncu ayrıldı)',
+    replacementBotShortBadge: 'Yerine Bot',
 
     // Board & Center Controls
     turnOf: 'Sıra: {name}',
@@ -646,6 +660,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     cancelBtn: 'No',
     confirmEndGameBtn: 'Yes, End Game',
     hostEndedGameNotice: 'The host ended the game.',
+    leaveGameBtn: 'Leave Game',
+    leaveGameTooltip: 'Leave game and hand over seat to bot',
+    leaveGameModalTitle: 'Are you sure you want to leave the game?',
+    leaveGameModalDesc: 'If you leave, a bot will take over your seat.',
+    confirmLeaveGameBtn: 'Yes, Leave Game',
+    replacementBotBadge: 'Replacement Bot (Player left)',
+    replacementBotShortBadge: 'Replacement Bot',
 
     // Board & Center Controls
     turnOf: "Turn: {name}",

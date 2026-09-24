@@ -1849,3 +1849,76 @@ export function calculateFinalRankings(
   }));
 }
 
+/**
+ * Converts an active player slot into a replacement bot when the player deliberately leaves.
+ * Preserves all financial state, properties, position, debt, laps, and ongoing turn flow.
+ */
+export function leaveAndReplaceWithBot(
+  state: GameState,
+  playerId: string
+): GameState {
+  const next = JSON.parse(JSON.stringify(state)) as GameState;
+  const player = next.players.find(p => p.id === playerId);
+  if (!player || !player.inGame) return next;
+
+  const originalName = player.name;
+  player.isBot = true;
+  player.isReplacementBot = true;
+  player.botOrigin = 'PLAYER_REPLACEMENT';
+  player.isAfk = false;
+  player.replacedPlayerName = originalName;
+
+  // Invalidate identity bindings so old client session cannot control this seat
+  player.userId = undefined;
+  player.participantKey = undefined;
+  player.clientId = undefined;
+  player.tabId = undefined;
+  player.connectionId = undefined;
+
+  addLog(next, `👋 ${originalName} oyundan ayrıldı. Yerini bot devraldı.`, 'warning');
+  return next;
+}
+
+/**
+ * Allows a new human player to take over a vacant replacement bot slot in an ongoing game.
+ * Binds new identity while preserving seat ID, money, position, properties, and game progress.
+ */
+export function takeOverReplacementBot(
+  state: GameState,
+  targetPlayerId: string,
+  newPlayerData: {
+    name: string;
+    avatar: string;
+    color?: string;
+    userId?: string;
+    participantKey?: string;
+    clientId?: string;
+    tabId?: string;
+  }
+): GameState {
+  const next = JSON.parse(JSON.stringify(state)) as GameState;
+  const target = next.players.find(
+    p => p.id === targetPlayerId && p.inGame && p.isBot && (p.isReplacementBot || p.botOrigin === 'PLAYER_REPLACEMENT')
+  );
+  if (!target) return next;
+
+  const newName = newPlayerData.name || 'Yeni Oyuncu';
+  target.name = newName;
+  target.avatar = newPlayerData.avatar || target.avatar;
+  if (newPlayerData.color) {
+    target.color = newPlayerData.color;
+  }
+  target.userId = newPlayerData.userId;
+  target.participantKey = newPlayerData.participantKey;
+  target.clientId = newPlayerData.clientId;
+  target.tabId = newPlayerData.tabId;
+  target.isBot = false;
+  target.isReplacementBot = false;
+  target.botOrigin = undefined;
+  target.isAfk = false;
+
+  addLog(next, `🎮 ${newName} devam eden oyuna katıldı ve bot koltuğunu devraldı.`, 'success');
+  return next;
+}
+
+

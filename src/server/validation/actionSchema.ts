@@ -29,7 +29,9 @@ export const ALLOWED_ACTION_TYPES = [
   'BANKRUPTCY',
   'PLAYER_ACTIVE',
   'SET_AFK',
-  'AUTO_LIQUIDATE'
+  'AUTO_LIQUIDATE',
+  'LEAVE_AND_REPLACE_WITH_BOT',
+  'TAKE_OVER_REPLACEMENT_BOT'
 ] as const;
 
 export type ValidActionType = typeof ALLOWED_ACTION_TYPES[number];
@@ -223,6 +225,16 @@ export function validateActionRequest(body: any): SchemaValidationResult {
       ? payload.tileId
       : undefined;
     sanitizedPayload = { targetPlayerId, tileId };
+  } else if (type === 'TAKE_OVER_REPLACEMENT_BOT') {
+    const targetPlayerId = typeof payload?.targetPlayerId === 'string' ? payload.targetPlayerId.trim() : undefined;
+    const name = typeof payload?.name === 'string' ? payload.name.trim().substring(0, 30) : undefined;
+    const avatar = typeof payload?.avatar === 'string' ? payload.avatar.trim() : undefined;
+    const color = typeof payload?.color === 'string' ? payload.color.trim() : undefined;
+    const userId = typeof payload?.userId === 'string' ? payload.userId.trim() : undefined;
+    const participantKey = typeof payload?.participantKey === 'string' ? payload.participantKey.trim() : undefined;
+    const clientId = typeof payload?.clientId === 'string' ? payload.clientId.trim() : undefined;
+    const tabId = typeof payload?.tabId === 'string' ? payload.tabId.trim() : undefined;
+    sanitizedPayload = { targetPlayerId, name, avatar, color, userId, participantKey, clientId, tabId };
   } else if (payload && typeof payload === 'object') {
     sanitizedPayload = {};
   }
