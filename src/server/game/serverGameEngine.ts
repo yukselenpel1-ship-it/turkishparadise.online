@@ -160,6 +160,7 @@ export function advanceServerTurn(state: GameState): GameState {
     if (activePlayers.length === 1) {
       state.phase = 'ENDED';
       state.winner = activePlayers[0];
+      state.gameEndedAt = Date.now();
       addServerLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
     }
     return state;
@@ -440,6 +441,7 @@ export function autoLiquidateDebt(
     if (activePlayers.length <= 1) {
       state.phase = 'ENDED';
       state.winner = activePlayers[0] || null;
+      state.gameEndedAt = now;
       if (activePlayers[0]) {
         addServerLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
       }
@@ -1158,6 +1160,7 @@ export function applyGameAction(
     if (activePlayers.length <= 1) {
       nextState.phase = 'ENDED';
       nextState.winner = activePlayers[0] || null;
+      nextState.gameEndedAt = now;
       if (activePlayers[0]) {
         addServerLog(nextState, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
       }
@@ -1470,6 +1473,26 @@ export function applyGameAction(
     const offer = nextState.incomingTradeOffer;
     if (!offer || offer.toPlayerId !== actingPlayer.id) {
       return { success: false, error: 'INVALID_TRADE', errorMessage: 'Reddedilecek aktif bir takas teklifi bulunmuyor.' };
+    }
+
+    if (offer.requestedTileIds && offer.requestedTileIds.length > 0) {
+      const proposingBot = nextState.players.find(p => p.id === offer.fromPlayerId && p.isBot);
+      if (proposingBot) {
+        const targetTileId = offer.requestedTileIds[0];
+        const negKey = `${offer.fromPlayerId}_${targetTileId}`;
+        const existing = nextState.botNegotiations?.[negKey];
+        const nextCount = (existing?.rejectionCount || 0) + 1;
+        if (!nextState.botNegotiations) nextState.botNegotiations = {};
+        nextState.botNegotiations[negKey] = {
+          botId: offer.fromPlayerId,
+          targetPlayerId: offer.toPlayerId,
+          targetPropertyId: targetTileId,
+          rejectionCount: nextCount,
+          lastOfferAmount: offer.offeredMoney,
+          lastOfferTurn: nextState.currentTurnIndex,
+          updatedAt: now
+        };
+      }
     }
 
     nextState.incomingTradeOffer = undefined;

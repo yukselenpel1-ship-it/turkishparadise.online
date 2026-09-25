@@ -46,10 +46,17 @@ export const WinnerModal: React.FC<WinnerModalProps> = ({
 
   // 2. Calculate Game Duration
   const now = Date.now();
-  const startTime = gameStartedAt || (now - 60000);
-  const endTime = gameEndedAt || now;
-  const durationMs = Math.max(1000, endTime - startTime);
-  const durationText = formatGameDuration(durationMs, language === 'en' ? 'en' : 'tr');
+  const rawStart = typeof gameStartedAt === 'number' && gameStartedAt > 0 ? gameStartedAt : undefined;
+  const rawEnd = typeof gameEndedAt === 'number' && gameEndedAt > 0 ? gameEndedAt : now;
+
+  // Standardize timestamp in milliseconds (handle potential unix seconds format < 1e11)
+  const startTime = rawStart ? (rawStart < 1e11 ? rawStart * 1000 : rawStart) : undefined;
+  const endTime = rawEnd < 1e11 ? rawEnd * 1000 : rawEnd;
+
+  const durationMs = startTime ? Math.max(1000, endTime - startTime) : 0;
+  const durationText = startTime
+    ? formatGameDuration(durationMs, language === 'en' ? 'en' : 'tr')
+    : (language === 'en' ? '0m 00s' : '0dk 00sn');
 
   // 3. Deterministic Final Rankings
   const rankings = calculateFinalRankings(players, board, winner.id);

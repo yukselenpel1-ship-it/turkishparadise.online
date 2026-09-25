@@ -12,7 +12,8 @@ import {
   BotDifficulty,
   FinancialTransaction,
   TransactionType,
-  TransactionCategory
+  TransactionCategory,
+  BotNegotiationRecord
 } from '../types/game';
 import { INITIAL_BOARD } from '../data/boardData';
 import { CHANCE_CARDS } from '../data/chanceCards';
@@ -547,6 +548,23 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
     newState.incomingTradeOffer = undefined;
   }
 
+  // Prune negotiation records for traded properties or completed sets
+  if (newState.botNegotiations) {
+    const tradedIds = new Set([...(offer.offeredTileIds || []), ...(offer.requestedTileIds || [])]);
+    const updatedNeg = { ...newState.botNegotiations };
+    let negChanged = false;
+    for (const key of Object.keys(updatedNeg)) {
+      const rec = updatedNeg[key];
+      if (rec && tradedIds.has(rec.targetPropertyId)) {
+        delete updatedNeg[key];
+        negChanged = true;
+      }
+    }
+    if (negChanged) {
+      newState.botNegotiations = updatedNeg;
+    }
+  }
+
   // Check if either player resolved debt settlement
   if (fromPlayer.money >= 0 && newState.pendingAction === 'DEBT_SETTLEMENT') {
     newState.pendingAction = 'NONE';
@@ -562,14 +580,93 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
   return newState;
 }
 
-// Proactive Bot Trading: Bot scans for missing set pieces and initiates trades
-export function attemptBotProactiveTrade(state: GameState, bot: Player): GameState {
+/**
+ * Prunes stale or obsolete bot negotiation records.
+ * Resets negotiation state when:
+ * - Property is now owned by the bot
+ * - Property is no longer owned by target player
+ * - Bot already completed monopoly on the property's color group
+ * - Either player is no longer in game
+ */
+export function pruneBotNegotiations(state: GameState): GameState {
+  if (!state.botNegotiations) return state;
+  const updatedNeg = { ...state.botNegotiations };
+  let changed = false;
+
+  for (const key of Object.keys(updatedNeg)) {
+    const rec = updatedNeg[key];
+    if (!rec) continue;
+    const tile = state.board.find(t => t.id === rec.targetPropertyId);
+    const bot = state.players.find(p => p.id === rec.botId);
+    const target = state.players.find(p => p.id === rec.targetPlayerId);
+
+    if (
+      !tile ||
+      !bot ||
+      !target ||
+      !bot.inGame ||
+      !target.inGame ||
+      tile.ownerId === rec.botId ||
+      tile.ownerId !== rec.targetPlayerId ||
+      (tile.colorGroup && hasColorGroupMonopoly(state.board, tile.colorGroup, rec.botId))
+    ) {
+      delete updatedNeg[key];
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    state.botNegotiations = updatedNeg;
+  }
+  return state;
+}
+
+/**
+ * Declines an active incoming trade offer and records negotiation escalation state for bots.
+ */
+export function declineIncomingTrade(state: GameState, rejectingPlayerId: string): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
+  const offer = newState.incomingTradeOffer;
+  if (!offer || offer.toPlayerId !== rejectingPlayerId) return newState;
+
+  if (offer.requestedTileIds && offer.requestedTileIds.length > 0) {
+    const proposingBot = newState.players.find(p => p.id === offer.fromPlayerId && p.isBot);
+    if (proposingBot) {
+      const targetTileId = offer.requestedTileIds[0];
+      const negKey = `${offer.fromPlayerId}_${targetTileId}`;
+      const existing = newState.botNegotiations?.[negKey];
+      const nextCount = (existing?.rejectionCount || 0) + 1;
+      if (!newState.botNegotiations) newState.botNegotiations = {};
+      newState.botNegotiations[negKey] = {
+        botId: offer.fromPlayerId,
+        targetPlayerId: offer.toPlayerId,
+        targetPropertyId: targetTileId,
+        rejectionCount: nextCount,
+        lastOfferAmount: offer.offeredMoney,
+        lastOfferTurn: newState.currentTurnIndex,
+        updatedAt: Date.now()
+      };
+    }
+  }
+
+  const fromPlayer = newState.players.find(p => p.id === offer.fromPlayerId);
+  const toPlayer = newState.players.find(p => p.id === offer.toPlayerId);
+  newState.incomingTradeOffer = undefined;
+  if (toPlayer) {
+    addLog(newState, `❌ ${toPlayer.name}, ${fromPlayer?.name || 'gelen'} takas teklifini reddetti.`, 'warning');
+  }
+  return newState;
+}
+
+// Proactive Bot Trading: Bot scans for missing set pieces and initiates trades with escalation
+export function attemptBotProactiveTrade(state: GameState, bot: Player, ignoreRandomChance: boolean = false): GameState {
+  let newState = JSON.parse(JSON.stringify(state)) as GameState;
+  newState = pruneBotNegotiations(newState);
   const difficulty = bot.botDifficulty || 'medium';
 
   // Easy bot trades rarely, Medium trades often, Hard bot aggressively hunts sets
   const tradeChance = difficulty === 'hard' ? 0.75 : difficulty === 'medium' ? 0.45 : 0.2;
-  if (Math.random() > tradeChance) return newState;
+  if (!ignoreRandomChance && Math.random() > tradeChance) return newState;
 
   // 1. Scan for Color Groups where bot is missing only 1 tile to complete Monopoly
   const colorGroups: ColorGroup[] = ['brown', 'lightblue', 'pink', 'orange', 'red', 'yellow', 'green', 'blue'];
@@ -587,6 +684,22 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
       const targetOwner = newState.players.find(p => p.id === missingTile.ownerId && p.inGame);
       if (!targetOwner) continue;
 
+      const negKey = `${bot.id}_${missingTile.id}`;
+      let negRecord = newState.botNegotiations?.[negKey];
+
+      // Reset if target owner changed
+      if (negRecord && negRecord.targetPlayerId !== targetOwner.id) {
+        if (newState.botNegotiations) delete newState.botNegotiations[negKey];
+        negRecord = undefined;
+      }
+
+      // Anti-Spam protection: if rejected 3 times, do not spam player with further offers
+      if (negRecord && negRecord.rejectionCount >= 3) {
+        continue;
+      }
+
+      const rejectionCount = negRecord?.rejectionCount || 0;
+
       // Find spare properties that bot owns which are NOT part of a bot monopoly and have no houses
       const spareProperties = newState.board.filter(
         t => t.ownerId === bot.id &&
@@ -595,12 +708,36 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
              t.houses === 0
       );
 
-      // Target valuation to incentivize seller
+      // Base target valuation to incentivize seller
       const deedPrice = missingTile.price;
-      const targetMultiplier = difficulty === 'hard' ? 1.4 : difficulty === 'medium' ? 1.25 : 1.15;
-      const desiredTotalValue = Math.round(deedPrice * targetMultiplier);
+      const baseMultiplier = difficulty === 'hard' ? 1.4 : difficulty === 'medium' ? 1.25 : 1.15;
+      const baseDesiredValue = Math.round(deedPrice * baseMultiplier);
 
-      const maxCashAvailable = Math.max(0, Math.floor(bot.money * 0.85));
+      // Escalation logic on rejection:
+      // 1st offer (0 rejections): base valuation (1.0x)
+      // 1st rejection: +10% (1.10x)
+      // 2nd rejection: +25% (1.25x)
+      // 3rd rejection: +40% (1.40x - son makul teklif)
+      let escalationFactor = 1.0;
+      if (rejectionCount === 1) {
+        escalationFactor = 1.10;
+      } else if (rejectionCount === 2) {
+        escalationFactor = 1.25;
+      } else if (rejectionCount >= 3) {
+        escalationFactor = 1.40;
+      }
+
+      let desiredTotalValue = Math.round(baseDesiredValue * escalationFactor);
+
+      // 🔒 STRATEGIC VALUE CAP: Bot never pays more than maximum strategic value of property/set
+      const strategicVal = calculatePropertyStrategicValue(missingTile, targetOwner, bot, newState.board);
+      const deedCap = Math.round(deedPrice * (difficulty === 'hard' ? 2.5 : difficulty === 'medium' ? 2.0 : 1.6));
+      const maxStrategicCap = Math.max(deedCap, strategicVal);
+      desiredTotalValue = Math.min(desiredTotalValue, maxStrategicCap);
+
+      // 🔒 CASH RESERVE: Bot keeps a safe minimum cash reserve and never gives away all cash
+      const minCashReserve = difficulty === 'hard' ? 200 : difficulty === 'medium' ? 250 : 300;
+      const maxCashAvailable = Math.max(0, bot.money - minCashReserve);
 
       let offeredTileIds: number[] = [];
       let offeredTilesValue = 0;
@@ -618,11 +755,22 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
 
       // Calculate cash needed to top up the bundle
       const remainingCashNeeded = Math.max(0, desiredTotalValue - offeredTilesValue);
-      const cashOffer = Math.min(remainingCashNeeded, maxCashAvailable);
+      let cashOffer = Math.min(remainingCashNeeded, maxCashAvailable);
+
+      // If previously rejected, guarantee offer strictly escalates above last offer if cash available
+      if (negRecord && negRecord.rejectionCount > 0 && negRecord.lastOfferAmount > 0) {
+        const escalatedCash = Math.min(
+          Math.max(cashOffer, Math.round(negRecord.lastOfferAmount * 1.10)),
+          maxCashAvailable
+        );
+        if (offeredTilesValue + escalatedCash <= maxStrategicCap) {
+          cashOffer = escalatedCash;
+        }
+      }
+
       const totalOfferedValue = offeredTilesValue + cashOffer;
 
-      // CRITICAL: Bot NEVER sends a lowball trade offer below deed price!
-      // Total value offered (Cash + Properties) MUST be at least 1.1x of the deed price
+      // CRITICAL: Bot NEVER sends a lowball trade offer below deed price * 1.1!
       if (totalOfferedValue < Math.round(deedPrice * 1.1)) {
         continue; // Bot cannot afford a fair offer for this city right now
       }
@@ -647,6 +795,18 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
           }
           return resultState;
         } else {
+          // Record rejection for bot/AFK target
+          const nextCount = (negRecord?.rejectionCount || 0) + 1;
+          if (!newState.botNegotiations) newState.botNegotiations = {};
+          newState.botNegotiations[negKey] = {
+            botId: bot.id,
+            targetPlayerId: targetOwner.id,
+            targetPropertyId: missingTile.id,
+            rejectionCount: nextCount,
+            lastOfferAmount: cashOffer,
+            lastOfferTurn: newState.currentTurnIndex,
+            updatedAt: Date.now()
+          };
           if (targetOwner.isAfk) {
             addLog(newState, `💬 ${bot.name}, ${targetOwner.name} (AFK) oyuncusuna takas teklifi yaptı ancak AFK botu teklifi yetersiz buldu.`, 'info');
           }
@@ -660,8 +820,9 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player): GameSta
           fromPlayerAvatar: bot.avatar
         };
         const spareName = offeredTileIds.length > 0 ? ` + "${newState.board.find(b => b.id === offeredTileIds[0])?.name}"` : '';
-        addChatMessage(newState, bot, `Merhaba! "${missingTile.name}" tapunu bana satmak ister misin? ${cashOffer}₺ nakit${spareName} teklif ediyorum!`);
-        addLog(newState, `📬 ${bot.name} size "${missingTile.name}" için ${cashOffer}₺ teklifinde bulundu!`, 'action');
+        const escalationNote = rejectionCount > 0 ? ` (Geliştirilmiş ${rejectionCount + 1}. Teklif)` : '';
+        addChatMessage(newState, bot, `Merhaba! "${missingTile.name}" tapunu bana satmak ister misin? ${cashOffer}₺ nakit${spareName} teklif ediyorum!${escalationNote}`);
+        addLog(newState, `📬 ${bot.name} size "${missingTile.name}" için ${cashOffer}₺ teklifinde bulundu!${escalationNote}`, 'action');
         return newState;
       }
     }
@@ -807,6 +968,7 @@ export function finalizePlayerLanding(state: GameState, playerId: string): GameS
     if (activePlayers.length <= 1) {
       afterLanding.phase = 'ENDED';
       afterLanding.winner = activePlayers[0] || null;
+      afterLanding.gameEndedAt = Date.now();
       if (activePlayers[0]) {
         addLog(afterLanding, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
       }
@@ -1085,6 +1247,7 @@ export function applyChanceCard(state: GameState, payload?: { targetPlayerId?: s
     if (activePlayers.length <= 1) {
       newState.phase = 'ENDED';
       newState.winner = activePlayers[0] || null;
+      newState.gameEndedAt = Date.now();
       if (activePlayers[0]) {
         addLog(newState, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
       }
@@ -1356,6 +1519,7 @@ export function declareBankruptcy(state: GameState, playerId: string): GameState
   if (activePlayers.length <= 1) {
     newState.phase = 'ENDED';
     newState.winner = activePlayers[0] || null;
+    newState.gameEndedAt = Date.now();
     if (activePlayers[0]) {
       addLog(newState, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
     }
@@ -1585,6 +1749,7 @@ export function checkBankruptcy(state: GameState, player: Player) {
         if (activePlayers.length <= 1) {
           state.phase = 'ENDED';
           state.winner = activePlayers[0] || null;
+          state.gameEndedAt = Date.now();
           if (activePlayers[0]) {
             addLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
           }
@@ -1604,6 +1769,7 @@ export function checkBankruptcy(state: GameState, player: Player) {
         if (activePlayers.length <= 1) {
           state.phase = 'ENDED';
           state.winner = activePlayers[0] || null;
+          state.gameEndedAt = Date.now();
           if (activePlayers[0]) {
             addLog(state, `🏆 OYUN BİTTİ! KAZANAN: ${activePlayers[0].name}!`, 'success');
           }
@@ -1628,6 +1794,7 @@ export function nextTurn(state: GameState): GameState {
     if (activePlayers.length === 1) {
       newState.phase = 'ENDED';
       newState.winner = activePlayers[0];
+      newState.gameEndedAt = Date.now();
     }
     return newState;
   }

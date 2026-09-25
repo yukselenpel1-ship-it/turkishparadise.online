@@ -224,6 +224,16 @@ export interface UserAccount {
   stats?: UserStats;
 }
 
+export interface BotNegotiationRecord {
+  botId: string;
+  targetPlayerId: string;
+  targetPropertyId: number;
+  rejectionCount: number;
+  lastOfferAmount: number;
+  lastOfferTurn?: number;
+  updatedAt?: number;
+}
+
 export interface GameState {
   roomId: string;
   gameId?: string;
@@ -250,6 +260,7 @@ export interface GameState {
     fromPlayerAvatar: string;
   };
   botStatusMessage?: string;
+  botNegotiations?: Record<string, BotNegotiationRecord>;
   isOnlineGame?: boolean;
   networkStatus?: 'connected' | 'connecting' | 'disconnected';
   turnSecondsRemaining?: number;
@@ -261,6 +272,7 @@ export interface GameState {
   createdAt?: number;
   updatedAt?: number;
 }
+
 
 
 

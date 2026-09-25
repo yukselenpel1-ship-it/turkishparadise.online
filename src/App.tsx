@@ -33,7 +33,8 @@ import {
   executeForceBuy,
   getBotChanceTarget,
   leaveAndReplaceWithBot,
-  takeOverReplacementBot
+  takeOverReplacementBot,
+  declineIncomingTrade
 } from './engine/gameEngine';
 import { INITIAL_BOARD } from './data/boardData';
 import {
@@ -2198,11 +2199,14 @@ export const App: React.FC = () => {
         firstLapPurchases: 0
       }));
 
+      const now = Date.now();
       const updated = {
         ...prev,
         players: updatedPlayers,
         phase: 'PLAYING' as const,
-        turnStartedAt: Date.now()
+        turnStartedAt: now,
+        gameStartedAt: now,
+        gameEndedAt: undefined
       };
       addLog(updated, '🎮 Turkish Paradise oyunu başladı! İyi şanslar!', 'success');
       return updated;
@@ -2833,13 +2837,7 @@ export const App: React.FC = () => {
       return;
     }
     updateAndBroadcastGameState((prev) => {
-      const fromPlayer = prev.players.find((p) => p.id === prev.incomingTradeOffer?.fromPlayerId);
-      const toPlayer = prev.players.find((p) => p.id === prev.incomingTradeOffer?.toPlayerId);
-      const updated = { ...prev, incomingTradeOffer: undefined };
-      if (toPlayer) {
-        addLog(updated, `❌ ${toPlayer.name}, ${fromPlayer?.name || 'gelen'} takas teklifini reddetti.`, 'warning');
-      }
-      return updated;
+      return declineIncomingTrade(prev, liveMyId || '');
     });
   };
 
