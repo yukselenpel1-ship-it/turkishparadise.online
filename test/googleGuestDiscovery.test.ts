@@ -1,9 +1,11 @@
-import assert from 'assert';
+import { describe, it, expect } from 'vitest';
 import { PublicRoomInfo } from '../src/types/game';
 
-console.log('================================================================');
-console.log('🌐 TURKISH PARADISE — GOOGLE ↔ GUEST LIVE ROOM DISCOVERY TEST');
-console.log('================================================================\n');
+describe('Google Guest Discovery Suite', () => {
+  it('runs discovery tests between guest and google accounts across platforms', () => {
+    function assert(condition: boolean, msg: string) {
+      expect(condition).toBe(true);
+    }
 
 // Simulated Global Public Rooms Registry
 const roomsRegistry = new Map<string, PublicRoomInfo>();
@@ -161,6 +163,9 @@ rooms = getActivePublicRooms();
 assert(!rooms.some(r => r.roomId === 'TR-1111'), 'Unpublished room removed from directory');
 console.log('  ✅ PASS: Unpublished room is cleanly removed from discovery');
 
-console.log('\n================================================================');
-console.log('🎉 ALL 7 GOOGLE ↔ GUEST DISCOVERY TESTS PASSED (0 failures)');
-console.log('================================================================\n');
+  console.log('\n================================================================');
+  console.log('🎉 ALL 7 GOOGLE ↔ GUEST DISCOVERY TESTS PASSED (0 failures)');
+  console.log('================================================================\n');
+  });
+});
+

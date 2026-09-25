@@ -1,17 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import crypto from 'crypto';
 import { signGuestToken } from '../../src/server/auth/tokenUtil';
+import { handleCors } from '../../src/server/auth/corsUtil';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-participant-key, x-guest-token, x-user-id, x-user-name'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (handleCors(req, res, 'POST,OPTIONS')) {
+    return;
   }
 
   if (req.method !== 'POST') {
@@ -33,7 +27,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const cleanKey = pKey.trim();
-  const guestId = `guest_${cleanKey.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)}`;
+  // 🔒 Server-generated cryptographic guest identity
+  const guestRandom = typeof crypto.randomUUID === 'function' 
+    ? crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+    : crypto.randomBytes(8).toString('hex');
+  const guestId = `guest_${guestRandom}`;
+
   const cleanName = (
     typeof displayName === 'string' && displayName.trim().length > 0
       ? displayName.trim().substring(0, 30)

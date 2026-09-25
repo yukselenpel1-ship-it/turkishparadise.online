@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import {
   InMemoryRoomStorage,
   getRoomStateKey,
@@ -9,24 +10,20 @@ import {
 import { createInitialState } from '../src/engine/gameEngine';
 import { GameState } from '../src/types/game';
 
-console.log('================================================================');
-console.log('🏛️ TURKISH PARADISE — SERVER STORAGE & ATOMIC CAS TEST SUITE');
-console.log('================================================================\n');
-
 let passedTests = 0;
 let failedTests = 0;
 
 function assert(condition: boolean, message: string) {
+  expect(condition).toBe(true);
   if (condition) {
-    console.log(`  ✅ PASS: ${message}`);
     passedTests++;
   } else {
-    console.error(`  ❌ FAIL: ${message}`);
     failedTests++;
   }
 }
 
-async function runStorageTests() {
+describe('Server Storage Suite', () => {
+  it('executes full server storage and atomic CAS verification', async () => {
   const storage = new InMemoryRoomStorage();
 
   // --------------------------------------------------------------------------
@@ -191,16 +188,6 @@ async function runStorageTests() {
   }
   assert(threwMalformed, 'Empty roomId and null state properly rejected with Error');
 
-  console.log('\n================================================================');
-  console.log(`📊 SERVER STORAGE TEST SUMMARY: ${passedTests} PASSED, ${failedTests} FAILED`);
-  console.log('================================================================');
-
-  if (failedTests > 0) {
-    process.exit(1);
-  }
-}
-
-runStorageTests().catch(err => {
-  console.error('Fatal storage test error:', err);
-  process.exit(1);
+    expect(failedTests).toBe(0);
+  });
 });

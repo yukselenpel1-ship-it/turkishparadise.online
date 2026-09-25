@@ -1,19 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { resolveAuthenticatedActor, validateRoomReadAccess, sanitizeGameStateForClient } from '../../src/server/auth/authMiddleware';
 import { roomStorage, normalizeRoomId } from '../../src/server/storage/roomStorage';
+import { handleCors } from '../../src/server/auth/corsUtil';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 1. CORS Headers
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-participant-key, x-guest-token, x-user-id, x-user-name'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (handleCors(req, res, 'GET,OPTIONS')) {
+    return;
   }
 
   if (req.method !== 'GET') {

@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import {
   createInitialState,
   handleRollDice,
@@ -28,16 +29,16 @@ let passedTests = 0;
 let failedTests = 0;
 
 function assert(condition: boolean, testName: string) {
+  expect(condition).toBe(true);
   if (condition) {
-    console.log(`  ✅ PASS: ${testName}`);
     passedTests++;
   } else {
-    console.error(`  ❌ FAIL: ${testName}`);
     failedTests++;
   }
 }
 
-function runAllTests() {
+describe('Game Engine Suite', () => {
+  it('executes full game engine mechanics and rule verification', () => {
   console.log('\n=============================================');
   console.log('🧪 RUNNING TURKISH PARADISE GAME ENGINE TESTS');
   console.log('=============================================\n');
@@ -283,13 +284,6 @@ function runAllTests() {
   assert(!doublesJailState.players[0].isJailed, 'Rolling doubles frees player from jail');
   assert(doublesJailState.players[0].money === 1000, 'NO money deducted when rolling doubles in jail');
 
-  console.log('\n=============================================');
-  console.log(`📊 TEST RESULTS: ${passedTests} PASSED, ${failedTests} FAILED`);
-  console.log('=============================================\n');
-
-  if (failedTests > 0) {
-    process.exit(1);
-  }
-}
-
-runAllTests();
+    expect(failedTests).toBe(0);
+  });
+});

@@ -312,9 +312,9 @@ export class UpstashRedisRoomStorage implements IRoomStorage {
       const raw = await this.executeCommand(['GET', key]);
       if (!raw) return null;
       return typeof raw === 'string' ? JSON.parse(raw) : raw;
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[RedisStorage] getRoomState error:', err);
-      return null;
+      throw new Error(`STORAGE_UNAVAILABLE: ${err?.message || 'Redis outage'}`);
     }
   }
 
@@ -439,6 +439,28 @@ export class UpstashRedisRoomStorage implements IRoomStorage {
     const key = getActionIdempotencyKey(roomId, actionId);
     const now = Date.now();
     try {
+      const initialEntry: IdempotencyEntry = {
+        recordedAt: now,
+        expiresAt: now + ttlSeconds * 1000,
+        fingerprint,
+        status: 'IN_FLIGHT'
+      };
+
+      // 🔒 Atomic SET NX EX ensures single atomic owner on concurrent requests with same actionId
+      const setNxResult = await this.executeCommand([
+        'SET',
+        key,
+        JSON.stringify(initialEntry),
+        'EX',
+        ttlSeconds.toString(),
+        'NX'
+      ]);
+
+      if (setNxResult === 'OK' || setNxResult === true || setNxResult === 1) {
+        return { isDuplicate: false, recordedAt: now, status: 'IN_FLIGHT' };
+      }
+
+      // Key already exists -> fetch existing entry
       const existing = await this.executeCommand(['GET', key]);
       if (existing) {
         const parsed = typeof existing === 'string' ? JSON.parse(existing) : existing;
@@ -459,18 +481,10 @@ export class UpstashRedisRoomStorage implements IRoomStorage {
         };
       }
 
-      const initialEntry: IdempotencyEntry = {
-        recordedAt: now,
-        expiresAt: now + ttlSeconds * 1000,
-        fingerprint,
-        status: 'IN_FLIGHT'
-      };
-
-      await this.executeCommand(['SET', key, JSON.stringify(initialEntry), 'EX', ttlSeconds.toString()]);
-      return { isDuplicate: false, recordedAt: now, status: 'IN_FLIGHT' };
-    } catch (err) {
+      return { isDuplicate: true, recordedAt: now, status: 'IN_FLIGHT' };
+    } catch (err: any) {
       console.warn('[RedisStorage] idempotency error:', err);
-      return { isDuplicate: false, recordedAt: now };
+      throw new Error(`STORAGE_UNAVAILABLE: ${err?.message || 'Redis outage'}`);
     }
   }
 

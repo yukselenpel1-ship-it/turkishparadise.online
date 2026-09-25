@@ -34,25 +34,37 @@ export interface FetchStateResult {
 const STORAGE_GUEST_TOKEN_KEY = 'tp_guest_jwt_token';
 
 /**
- * Get locally stored signed guest token if present
+ * Get locally stored signed guest token for this browser tab context
  */
-export function getStoredGuestToken(): string | null {
+export function getStoredGuestToken(participantKey?: string): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(STORAGE_GUEST_TOKEN_KEY) || sessionStorage.getItem(STORAGE_GUEST_TOKEN_KEY);
+    const storage = window.sessionStorage;
+    if (!storage) return null;
+    const key = participantKey ? `${STORAGE_GUEST_TOKEN_KEY}_${participantKey}` : STORAGE_GUEST_TOKEN_KEY;
+    return storage.getItem(key) || storage.getItem(STORAGE_GUEST_TOKEN_KEY);
   } catch {
     return null;
   }
 }
 
 /**
- * Save signed guest token locally
+ * Save signed guest token tab-isolated in sessionStorage
  */
-export function setStoredGuestToken(token: string): void {
+export function setStoredGuestToken(token: string, participantKey?: string): void {
   if (typeof window === 'undefined' || !token) return;
   try {
-    localStorage.setItem(STORAGE_GUEST_TOKEN_KEY, token);
-    sessionStorage.setItem(STORAGE_GUEST_TOKEN_KEY, token);
+    const sStorage = window.sessionStorage;
+    const lStorage = window.localStorage;
+    const key = participantKey ? `${STORAGE_GUEST_TOKEN_KEY}_${participantKey}` : STORAGE_GUEST_TOKEN_KEY;
+    if (sStorage) {
+      sStorage.setItem(key, token);
+      sStorage.setItem(STORAGE_GUEST_TOKEN_KEY, token);
+    }
+    // Explicitly do NOT write to localStorage to prevent leaking guest credentials across tabs
+    if (lStorage) {
+      lStorage.removeItem(STORAGE_GUEST_TOKEN_KEY);
+    }
   } catch {}
 }
 

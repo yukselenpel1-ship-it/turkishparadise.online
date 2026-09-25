@@ -192,6 +192,17 @@ export function validateActorMatchesPlayer(
       (p.participantKey && actor.participantKey && p.participantKey === actor.participantKey)
   );
 
+  // Allow authenticated claimant to take over an available replacement bot seat
+  if (
+    (actionType === 'TAKE_OVER_REPLACEMENT_BOT' || actionType === 'CLAIM_REPLACEMENT_SEAT') &&
+    targetPlayer.isBot &&
+    (targetPlayer.isReplacementBot || targetPlayer.botOrigin === 'PLAYER_REPLACEMENT')
+  ) {
+    if (actor && actor.userId) {
+      return { valid: true };
+    }
+  }
+
   // Allow active human player in the room to submit actions for Bot players or timeout recovery actions
   if (isActorInRoom && (targetPlayer.isBot || actionType === 'SET_AFK' || actionType === 'AUTO_LIQUIDATE')) {
     return { valid: true };
@@ -263,9 +274,9 @@ export function validateRoomReadAccess(
 }
 
 /**
- * Sanitizes GameState before exposing via GET /api/game/state.
+ * Sanitizes GameState before exposing via API responses.
  * 🔒 SECURITY:
- * - Masks or strips participantKey of opponent players so malicious users cannot forge them.
+ * - Masks or strips participantKey, clientId, tabId, connectionId of opponent players.
  * - Preserves the requesting actor's own identity fields for seamless reconnections.
  */
 export function sanitizeGameStateForClient(
@@ -282,12 +293,15 @@ export function sanitizeGameStateForClient(
         requestingActor &&
         (p.id === requestingActor.userId ||
           (p.userId && p.userId === requestingActor.userId) ||
-          (p.participantKey && p.participantKey === requestingActor.participantKey));
+          (p.participantKey && requestingActor.participantKey && p.participantKey === requestingActor.participantKey));
 
       return {
         ...p,
-        // Only keep participantKey for the player themselves, mask for opponents
-        participantKey: isOwnPlayer ? p.participantKey : undefined
+        // Only keep participantKey, clientId, tabId, connectionId for the player themselves, mask for opponents
+        participantKey: isOwnPlayer ? p.participantKey : undefined,
+        clientId: isOwnPlayer ? p.clientId : undefined,
+        tabId: isOwnPlayer ? p.tabId : undefined,
+        connectionId: isOwnPlayer ? p.connectionId : undefined
       };
     });
   }
@@ -298,11 +312,13 @@ export function sanitizeGameStateForClient(
         requestingActor &&
         (s.id === requestingActor.userId ||
           (s.userId && s.userId === requestingActor.userId) ||
-          (s.participantKey && s.participantKey === requestingActor.participantKey));
+          (s.participantKey && requestingActor.participantKey && s.participantKey === requestingActor.participantKey));
 
       return {
         ...s,
-        participantKey: isOwnSpectator ? s.participantKey : undefined
+        participantKey: isOwnSpectator ? s.participantKey : undefined,
+        clientId: isOwnSpectator ? s.clientId : undefined,
+        tabId: isOwnSpectator ? s.tabId : undefined
       };
     });
   }

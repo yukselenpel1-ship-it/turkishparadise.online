@@ -62,7 +62,7 @@ import {
   handleGoogleOAuthCallback
 } from './services/googleAuth';
 import { soundManager } from './services/soundEffects';
-import { updateUserPresence, subscribeToFriendRequests, subscribeToFriendsAndRequests, syncUserWithBackend } from './services/friendService';
+import { updateUserPresence, subscribeToFriendRequests, subscribeToFriendsAndRequests, syncUserWithBackend, getStoredAuthToken } from './services/friendService';
 import { publishPublicRoom, unpublishPublicRoom, setActiveHostRoomProvider } from './services/publicRoomsService';
 import {
   getClientId,
@@ -2029,11 +2029,12 @@ export const App: React.FC = () => {
     // Use preserved actionId on retry for economic safety (prevent duplicate operations)
     const actionId = fixedActionId || createActionId(type, actorId);
     const expectedVersion = liveState.version || 1;
-    const userAuth = userAccount?.uid ? { token: userAccount.uid } : undefined;
+    const userJwt = getStoredAuthToken();
+    const userAuth = userJwt ? { token: userJwt } : undefined;
 
     // Ensure signed guest JWT exists if user is in guest mode
     if (!userAuth) {
-      await fetchOrCreateGuestToken(liveMyId || undefined, undefined, roomId);
+      await fetchOrCreateGuestToken(liveMyId || undefined, userAccount?.displayName || undefined, roomId);
     }
 
     try {

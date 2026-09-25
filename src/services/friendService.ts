@@ -88,7 +88,7 @@ export function getOrGenerateFriendCode(uid: string, email?: string | null): str
 }
 
 /**
- * Publish full account state to MQTT Cloud Retained Topics for 100% Cross-Device Persistence
+ * Persist account state to local cache & storage securely (PII never broadcast over public MQTT)
  */
 export function saveAccountToCloud(
   user: UserAccount,
@@ -116,23 +116,14 @@ export function saveAccountToCloud(
     updatedAt: Date.now()
   };
 
-  // 1. Publish retained message to friendCode topic
-  if (cleanCode) {
-    syncManager.publishRetained(`turkishparadise/account/v1/${cleanCode}`, payload);
-    syncManager.publishRetained(`turkishparadise/registry/v1/${cleanCode}`, {
-      uid: cleanUid,
-      displayName: user.displayName,
-      friendCode: cleanCode,
-      photoURL: user.photoURL,
-      isOnline: true,
-      lastSeen: Date.now()
-    });
-  }
-
-  // 2. Publish retained message to UID topic
-  if (cleanUid) {
-    syncManager.publishRetained(`turkishparadise/account/v1/${cleanUid}`, payload);
-  }
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem(`tp_account_${cleanUid}`, JSON.stringify(payload));
+      if (cleanCode) {
+        localStorage.setItem(`tp_account_${cleanCode}`, JSON.stringify(payload));
+      }
+    }
+  } catch (e) {}
 }
 
 /**
@@ -435,17 +426,13 @@ export async function sendFriendRequest(
     createdAt: new Date().toISOString()
   };
 
-  // 1. Publish Retained Friend Request to target's mailbox topic (Delivered even if recipient opens app next week)
-  syncManager.publishRetained(`turkishparadise/requests/v1/${cleanCode}/${currentUser.uid}`, requestPayload);
-
-  // 2. Broadcast over Realtime MQTT Mesh immediately
+  // 1. Broadcast over Realtime MQTT Mesh immediately without sensitive profile data
   syncManager.sendFriendMessage({
     type: 'FRIEND_REQUEST_SENT',
     requestId: reqId,
     fromUserId: currentUser.uid,
     fromName: currentUser.displayName,
     fromFriendCode: myCode,
-    fromPhotoURL: currentUser.photoURL || '',
     targetFriendCode: cleanCode
   });
 
@@ -520,29 +507,9 @@ export async function acceptFriendRequest(
       }, friends, undefined, currentReqs);
     }
 
-    // Clear pending request retained topic
-    syncManager.publishRetained(`turkishparadise/requests/v1/${cleanMyCode}/${fromUser.id}`, {
-      status: 'ACCEPTED',
-      id: requestId,
-      updatedAt: Date.now()
-    });
-
-    // Publish Retained Acceptance to sender's acceptance topic
-    if (fromUser.friendCode) {
-      syncManager.publishRetained(`turkishparadise/acceptance/v1/${fromUser.friendCode.toUpperCase()}`, {
-        type: 'FRIEND_REQUEST_ACCEPTED',
-        fromUserId: userId,
-        fromDisplayName: currentUser?.displayName || 'Oyuncu',
-        fromFriendCode: cleanMyCode,
-        fromPhotoURL: currentUser?.photoURL || '',
-        requestId: requestId,
-        targetUserId: fromUser.id,
-        targetFriendCode: fromUser.friendCode
-      });
-    }
   }
 
-  // 2. Broadcast acceptance over Realtime MQTT Mesh
+  // 2. Broadcast acceptance over Realtime MQTT Mesh without PII
   syncManager.sendFriendMessage({
     type: 'FRIEND_REQUEST_ACCEPTED',
     fromUserId: userId,
@@ -614,7 +581,7 @@ export async function removeFriend(
   );
   saveIncomingRequests(userId, reqs);
 
-  // 2. Publish retained deletion event & updated account state
+  // 2. Publish updated account state to local storage
   const myProfile = typeof window !== 'undefined' ? localStorage.getItem('tp_user_profile') : null;
   if (myProfile) {
     try {
@@ -623,13 +590,7 @@ export async function removeFriend(
     } catch (e) {}
   }
 
-  syncManager.publishRetained(`turkishparadise/friendship_del/v1/${cleanTarget}`, {
-    deletedBy: userId,
-    target: cleanTarget,
-    timestamp: Date.now()
-  });
-
-  // 3. Broadcast removal via MQTT Mesh so other side also updates instantly
+  // 2. Broadcast removal via MQTT Mesh so other side also updates instantly without PII
   syncManager.sendFriendMessage({
     type: 'FRIEND_REMOVED',
     fromUserId: userId,

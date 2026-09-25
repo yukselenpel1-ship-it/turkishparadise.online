@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import {
   createInitialState,
   handleRollDice,
@@ -21,23 +22,20 @@ import {
 } from '../src/engine/gameEngine';
 import { GameState, Player, TradeOffer, PublicRoomInfo } from '../src/types/game';
 
-let passed = 0;
-let failed = 0;
+describe('Production Smoke Test Suite', () => {
+  it('runs production multiplayer flow smoke test', () => {
+    let passed = 0;
+    let failed = 0;
 
-function assert(condition: boolean, msg: string) {
-  if (condition) {
-    console.log(`  ✅ PASS: ${msg}`);
-    passed++;
-  } else {
-    console.error(`  ❌ FAIL: ${msg}`);
-    failed++;
-    throw new Error(`Assertion failed: ${msg}`);
-  }
-}
-
-console.log('====================================================');
-console.log('🚀 TURKISH PARADISE — PRODUCTION SMOKE TEST SUITE 🚀');
-console.log('====================================================\n');
+    function assert(condition: boolean, msg: string) {
+      expect(condition).toBe(true);
+      if (condition) {
+        passed++;
+      } else {
+        failed++;
+        throw new Error(`Assertion failed: ${msg}`);
+      }
+    }
 
 // -------------------------------------------------------------------------------------------------
 // SMOKE 1: LOBBY CREATION & MULTI-CLIENT JOIN
@@ -164,6 +162,10 @@ hostGameState = declareBankruptcy(hostGameState, 'p_bot');
 assert(hostGameState.phase === 'ENDED', 'Game automatically ended when only Host remained');
 assert(hostGameState.winner?.id === 'p_host', 'Host declared Champion Winner');
 
-console.log('\n====================================================');
-console.log(`📊 SMOKE TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
-console.log('====================================================\n');
+  console.log('\n====================================================');
+  console.log(`📊 SMOKE TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
+  console.log('====================================================\n');
+  expect(failed).toBe(0);
+  });
+});
+

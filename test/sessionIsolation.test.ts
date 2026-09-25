@@ -1,24 +1,22 @@
+import { describe, it, expect } from 'vitest';
 import { createInitialState, isPlayerHost } from '../src/engine/gameEngine';
 import { MultiplayerSyncManager, SyncMessage } from '../src/services/multiplayerSync';
 import { GameState, Player } from '../src/types/game';
 
-let passed = 0;
-let failed = 0;
+describe('Multiplayer Handshake & Session Audit', () => {
+  it('runs multiplayer handshake and session isolation tests', () => {
+    let passed = 0;
+    let failed = 0;
 
-function assert(condition: boolean, msg: string) {
-  if (condition) {
-    console.log(`  ✅ PASS: ${msg}`);
-    passed++;
-  } else {
-    console.error(`  ❌ FAIL: ${msg}`);
-    failed++;
-    throw new Error(`Assertion failed: ${msg}`);
-  }
-}
-
-console.log('================================================================');
-console.log('🔒 TURKISH PARADISE — MULTIPLAYER HANDSHAKE & SESSION AUDIT');
-console.log('================================================================\n');
+    function assert(condition: boolean, msg: string) {
+      expect(condition).toBe(true);
+      if (condition) {
+        passed++;
+      } else {
+        failed++;
+        throw new Error(`Assertion failed: ${msg}`);
+      }
+    }
 
 // -------------------------------------------------------------------------------------------------
 // TEST 1: Unique Session & Game ID generation
@@ -673,8 +671,10 @@ assert(matchIdx >= 0, 'Host recognizes existing player by preserved participantK
 isoState.players[matchIdx] = { ...isoState.players[matchIdx], isAfk: false };
 assert(isoState.players.length === 4, 'Reconnect does not create a duplicate player slot');
 
-console.log('\n================================================================');
-console.log(`🎉 ALL MULTIPLAYER & JOIN HANDSHAKE TESTS PASSED! (${passed} checks, ${failed} failures)`);
-console.log('================================================================\n');
+  console.log('\n================================================================');
+  console.log(`🎉 ALL MULTIPLAYER & JOIN HANDSHAKE TESTS PASSED! (${passed} checks, ${failed} failures)`);
+  console.log('================================================================\n');
+  expect(failed).toBe(0);
+  });
+});
 
-process.exit(failed > 0 ? 1 : 0);

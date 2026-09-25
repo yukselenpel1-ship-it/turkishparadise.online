@@ -192,6 +192,23 @@ export async function executeGameActionPipeline(
   }
 
   // --------------------------------------------------------------------------
+  // 3.5. OPTIMISTIC CONCURRENCY / EXPECTED VERSION CHECK
+  // --------------------------------------------------------------------------
+  if (
+    typeof expectedVersion === 'number' &&
+    typeof currentState.version === 'number' &&
+    currentState.version !== expectedVersion
+  ) {
+    return {
+      success: false,
+      statusCode: 409,
+      error: 'VERSION_CONFLICT',
+      message: 'Oda durumu değişmiş. Lütfen güncel durumu alıp işlemi tekrar deneyin.',
+      currentVersion: currentState.version
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // 4. IDENTITY & ACTOR-TO-PLAYER VALIDATION
   // --------------------------------------------------------------------------
   const matchResult = validateActorMatchesPlayer(actor, currentState, playerId, type);

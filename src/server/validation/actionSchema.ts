@@ -31,7 +31,8 @@ export const ALLOWED_ACTION_TYPES = [
   'SET_AFK',
   'AUTO_LIQUIDATE',
   'LEAVE_AND_REPLACE_WITH_BOT',
-  'TAKE_OVER_REPLACEMENT_BOT'
+  'TAKE_OVER_REPLACEMENT_BOT',
+  'CLAIM_REPLACEMENT_SEAT'
 ] as const;
 
 export type ValidActionType = typeof ALLOWED_ACTION_TYPES[number];
@@ -213,7 +214,67 @@ export function validateActionRequest(body: any): SchemaValidationResult {
     const botId = typeof payload?.botId === 'string' ? payload.botId.trim() : undefined;
     sanitizedPayload = { botId };
   } else if (type === 'UPDATE_SETTINGS') {
-    sanitizedPayload = payload && typeof payload === 'object' ? payload : {};
+    if (!payload || typeof payload !== 'object') {
+      return { valid: false, error: 'INVALID_SETTINGS', message: 'Oda ayarları verisi geçersiz.' };
+    }
+    const sanitized: Record<string, any> = {};
+
+    if (payload.passGoSalary !== undefined) {
+      if (typeof payload.passGoSalary !== 'number' || Number.isNaN(payload.passGoSalary) || ![200, 300, 400, 500].includes(payload.passGoSalary)) {
+        return {
+          valid: false,
+          error: 'INVALID_SETTINGS',
+          message: 'Başlangıç geçiş ödülü yalnızca 200, 300, 400 veya 500 olabilir.'
+        };
+      }
+      sanitized.passGoSalary = payload.passGoSalary;
+    }
+
+    if (payload.firstLapBuyLimit !== undefined) {
+      if (typeof payload.firstLapBuyLimit !== 'number' || Number.isNaN(payload.firstLapBuyLimit) || ![0, 1, 2, 3, 4].includes(payload.firstLapBuyLimit)) {
+        return {
+          valid: false,
+          error: 'INVALID_SETTINGS',
+          message: 'İlk tur alım limiti geçersiz (0, 1, 2, 3 veya 4 olmalıdır).'
+        };
+      }
+      sanitized.firstLapBuyLimit = payload.firstLapBuyLimit;
+    }
+
+    if (payload.startingMoney !== undefined) {
+      if (typeof payload.startingMoney !== 'number' || Number.isNaN(payload.startingMoney) || ![1000, 1500, 2000, 2500, 3000].includes(payload.startingMoney)) {
+        return {
+          valid: false,
+          error: 'INVALID_SETTINGS',
+          message: 'Başlangıç parası geçersiz (1000, 1500, 2000, 2500 veya 3000 olmalıdır).'
+        };
+      }
+      sanitized.startingMoney = payload.startingMoney;
+    }
+
+    if (payload.botDifficulty !== undefined) {
+      if (!['easy', 'medium', 'hard'].includes(payload.botDifficulty)) {
+        return {
+          valid: false,
+          error: 'INVALID_SETTINGS',
+          message: 'Bot zorluk seviyesi geçersiz.'
+        };
+      }
+      sanitized.botDifficulty = payload.botDifficulty;
+    }
+
+    if (payload.isPublic !== undefined) {
+      if (typeof payload.isPublic !== 'boolean') {
+        return {
+          valid: false,
+          error: 'INVALID_SETTINGS',
+          message: 'Oda görünürlük ayarı (isPublic) boolean olmalıdır.'
+        };
+      }
+      sanitized.isPublic = payload.isPublic;
+    }
+
+    sanitizedPayload = sanitized;
   } else if (type === 'SET_AFK' || type === 'AUTO_LIQUIDATE') {
     const targetPlayerId = typeof payload?.targetPlayerId === 'string' ? payload.targetPlayerId.trim() : undefined;
     sanitizedPayload = { targetPlayerId };
@@ -225,7 +286,7 @@ export function validateActionRequest(body: any): SchemaValidationResult {
       ? payload.tileId
       : undefined;
     sanitizedPayload = { targetPlayerId, tileId };
-  } else if (type === 'TAKE_OVER_REPLACEMENT_BOT') {
+  } else if (type === 'TAKE_OVER_REPLACEMENT_BOT' || type === 'CLAIM_REPLACEMENT_SEAT') {
     const targetPlayerId = typeof payload?.targetPlayerId === 'string' ? payload.targetPlayerId.trim() : undefined;
     const name = typeof payload?.name === 'string' ? payload.name.trim().substring(0, 30) : undefined;
     const avatar = typeof payload?.avatar === 'string' ? payload.avatar.trim() : undefined;

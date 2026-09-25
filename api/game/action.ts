@@ -1,19 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { resolveAuthenticatedActor } from '../../src/server/auth/authMiddleware';
+import { resolveAuthenticatedActor, sanitizeGameStateForClient } from '../../src/server/auth/authMiddleware';
 import { executeGameActionPipeline } from '../../src/server/game/actionPipeline';
+import { handleCors } from '../../src/server/auth/corsUtil';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 1. CORS Headers
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-participant-key, x-guest-token, x-user-id, x-user-name'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (handleCors(req, res, 'POST,OPTIONS')) {
+    return;
   }
 
   if (req.method !== 'POST') {
@@ -39,12 +32,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await executeGameActionPipeline(req.body, authRes.actor);
 
     if (result.success) {
+      const sanitizedState = result.state ? sanitizeGameStateForClient(result.state, authRes.actor) : undefined;
       return res.status(result.statusCode || 200).json({
         success: true,
         roomId: result.roomId,
         actionId: result.actionId,
         version: result.version,
-        state: result.state,
+        state: sanitizedState,
         events: result.events
       });
     } else {

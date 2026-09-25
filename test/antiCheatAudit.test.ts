@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import {
   createInitialState,
   handleRollDice,
@@ -15,22 +16,19 @@ import {
 } from '../src/engine/gameEngine';
 import { GameState, Player, TradeOffer, BoardTile } from '../src/types/game';
 
-console.log('================================================================');
-console.log('🛡️ TURKISH PARADISE — ANTI-CHEAT & SECURITY VERIFICATION SUITE');
-console.log('================================================================\n');
+describe('Anti-Cheat & Security Verification Suite', () => {
+  it('runs anti-cheat and security checks', () => {
+    let passedTests = 0;
+    let failedTests = 0;
 
-let passedTests = 0;
-let failedTests = 0;
-
-function assert(condition: boolean, message: string) {
-  if (condition) {
-    console.log(`  ✅ PASS: ${message}`);
-    passedTests++;
-  } else {
-    console.error(`  ❌ FAIL: ${message}`);
-    failedTests++;
-  }
-}
+    function assert(condition: boolean, message: string) {
+      expect(condition).toBe(true);
+      if (condition) {
+        passedTests++;
+      } else {
+        failedTests++;
+      }
+    }
 
 // --------------------------------------------------------------------------
 // TEST 1: Host State Overwrite Rejection (Authoritative Host Integrity Shield)
@@ -360,10 +358,10 @@ matrixScenarios.forEach((s, idx) => {
   assert(p2Pos === 4, `[Scenario ${idx + 1}] Joiner moved to tile 4 (dice: 4)`);
 });
 
-console.log('\n================================================================');
-console.log(`📊 ANTI-CHEAT TEST SUMMARY: ${passedTests} PASSED, ${failedTests} FAILED`);
-console.log('================================================================');
+  console.log('\n================================================================');
+  console.log(`📊 ANTI-CHEAT TEST SUMMARY: ${passedTests} PASSED, ${failedTests} FAILED`);
+  console.log('================================================================');
+  expect(failedTests).toBe(0);
+  });
+});
 
-if (failedTests > 0) {
-  process.exit(1);
-}

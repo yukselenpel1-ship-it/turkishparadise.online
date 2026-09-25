@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import {
   createInitialState,
   handleRollDice,
@@ -21,19 +22,20 @@ import {
 } from '../src/engine/gameEngine';
 import { GameState, Player, BoardTile, TradeOffer } from '../src/types/game';
 
-let passed = 0;
-let failed = 0;
+describe('Break It Soak Test Suite', () => {
+  it('runs deterministic invariant soak simulations and stress scenarios', () => {
+    let passed = 0;
+    let failed = 0;
 
-function assert(condition: boolean, msg: string) {
-  if (condition) {
-    console.log(`  ✅ PASS: ${msg}`);
-    passed++;
-  } else {
-    console.error(`  ❌ FAIL: ${msg}`);
-    failed++;
-    throw new Error(`Assertion failed: ${msg}`);
-  }
-}
+    function assert(condition: boolean, msg: string) {
+      expect(condition).toBe(true);
+      if (condition) {
+        passed++;
+      } else {
+        failed++;
+        throw new Error(`Assertion failed: ${msg}`);
+      }
+    }
 
 /**
  * Deterministic State Invariant Validator
@@ -327,10 +329,10 @@ bankState = declareBankruptcy(bankState, 'b2');
 assert(bankState.phase === 'ENDED', '2-player game ends immediately on 1 bankruptcy');
 assert(bankState.winner?.id === 'b1', 'Remaining player declared winner');
 
-console.log('\n====================================================');
-console.log(`📊 BREAK IT RESULTS: ${passed} PASSED, ${failed} FAILED`);
-console.log('====================================================\n');
+  console.log('\n====================================================');
+  console.log(`📊 BREAK IT RESULTS: ${passed} PASSED, ${failed} FAILED`);
+  console.log('====================================================\n');
+  expect(failed).toBe(0);
+  });
+});
 
-if (failed > 0) {
-  process.exit(1);
-}

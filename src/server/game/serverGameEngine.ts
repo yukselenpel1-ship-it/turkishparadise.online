@@ -587,6 +587,31 @@ export function applyGameAction(
 
     if (type === 'UPDATE_SETTINGS') {
       const newSettings = action.payload || {};
+
+      if (newSettings.passGoSalary !== undefined) {
+        if (typeof newSettings.passGoSalary !== 'number' || Number.isNaN(newSettings.passGoSalary) || ![200, 300, 400, 500].includes(newSettings.passGoSalary)) {
+          return { success: false, error: 'INVALID_ACTION', errorMessage: 'Başlangıç geçiş ödülü yalnızca 200, 300, 400 veya 500 olabilir.' };
+        }
+      }
+
+      if (newSettings.firstLapBuyLimit !== undefined) {
+        if (typeof newSettings.firstLapBuyLimit !== 'number' || Number.isNaN(newSettings.firstLapBuyLimit) || ![0, 1, 2, 3, 4].includes(newSettings.firstLapBuyLimit)) {
+          return { success: false, error: 'INVALID_ACTION', errorMessage: 'İlk tur alım limiti geçersiz (0, 1, 2, 3 veya 4 olmalıdır).' };
+        }
+      }
+
+      if (newSettings.startingMoney !== undefined) {
+        if (typeof newSettings.startingMoney !== 'number' || Number.isNaN(newSettings.startingMoney) || ![1000, 1500, 2000, 2500, 3000].includes(newSettings.startingMoney)) {
+          return { success: false, error: 'INVALID_ACTION', errorMessage: 'Başlangıç parası geçersiz (1000, 1500, 2000, 2500 veya 3000 olmalıdır).' };
+        }
+      }
+
+      if (newSettings.botDifficulty !== undefined) {
+        if (!['easy', 'medium', 'hard'].includes(newSettings.botDifficulty)) {
+          return { success: false, error: 'INVALID_ACTION', errorMessage: 'Bot zorluk seviyesi geçersiz.' };
+        }
+      }
+
       nextState.settings = {
         ...nextState.settings,
         startingMoney: typeof newSettings.startingMoney === 'number' ? newSettings.startingMoney : nextState.settings?.startingMoney || 1500,
@@ -652,8 +677,8 @@ export function applyGameAction(
     return { success: false, error: 'INVALID_PHASE', errorMessage: 'Oyun henüz başlamadı veya sona erdi.' };
   }
 
-  // ACTION: TAKE_OVER_REPLACEMENT_BOT (New player takes over a vacant replacement bot seat)
-  if (type === 'TAKE_OVER_REPLACEMENT_BOT') {
+  // ACTION: TAKE_OVER_REPLACEMENT_BOT / CLAIM_REPLACEMENT_SEAT (New player takes over a vacant replacement bot seat)
+  if (type === 'TAKE_OVER_REPLACEMENT_BOT' || type === 'CLAIM_REPLACEMENT_SEAT') {
     const targetId = action.payload?.targetPlayerId || action.playerId;
     const targetSlot = nextState.players.find(p => p.id === targetId);
     if (!targetSlot) {
@@ -669,8 +694,10 @@ export function applyGameAction(
     const newName = action.payload?.name || authenticatedActor.displayName || 'Yeni Oyuncu';
     const newAvatar = action.payload?.avatar || '👤';
     const newColor = action.payload?.color || targetSlot.color;
-    const newUserId = authenticatedActor.userId || action.payload?.userId;
-    const newPKey = authenticatedActor.participantKey || action.payload?.participantKey;
+
+    // 🔒 SECURITY: The seat identity MUST strictly bind to the authenticated claimant's signed actor identity!
+    const newUserId = authenticatedActor.userId;
+    const newPKey = authenticatedActor.participantKey || (action.payload?.participantKey ? action.payload.participantKey : undefined);
     const newClientId = action.payload?.clientId;
     const newTabId = action.payload?.tabId;
 

@@ -17,34 +17,17 @@ import {
 } from './auth/authMiddleware';
 import { verifyGoogleToken } from './auth/googleVerifier';
 
+import { isOriginAllowed } from './auth/corsUtil';
+
 dotenv.config();
 
 const app = express();
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'https://turkishparadise.xyz',
-  'https://www.turkishparadise.xyz',
-  'https://api.turkishparadise.xyz',
-  'https://turkishparadise.online',
-  'https://www.turkishparadise.online',
-  'https://api.turkishparadise.online',
-  'https://turkishparadise.digital',
-  'https://www.turkishparadise.digital',
-  'https://api.turkishparadise.digital'
-];
-
-if (process.env.CORS_ORIGIN) {
-  allowedOrigins.push(process.env.CORS_ORIGIN);
-}
-
 const checkOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-  if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+  if (isOriginAllowed(origin)) {
     callback(null, true);
   } else {
-    callback(null, true);
+    callback(new Error('Not allowed by CORS origin policy'));
   }
 };
 
