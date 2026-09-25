@@ -23,6 +23,21 @@ export const JAIL_TILE_INDEX = 9;
 export const GO_TO_JAIL_TILE_INDEX = 28;
 export const JAIL_BAIL_AMOUNT = 100;
 
+/**
+ * Scans forward in board movement direction from currentPosition to find the first station / iskele tile.
+ * Wraps around the board (across start / index 0) if needed. Never selects a previous/behind station.
+ */
+export function getNextForwardStationIndex(board: BoardTile[], currentPosition: number): number {
+  const total = board.length || TOTAL_TILES;
+  for (let step = 1; step <= total; step++) {
+    const idx = (currentPosition + step) % total;
+    if (board[idx]?.type === 'station') {
+      return idx;
+    }
+  }
+  return 4; // Fallback to Kadıköy if no station found
+}
+
 export const PLAYER_COLORS = [
   '#EF4444', // Red
   '#3B82F6', // Blue
@@ -1081,12 +1096,17 @@ export function handleTileLanding(
       break;
 
     case 'chance':
-    case 'chest':
-      const randomCard = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];
+    case 'chest': {
+      const rawCard = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];
+      const randomCard: ChanceCard = { ...rawCard };
+      if (randomCard.id === 'c10') {
+        randomCard.targetTileId = getNextForwardStationIndex(state.board, player.position);
+      }
       state.activeCard = randomCard;
       state.pendingAction = 'CHANCE_CARD';
       state.actionMessage = `${tile.type === 'chance' ? 'Şans' : 'Kamu Fonu'} Kartı: ${randomCard.title}`;
       break;
+    }
 
     case 'property':
     case 'station':
@@ -1201,36 +1221,39 @@ export function applyChanceCard(state: GameState, payload?: { targetPlayerId?: s
       newState.doublesCount = 0;
       break;
 
-    case 'MOVE_TO':
-      if (card.targetTileId !== undefined) {
-        const target = card.targetTileId % TOTAL_TILES;
-        if (target < player.position) {
-          const salary = newState.settings?.passGoSalary || 200;
-          player.money += salary;
-          player.lapsCompleted = (player.lapsCompleted || 0) + 1;
-          addTransaction(newState, player, 'income', 'salary', salary, 'Kart ile Başlangıç noktasından geçildi');
-          if (player.lapsCompleted === 1 && (newState.settings?.firstLapBuyLimit || 0) > 0) {
-            addLog(newState, `🔓 ${player.name} 1. turunu tamamlayarak Başlangıç noktasını geçti! Artık tüm mülk alımları sınırsız serbest! (+${salary}₺)`, 'success');
-          } else {
-            addLog(newState, `💰 ${player.name} tur tamamlama bonusu ${salary}₺ aldı.`, 'success');
-          }
-        }
-        player.position = target;
-
-        // If card moves to a destination other than Start, execute tile landing mechanics (buying / rent)
-        newState.activeCard = undefined;
-        if (target !== 0) {
-          const destTile = newState.board[target];
-          addLog(newState, `📍 ${player.name} "${destTile.name}" karesine ilerledi.`, 'info');
-          const afterLanding = handleTileLanding(newState, player, destTile);
-          if ((afterLanding.doublesCount || 0) > 0 && !player.isJailed && afterLanding.pendingAction === 'NONE') {
-            afterLanding.diceRolled = false;
-            addLog(afterLanding, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
-          }
-          return afterLanding;
+    case 'MOVE_TO': {
+      let targetTileId = card.targetTileId;
+      if (card.id === 'c10' || targetTileId === undefined) {
+        targetTileId = getNextForwardStationIndex(newState.board, player.position);
+      }
+      const target = targetTileId % TOTAL_TILES;
+      if (target < player.position) {
+        const salary = newState.settings?.passGoSalary || 200;
+        player.money += salary;
+        player.lapsCompleted = (player.lapsCompleted || 0) + 1;
+        addTransaction(newState, player, 'income', 'salary', salary, 'Kart ile Başlangıç noktasından geçildi');
+        if (player.lapsCompleted === 1 && (newState.settings?.firstLapBuyLimit || 0) > 0) {
+          addLog(newState, `🔓 ${player.name} 1. turunu tamamlayarak Başlangıç noktasını geçti! Artık tüm mülk alımları sınırsız serbest! (+${salary}₺)`, 'success');
+        } else {
+          addLog(newState, `💰 ${player.name} tur tamamlama bonusu ${salary}₺ aldı.`, 'success');
         }
       }
+      player.position = target;
+
+      // If card moves to a destination other than Start, execute tile landing mechanics (buying / rent)
+      newState.activeCard = undefined;
+      if (target !== 0) {
+        const destTile = newState.board[target];
+        addLog(newState, `📍 ${player.name} "${destTile.name}" karesine ilerledi.`, 'info');
+        const afterLanding = handleTileLanding(newState, player, destTile);
+        if ((afterLanding.doublesCount || 0) > 0 && !player.isJailed && afterLanding.pendingAction === 'NONE') {
+          afterLanding.diceRolled = false;
+          addLog(afterLanding, `🎲 Çift zar avantajı: Sıra yine ${player.name} oyuncusunda! Tekrar zar atabilirsiniz.`, 'info');
+        }
+        return afterLanding;
+      }
       break;
+    }
 
     case 'REPAIR':
       let totalHouses = 0;

@@ -23,6 +23,7 @@ import {
   JAIL_TILE_INDEX,
   TOTAL_TILES,
   JAIL_BAIL_AMOUNT,
+  getNextForwardStationIndex,
   isPlayerHost,
   executeTrade,
   evaluateTradeOfferByBot,
@@ -900,7 +901,11 @@ export function applyGameAction(
         nextState.pendingAction = 'NONE';
       }
     } else if (currentTile.type === 'chance' || currentTile.type === 'chest') {
-      const card = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];
+      const rawCard = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];
+      const card: ChanceCard = { ...rawCard };
+      if (card.id === 'c10') {
+        card.targetTileId = getNextForwardStationIndex(nextState.board, actingPlayer.position);
+      }
       nextState.activeCard = card;
       nextState.pendingAction = 'CHANCE_CARD';
       nextState.actionMessage = `${currentTile.type === 'chance' ? 'Şans' : 'Kamu Fonu'} Kartı: ${card.title}`;
@@ -1260,19 +1265,56 @@ export function applyGameAction(
         nextState.doublesCount = 0;
         break;
 
-      case 'MOVE_TO':
-        if (card.targetTileId !== undefined) {
-          const target = card.targetTileId % TOTAL_TILES;
-          if (target < actingPlayer.position) {
-            const salary = nextState.settings?.passGoSalary || 200;
-            actingPlayer.money += salary;
-            actingPlayer.lapsCompleted = (actingPlayer.lapsCompleted || 0) + 1;
-            addServerTransaction(nextState, actingPlayer, 'income', 'salary', salary, 'Kart ile Başlangıç noktasından geçildi');
-            addServerLog(nextState, `💰 ${actingPlayer.name} tur tamamlama bonusu ${salary}₺ aldı.`, 'success');
+      case 'MOVE_TO': {
+        let targetTileId = card.targetTileId;
+        if (card.id === 'c10' || targetTileId === undefined) {
+          targetTileId = getNextForwardStationIndex(nextState.board, actingPlayer.position);
+        }
+        const target = targetTileId % TOTAL_TILES;
+        if (target < actingPlayer.position) {
+          const salary = nextState.settings?.passGoSalary || 200;
+          actingPlayer.money += salary;
+          actingPlayer.lapsCompleted = (actingPlayer.lapsCompleted || 0) + 1;
+          addServerTransaction(nextState, actingPlayer, 'income', 'salary', salary, 'Kart ile Başlangıç noktasından geçildi');
+          addServerLog(nextState, `💰 ${actingPlayer.name} tur tamamlama bonusu ${salary}₺ aldı.`, 'success');
+        }
+        actingPlayer.position = target;
+
+        // If card moves to a destination other than Start, execute tile landing mechanics (buying / rent)
+        if (target !== 0) {
+          const destTile = nextState.board[target];
+          addServerLog(nextState, `📍 ${actingPlayer.name} "${destTile.name}" karesine ilerledi.`, 'info');
+          if (destTile.type === 'station' || destTile.type === 'property') {
+            if (!destTile.ownerId) {
+              const limit = nextState.settings?.firstLapBuyLimit || 0;
+              if (limit > 0 && (actingPlayer.lapsCompleted || 0) === 0 && (actingPlayer.firstLapPurchases || 0) >= limit) {
+                addServerLog(nextState, `⚠️ ${actingPlayer.name} ilk tur mülk alım sınırına (${limit} adet) ulaştığı için Başlangıç noktasını geçene kadar bu mülkü satın alamaz.`, 'warning');
+                nextState.pendingAction = 'NONE';
+              } else {
+                nextState.pendingAction = 'BUY_PROPERTY';
+                const typeStr = destTile.type === 'station' ? 'iskelesini' : 'şehrini';
+                nextState.actionMessage = `"${destTile.name}" ${typeStr} ${destTile.price}₺ karşılığında satın almak ister misiniz?`;
+              }
+            } else if (destTile.ownerId !== actingPlayer.id && !destTile.isMortgaged) {
+              const rent = calculateRent(destTile, nextState.board);
+              const owner = nextState.players.find(p => p.id === destTile.ownerId);
+              if (owner && rent > 0) {
+                actingPlayer.money -= rent;
+                owner.money += rent;
+                owner.totalRentCollected = (owner.totalRentCollected || 0) + rent;
+                addServerTransaction(nextState, actingPlayer, 'expense', 'rent_out', rent, `${owner.name} kullanıcısına "${destTile.name}" kirası ödendi`);
+                addServerTransaction(nextState, owner, 'income', 'rent_in', rent, `${actingPlayer.name} kullanıcısından "${destTile.name}" kirası tahsil edildi`);
+                addServerLog(nextState, `🏠 ${actingPlayer.name}, ${owner.name} kullanıcısına "${destTile.name}" için ${rent}₺ kira ödedi.`, 'warning');
+                events.push({ type: 'RENT_PAID', actorPlayerId: actingPlayer.id, targetPlayerId: owner.id, amount: rent, actionId, timestamp: now });
+              }
+              nextState.pendingAction = 'NONE';
+            } else {
+              nextState.pendingAction = 'NONE';
+            }
           }
-          actingPlayer.position = target;
         }
         break;
+      }
 
       case 'REPAIR':
         let totalHouses = 0;
@@ -1347,10 +1389,12 @@ export function applyGameAction(
     }
 
     nextState.activeCard = undefined;
-    nextState.pendingAction = 'NONE';
-    nextState.actionMessage = undefined;
+    if (nextState.pendingAction === 'CHANCE_CARD') {
+      nextState.pendingAction = 'NONE';
+      nextState.actionMessage = undefined;
+    }
 
-    if ((nextState.doublesCount || 0) > 0 && !actingPlayer.isJailed) {
+    if ((nextState.doublesCount || 0) > 0 && !actingPlayer.isJailed && nextState.pendingAction === 'NONE') {
       nextState.diceRolled = false;
     }
 

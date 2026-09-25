@@ -66,9 +66,8 @@ export const CHANCE_CARDS: ChanceCard[] = [
   {
     id: 'c10',
     title: 'İskele Seyahati',
-    description: 'En yakın iskeleye (Kadıköy İskelesi) hızlı seyahat edin.',
-    actionType: 'MOVE_TO',
-    targetTileId: 4
+    description: 'En yakın iskeleye hızlı seyahat edin. Başlangıç noktasından geçerseniz 200₺ kazanın.',
+    actionType: 'MOVE_TO'
   },
   {
     id: 'c11',

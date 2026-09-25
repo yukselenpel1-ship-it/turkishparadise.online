@@ -494,10 +494,10 @@ describe('🏛️ CONTROLLED ROLLOUT & REAL DEVICE VALIDATION SUITE', () => {
         currentRoomState = await storage.getRoomState(testRoomId);
       }
 
-      // If doubles were rolled, roll again
-      if (currentRoomState && !currentRoomState.diceRolled && (currentRoomState.doublesCount || 0) > 0) {
+      // If doubles were rolled, roll again until turn can be ended
+      while (currentRoomState && !currentRoomState.diceRolled && (currentRoomState.doublesCount || 0) > 0 && currentRoomState.currentTurnIndex === 0) {
         const roll2Res = await executeGameActionPipeline(
-          { actionId: 'seq_act_roll2', roomId: testRoomId, playerId: hostPlayer.id, type: 'ROLL_DICE', expectedVersion: currentV },
+          { actionId: `seq_act_roll_${actIdx++}`, roomId: testRoomId, playerId: hostPlayer.id, type: 'ROLL_DICE', expectedVersion: currentV },
           hostGuestActor,
           { storage }
         );
