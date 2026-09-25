@@ -658,11 +658,51 @@ export function declineIncomingTrade(state: GameState, rejectingPlayerId: string
   return newState;
 }
 
-// Proactive Bot Trading: Bot scans for missing set pieces and initiates trades with escalation
-export function attemptBotProactiveTrade(state: GameState, bot: Player, ignoreRandomChance: boolean = false): GameState {
+/**
+ * Dynamic Escalation Rate per color group tier:
+ * - Low-value set (brown, lightblue): ~+10% (0.10)
+ * - Medium-value set (pink, orange, yellow): ~+15-20% (0.18)
+ * - High-value / high-rent set (red, green, blue): ~+25-35% (0.30-0.35)
+ * - Critical monopoly completion boost: up to +0.40 for top-tier groups (green, blue)
+ */
+export function getGroupEscalationRate(
+  colorGroup?: ColorGroup,
+  difficulty: BotDifficulty = 'medium',
+  isMonopolyCloser: boolean = true
+): number {
+  if (!colorGroup) return 0.15;
+  if (colorGroup === 'brown' || colorGroup === 'lightblue') {
+    return difficulty === 'hard' ? 0.12 : difficulty === 'medium' ? 0.10 : 0.08;
+  }
+  if (colorGroup === 'pink' || colorGroup === 'orange' || colorGroup === 'yellow') {
+    return difficulty === 'hard' ? 0.20 : difficulty === 'medium' ? 0.18 : 0.14;
+  }
+  if (colorGroup === 'red' || colorGroup === 'green' || colorGroup === 'blue') {
+    if (isMonopolyCloser) {
+      return difficulty === 'hard' ? 0.35 : difficulty === 'medium' ? 0.30 : 0.25;
+    }
+    return difficulty === 'hard' ? 0.28 : difficulty === 'medium' ? 0.22 : 0.18;
+  }
+  return 0.15;
+}
+
+export interface BotTradeOptions {
+  ignoreRandomChance?: boolean;
+  ignoreCooldown?: boolean;
+}
+
+// Proactive Bot Trading: Bot scans for missing set pieces and initiates trades with dynamic escalation & strategic cap
+export function attemptBotProactiveTrade(
+  state: GameState,
+  bot: Player,
+  options?: boolean | BotTradeOptions
+): GameState {
+  const ignoreRandomChance = typeof options === 'boolean' ? options : Boolean(options?.ignoreRandomChance);
+  const ignoreCooldown = typeof options === 'boolean' ? options : Boolean(options?.ignoreCooldown);
+
   let newState = JSON.parse(JSON.stringify(state)) as GameState;
   newState = pruneBotNegotiations(newState);
-  const difficulty = bot.botDifficulty || 'medium';
+  const difficulty: BotDifficulty = bot.botDifficulty || 'medium';
 
   // Easy bot trades rarely, Medium trades often, Hard bot aggressively hunts sets
   const tradeChance = difficulty === 'hard' ? 0.75 : difficulty === 'medium' ? 0.45 : 0.2;
@@ -693,12 +733,49 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player, ignoreRa
         negRecord = undefined;
       }
 
-      // Anti-Spam protection: if rejected 3 times, do not spam player with further offers
-      if (negRecord && negRecord.rejectionCount >= 3) {
-        continue;
+      // 🛑 COOLDOWN & ANTI-SPAM CHECK: Do not spam the player within the same turn/round
+      if (!ignoreCooldown && negRecord && negRecord.lastOfferTurn !== undefined) {
+        if (negRecord.lastOfferTurn === newState.currentTurnIndex) {
+          continue; // Cooldown: wait until next turn
+        }
       }
 
       const rejectionCount = negRecord?.rejectionCount || 0;
+
+      // Base target valuation
+      const deedPrice = missingTile.price;
+      const baseMultiplier = difficulty === 'hard' ? 1.4 : difficulty === 'medium' ? 1.25 : 1.15;
+      const baseDesiredValue = Math.round(deedPrice * baseMultiplier);
+
+      // 🔒 STRATEGIC MAX CAP: Calculate maximum allowed valuation for this property & set
+      const strategicVal = calculatePropertyStrategicValue(missingTile, targetOwner, bot, newState.board);
+      let maxDeedMultiplier = 2.0;
+      if (group === 'red' || group === 'green' || group === 'blue') {
+        maxDeedMultiplier = difficulty === 'hard' ? 3.2 : difficulty === 'medium' ? 2.6 : 2.0;
+      } else if (group === 'pink' || group === 'orange' || group === 'yellow') {
+        maxDeedMultiplier = difficulty === 'hard' ? 2.4 : difficulty === 'medium' ? 2.0 : 1.7;
+      } else {
+        maxDeedMultiplier = difficulty === 'hard' ? 2.0 : difficulty === 'medium' ? 1.6 : 1.4;
+      }
+      const strategicDeedCap = Math.round(deedPrice * maxDeedMultiplier);
+      const strategicMaxOffer = Math.max(strategicVal, strategicDeedCap);
+
+      // 🛑 STOP CONDITION: If previous offer already reached or exceeded strategic max offer, stop proposing!
+      if (negRecord && negRecord.lastOfferAmount >= strategicMaxOffer) {
+        continue;
+      }
+
+      // Dynamic escalation rate based on set value and monopoly criticality
+      const escalationRate = getGroupEscalationRate(group, difficulty, true);
+      const escalationFactor = 1.0 + (rejectionCount * escalationRate);
+      let desiredTotalValue = Math.round(baseDesiredValue * escalationFactor);
+
+      // Bound by strategicMaxOffer
+      desiredTotalValue = Math.min(desiredTotalValue, strategicMaxOffer);
+
+      // 🔒 CASH RESERVE: Bot keeps a safe minimum cash reserve and never gives away all cash
+      const minCashReserve = difficulty === 'hard' ? 200 : difficulty === 'medium' ? 250 : 300;
+      const maxCashAvailable = Math.max(0, bot.money - minCashReserve);
 
       // Find spare properties that bot owns which are NOT part of a bot monopoly and have no houses
       const spareProperties = newState.board.filter(
@@ -707,37 +784,6 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player, ignoreRa
              !hasColorGroupMonopoly(newState.board, t.colorGroup, bot.id) &&
              t.houses === 0
       );
-
-      // Base target valuation to incentivize seller
-      const deedPrice = missingTile.price;
-      const baseMultiplier = difficulty === 'hard' ? 1.4 : difficulty === 'medium' ? 1.25 : 1.15;
-      const baseDesiredValue = Math.round(deedPrice * baseMultiplier);
-
-      // Escalation logic on rejection:
-      // 1st offer (0 rejections): base valuation (1.0x)
-      // 1st rejection: +10% (1.10x)
-      // 2nd rejection: +25% (1.25x)
-      // 3rd rejection: +40% (1.40x - son makul teklif)
-      let escalationFactor = 1.0;
-      if (rejectionCount === 1) {
-        escalationFactor = 1.10;
-      } else if (rejectionCount === 2) {
-        escalationFactor = 1.25;
-      } else if (rejectionCount >= 3) {
-        escalationFactor = 1.40;
-      }
-
-      let desiredTotalValue = Math.round(baseDesiredValue * escalationFactor);
-
-      // 🔒 STRATEGIC VALUE CAP: Bot never pays more than maximum strategic value of property/set
-      const strategicVal = calculatePropertyStrategicValue(missingTile, targetOwner, bot, newState.board);
-      const deedCap = Math.round(deedPrice * (difficulty === 'hard' ? 2.5 : difficulty === 'medium' ? 2.0 : 1.6));
-      const maxStrategicCap = Math.max(deedCap, strategicVal);
-      desiredTotalValue = Math.min(desiredTotalValue, maxStrategicCap);
-
-      // 🔒 CASH RESERVE: Bot keeps a safe minimum cash reserve and never gives away all cash
-      const minCashReserve = difficulty === 'hard' ? 200 : difficulty === 'medium' ? 250 : 300;
-      const maxCashAvailable = Math.max(0, bot.money - minCashReserve);
 
       let offeredTileIds: number[] = [];
       let offeredTilesValue = 0;
@@ -757,18 +803,21 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player, ignoreRa
       const remainingCashNeeded = Math.max(0, desiredTotalValue - offeredTilesValue);
       let cashOffer = Math.min(remainingCashNeeded, maxCashAvailable);
 
-      // If previously rejected, guarantee offer strictly escalates above last offer if cash available
+      // If previously rejected, guarantee offer strictly escalates above last offer if cash available (capped at strategicMaxOffer)
       if (negRecord && negRecord.rejectionCount > 0 && negRecord.lastOfferAmount > 0) {
-        const escalatedCash = Math.min(
-          Math.max(cashOffer, Math.round(negRecord.lastOfferAmount * 1.10)),
-          maxCashAvailable
-        );
-        if (offeredTilesValue + escalatedCash <= maxStrategicCap) {
-          cashOffer = escalatedCash;
+        const targetEscalatedCash = Math.round(negRecord.lastOfferAmount * (1 + escalationRate));
+        const maxEscalatedAllowed = Math.min(targetEscalatedCash, strategicMaxOffer - offeredTilesValue, maxCashAvailable);
+        if (maxEscalatedAllowed > negRecord.lastOfferAmount) {
+          cashOffer = maxEscalatedAllowed;
         }
       }
 
       const totalOfferedValue = offeredTilesValue + cashOffer;
+
+      // Stop if cannot offer more than previous offer or below minimum fair deed price
+      if (negRecord && negRecord.lastOfferAmount > 0 && cashOffer <= negRecord.lastOfferAmount && offeredTilesValue === 0) {
+        continue;
+      }
 
       // CRITICAL: Bot NEVER sends a lowball trade offer below deed price * 1.1!
       if (totalOfferedValue < Math.round(deedPrice * 1.1)) {
@@ -805,6 +854,7 @@ export function attemptBotProactiveTrade(state: GameState, bot: Player, ignoreRa
             rejectionCount: nextCount,
             lastOfferAmount: cashOffer,
             lastOfferTurn: newState.currentTurnIndex,
+            strategicMaxOffer,
             updatedAt: Date.now()
           };
           if (targetOwner.isAfk) {

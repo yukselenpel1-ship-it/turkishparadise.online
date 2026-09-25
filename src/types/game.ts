@@ -231,6 +231,7 @@ export interface BotNegotiationRecord {
   rejectionCount: number;
   lastOfferAmount: number;
   lastOfferTurn?: number;
+  strategicMaxOffer?: number;
   updatedAt?: number;
 }
 

@@ -6,13 +6,13 @@ import {
   pruneBotNegotiations,
   executeTrade,
   formatGameDuration,
-  declareBankruptcy,
+  getGroupEscalationRate,
   isPlayerHost
 } from '../src/engine/gameEngine';
 import { applyGameAction } from '../src/server/game/serverGameEngine';
 import { GameState, Player, BoardTile } from '../src/types/game';
 
-describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
+describe('Bot Trade Dynamic Escalation & WinnerModal Duration Suite', () => {
   let state: GameState;
   let botPlayer: Player;
   let humanPlayer: Player;
@@ -28,7 +28,7 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
       name: 'Zeki Bot',
       avatar: '🤖',
       color: '#8B5CF6',
-      money: 1500,
+      money: 5000,
       position: 0,
       isJailed: false,
       jailTurns: 0,
@@ -45,7 +45,7 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
       name: 'Ahmet',
       avatar: '🎩',
       color: '#3B82F6',
-      money: 1500,
+      money: 5000,
       position: 0,
       isJailed: false,
       jailTurns: 0,
@@ -69,81 +69,137 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 1: Bot Trade Offer Increases After Rejection
+  // TEST 1: High Value Set Escalates More Aggressively
   // --------------------------------------------------------------------------
-  it('botTradeOfferIncreasesAfterReject', () => {
-    // 1st offer (initial strategic valuation)
-    let stateAfterOffer1 = attemptBotProactiveTrade(state, botPlayer, true);
-    expect(stateAfterOffer1.incomingTradeOffer).toBeDefined();
-    const offer1Money = stateAfterOffer1.incomingTradeOffer!.offeredMoney;
-    expect(offer1Money).toBeGreaterThan(0);
+  it('highValueSetEscalatesMoreAggressively', () => {
+    const lowRate = getGroupEscalationRate('brown', 'hard', true);
+    const midRate = getGroupEscalationRate('pink', 'hard', true);
+    const highRate = getGroupEscalationRate('blue', 'hard', true);
 
-    // Human declines 1st offer
-    let stateDeclined1 = declineIncomingTrade(stateAfterOffer1, 'p_human');
-    expect(stateDeclined1.incomingTradeOffer).toBeUndefined();
-    expect(stateDeclined1.botNegotiations?.['bot_1_3']?.rejectionCount).toBe(1);
-
-    // 2nd offer (+10% escalated)
-    let stateAfterOffer2 = attemptBotProactiveTrade(stateDeclined1, botPlayer, true);
-    expect(stateAfterOffer2.incomingTradeOffer).toBeDefined();
-    const offer2Money = stateAfterOffer2.incomingTradeOffer!.offeredMoney;
-    expect(offer2Money).toBeGreaterThan(offer1Money);
-
-    // Human declines 2nd offer
-    let stateDeclined2 = declineIncomingTrade(stateAfterOffer2, 'p_human');
-    expect(stateDeclined2.botNegotiations?.['bot_1_3']?.rejectionCount).toBe(2);
-
-    // 3rd offer (+25% escalated)
-    let stateAfterOffer3 = attemptBotProactiveTrade(stateDeclined2, botPlayer, true);
-    expect(stateAfterOffer3.incomingTradeOffer).toBeDefined();
-    const offer3Money = stateAfterOffer3.incomingTradeOffer!.offeredMoney;
-    expect(offer3Money).toBeGreaterThanOrEqual(offer2Money);
-
-    // Human declines 3rd offer -> Rejection cap reached
-    let stateDeclined3 = declineIncomingTrade(stateAfterOffer3, 'p_human');
-    expect(stateDeclined3.botNegotiations?.['bot_1_3']?.rejectionCount).toBe(3);
-
-    // 4th attempt: Bot respects refusal and skips spamming
-    let stateAfterOffer4 = attemptBotProactiveTrade(stateDeclined3, botPlayer, true);
-    expect(stateAfterOffer4.incomingTradeOffer).toBeUndefined();
+    // High rent sets (Green, Blue) escalate significantly more aggressively
+    expect(highRate).toBeGreaterThan(midRate);
+    expect(midRate).toBeGreaterThan(lowRate);
+    expect(highRate).toBeGreaterThanOrEqual(0.30); // ~35% on hard bot
+    expect(lowRate).toBeLessThanOrEqual(0.15); // ~12% on brown
   });
 
   // --------------------------------------------------------------------------
-  // TEST 2: Bot Offer Has Strategic Cap
+  // TEST 2: Low Value Set Escalates Conservatively
   // --------------------------------------------------------------------------
-  it('botOfferHasStrategicCap', () => {
-    // Give bot unlimited money
-    botPlayer.money = 50000;
-    const adana = state.board.find(t => t.id === 3)!;
-    const deedPrice = adana.price || 60;
+  it('lowValueSetEscalatesConservatively', () => {
+    const brownRate = getGroupEscalationRate('brown', 'medium', true);
+    const lightblueRate = getGroupEscalationRate('lightblue', 'medium', true);
 
-    // Simulate 2 rejections
+    expect(brownRate).toBeLessThanOrEqual(0.12);
+    expect(lightblueRate).toBeLessThanOrEqual(0.12);
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 3: No Hard Three Offer Limit (Can proceed to 4th and 5th offer until cap)
+  // --------------------------------------------------------------------------
+  it('noHardThreeOfferLimit', () => {
+    // Setup Dark Blue set (Kadikoy: id 36, Bebek: id 37)
+    const kadikoy = state.board.find(t => t.id === 36)!;
+    const bebek = state.board.find(t => t.id === 37)!;
+    kadikoy.ownerId = 'bot_1';
+    bebek.ownerId = 'p_human';
+
+    // Clear brown setup to isolate Blue set test
+    state.board.find(t => t.id === 1)!.ownerId = undefined;
+    state.board.find(t => t.id === 2)!.ownerId = undefined;
+
+    let currentState = state;
+    let lastOffer = 0;
+
+    // Simulate 4 consecutive rejections
+    for (let rejection = 1; rejection <= 4; rejection++) {
+      currentState = attemptBotProactiveTrade(currentState, botPlayer, true);
+      expect(currentState.incomingTradeOffer).toBeDefined();
+      const currentOffer = currentState.incomingTradeOffer!.offeredMoney;
+      expect(currentOffer).toBeGreaterThan(lastOffer);
+      lastOffer = currentOffer;
+
+      currentState = declineIncomingTrade(currentState, 'p_human');
+      expect(currentState.botNegotiations?.['bot_1_37']?.rejectionCount).toBe(rejection);
+    }
+
+    // 5th attempt still produces an escalated offer without hard-coded 3-rejection cutoff
+    const fifthAttempt = attemptBotProactiveTrade(currentState, botPlayer, true);
+    expect(fifthAttempt.incomingTradeOffer).toBeDefined();
+    expect(fifthAttempt.incomingTradeOffer!.offeredMoney).toBeGreaterThanOrEqual(lastOffer);
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 4: Stops At Strategic Cap
+  // --------------------------------------------------------------------------
+  it('stopsAtStrategicCap', () => {
+    botPlayer.money = 50000;
+
+    // Simulate bot reaching the maximum strategic valuation cap
     state.botNegotiations = {
       'bot_1_3': {
         botId: 'bot_1',
         targetPlayerId: 'p_human',
         targetPropertyId: 3,
-        rejectionCount: 2,
-        lastOfferAmount: 200
+        rejectionCount: 8,
+        lastOfferAmount: 600, // Above strategic cap for Adana (deed 60)
+        strategicMaxOffer: 500
       }
     };
 
-    const stateWithCap = attemptBotProactiveTrade(state, botPlayer, true);
-    expect(stateWithCap.incomingTradeOffer).toBeDefined();
-    const maxOffer = stateWithCap.incomingTradeOffer!.offeredMoney;
-    // Offer must not exceed reasonable strategic cap (deedPrice * 2.5)
-    expect(maxOffer).toBeLessThanOrEqual(Math.round(deedPrice * 3.0));
+    // Bot stops offering because it reached the strategic maximum
+    const stateAfterCap = attemptBotProactiveTrade(state, botPlayer, true);
+    expect(stateAfterCap.incomingTradeOffer).toBeUndefined();
   });
 
   // --------------------------------------------------------------------------
-  // TEST 3: Bot Keeps Cash Reserve
+  // TEST 5: Cooldown Prevents Spam
+  // --------------------------------------------------------------------------
+  it('cooldownPreventsSpam', () => {
+    // 1st offer
+    const stateWithOffer = attemptBotProactiveTrade(state, botPlayer, { ignoreRandomChance: true, ignoreCooldown: false });
+    expect(stateWithOffer.incomingTradeOffer).toBeDefined();
+
+    // Human rejects the offer in current turn (e.g. currentTurnIndex = 0)
+    stateWithOffer.currentTurnIndex = 0;
+    const stateDeclined = declineIncomingTrade(stateWithOffer, 'p_human');
+    expect(stateDeclined.botNegotiations?.['bot_1_3']?.lastOfferTurn).toBe(0);
+
+    // Attempting another offer in the SAME turn without cooldown bypass is blocked
+    const stateSameTurn = attemptBotProactiveTrade(stateDeclined, botPlayer, { ignoreRandomChance: true, ignoreCooldown: false });
+    expect(stateSameTurn.incomingTradeOffer).toBeUndefined();
+
+    // Once turn advances (currentTurnIndex = 1), cooldown expires and bot can propose escalated offer
+    stateDeclined.currentTurnIndex = 1;
+    const stateNextTurn = attemptBotProactiveTrade(stateDeclined, botPlayer, { ignoreRandomChance: true, ignoreCooldown: false });
+    expect(stateNextTurn.incomingTradeOffer).toBeDefined();
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 6: Bot Trade Offer Increases After Rejection
+  // --------------------------------------------------------------------------
+  it('botTradeOfferIncreasesAfterReject', () => {
+    let stateAfterOffer1 = attemptBotProactiveTrade(state, botPlayer, true);
+    expect(stateAfterOffer1.incomingTradeOffer).toBeDefined();
+    const offer1Money = stateAfterOffer1.incomingTradeOffer!.offeredMoney;
+
+    let stateDeclined1 = declineIncomingTrade(stateAfterOffer1, 'p_human');
+    expect(stateDeclined1.botNegotiations?.['bot_1_3']?.rejectionCount).toBe(1);
+
+    let stateAfterOffer2 = attemptBotProactiveTrade(stateDeclined1, botPlayer, true);
+    expect(stateAfterOffer2.incomingTradeOffer).toBeDefined();
+    const offer2Money = stateAfterOffer2.incomingTradeOffer!.offeredMoney;
+    expect(offer2Money).toBeGreaterThan(offer1Money);
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 7: Bot Keeps Cash Reserve
   // --------------------------------------------------------------------------
   it('botKeepsCashReserve', () => {
     // Bot has only 250₺, Hard bot reserve is 200₺ -> Max cash available is 50₺
     botPlayer.money = 250;
 
     const stateLowCash = attemptBotProactiveTrade(state, botPlayer, true);
-    // Since 50₺ is below deedPrice * 1.1 (66₺), bot will not offer cash or bankrupt itself
     if (stateLowCash.incomingTradeOffer) {
       expect(stateLowCash.incomingTradeOffer.offeredMoney).toBeLessThanOrEqual(50);
       expect(botPlayer.money - stateLowCash.incomingTradeOffer.offeredMoney).toBeGreaterThanOrEqual(200);
@@ -153,7 +209,7 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 4: Rejection State Resets Correctly
+  // TEST 8: Rejection State Resets Correctly
   // --------------------------------------------------------------------------
   it('rejectionStateResetsCorrectly', () => {
     state.botNegotiations = {
@@ -198,7 +254,7 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 5: Server-Authoritative Trade Decline Records Rejection
+  // TEST 9: Server-Authoritative Trade Decline Records Rejection
   // --------------------------------------------------------------------------
   it('serverAuthoritativeDeclineRecordsRejection', () => {
     state.incomingTradeOffer = {
@@ -234,7 +290,7 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 6: WinnerModal Duration - 7 Minute Simulated Game
+  // TEST 10: WinnerModal Duration - 7 Minute Simulated Game
   // --------------------------------------------------------------------------
   it('winnerModalDurationSimulatedGame', () => {
     const startTime = 1700000000000;
@@ -249,17 +305,15 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 7: Reconnect Retains Duration
+  // TEST 11: Reconnect Retains Duration
   // --------------------------------------------------------------------------
   it('winnerModalDurationReconnectIntact', () => {
     const originalStart = state.gameStartedAt!;
     expect(originalStart).toBeDefined();
 
-    // Serialize and deserialize (simulating reconnect from Redis / network)
     const reconnectedState: GameState = JSON.parse(JSON.stringify(state));
     expect(reconnectedState.gameStartedAt).toBe(originalStart);
 
-    // End game after 7 minutes
     reconnectedState.phase = 'ENDED';
     reconnectedState.gameEndedAt = originalStart + 420000;
 
@@ -268,12 +322,11 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 8: Replacement Bot Takeover Retains Duration
+  // TEST 12: Replacement Bot Takeover Retains Duration
   // --------------------------------------------------------------------------
   it('winnerModalDurationReplacementBotTakeover', () => {
     const originalStart = state.gameStartedAt!;
 
-    // Human player replaced by bot
     const takeoverAction = {
       actionId: 'act_leave_rep',
       roomId: 'TR-TEST-ESC',
@@ -292,7 +345,7 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 9: Spectator Join Retains Duration
+  // TEST 13: Spectator Join Retains Duration
   // --------------------------------------------------------------------------
   it('winnerModalDurationSpectatorIntact', () => {
     const originalStart = state.gameStartedAt!;
@@ -313,7 +366,7 @@ describe('Bot Trade Escalation & WinnerModal Duration Suite', () => {
   });
 
   // --------------------------------------------------------------------------
-  // TEST 10: Replay / Restart Sets Fresh gameStartedAt
+  // TEST 14: Replay / Restart Sets Fresh gameStartedAt
   // --------------------------------------------------------------------------
   it('winnerModalDurationReplayFreshStart', () => {
     const oldStartTime = state.gameStartedAt!;
