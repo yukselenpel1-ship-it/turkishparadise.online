@@ -159,10 +159,15 @@ export const App: React.FC = () => {
   const [isLeaveGameModalOpen, setIsLeaveGameModalOpen] = useState(false);
   const [profileInitialTab, setProfileInitialTab] = useState<ProfileTab>('stats');
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0);
+  const [dismissedTradeOfferKey, setDismissedTradeOfferKey] = useState<string | null>(null);
   const { t, formatMoney } = useLanguage();
   const [tradeSelectedTile, setTradeSelectedTile] = useState<BoardTile | undefined>(undefined);
   const [tradeTargetPlayerId, setTradeTargetPlayerId] = useState<string | undefined>(undefined);
   const [isMoving, setIsMoving] = useState(false);
+
+  const currentIncomingOfferKey = gameState.incomingTradeOffer
+    ? `${gameState.incomingTradeOffer.fromPlayerId}_${gameState.incomingTradeOffer.toPlayerId}_${gameState.incomingTradeOffer.offeredMoney}_${(gameState.incomingTradeOffer.offeredTileIds || []).join(',')}_${(gameState.incomingTradeOffer.requestedTileIds || []).join(',')}`
+    : null;
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundManager.isEnabled());
   const [mobileSheet, setMobileSheet] = useState<'players' | 'chat' | 'logs' | null>(null);
   const [serverUnavailableMsg, setServerUnavailableMsg] = useState<string | null>(null);
@@ -2843,13 +2848,26 @@ export const App: React.FC = () => {
 
   // Handle Counter-Offer: opens trade modal directly pre-targeted to the proposing player
   const handleCounterOfferIncomingTrade = () => {
-    if (gameState.incomingTradeOffer) {
-      const targetTileId = gameState.incomingTradeOffer.requestedTileIds[0];
-      const targetTile = gameState.board.find((t) => t.id === targetTileId);
-      const proposingPlayerId = gameState.incomingTradeOffer.fromPlayerId;
+    const liveState = gameStateRef.current;
+    const liveMyId = myPlayerIdRef.current;
+    if (liveState.incomingTradeOffer) {
+      const targetTileId = liveState.incomingTradeOffer.requestedTileIds[0];
+      const targetTile = liveState.board.find((t) => t.id === targetTileId);
+      const proposingPlayerId = liveState.incomingTradeOffer.fromPlayerId;
       setTradeTargetPlayerId(proposingPlayerId);
       setTradeSelectedTile(targetTile);
-      updateAndBroadcastGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
+
+      if (isServerAuthoritativeEnabled()) {
+        dispatchServerAction('DECLINE_TRADE', liveMyId || undefined);
+      } else {
+        const isMeHost = isPlayerHost(liveState, liveMyId);
+        if (!isMeHost) {
+          if (liveState.roomId && liveMyId) {
+            syncManager.sendGameAction(liveState.roomId, liveMyId, 'DECLINE_TRADE');
+          }
+        }
+        updateAndBroadcastGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
+      }
       setIsTradeModalOpen(true);
     }
   };
@@ -3304,7 +3322,7 @@ export const App: React.FC = () => {
       )}
 
       {/* Incoming Trade Offer Modal from Bot or Player (Rendered ONLY for target recipient) */}
-      {gameState.incomingTradeOffer && me && gameState.incomingTradeOffer.toPlayerId === me.id && (
+      {gameState.incomingTradeOffer && me && gameState.incomingTradeOffer.toPlayerId === me.id && currentIncomingOfferKey !== dismissedTradeOfferKey && (
         <IncomingTradeModal
           incomingOffer={gameState.incomingTradeOffer}
           currentPlayer={me}
@@ -3313,6 +3331,7 @@ export const App: React.FC = () => {
           onAccept={handleAcceptIncomingTrade}
           onDecline={handleDeclineIncomingTrade}
           onCounterOffer={handleCounterOfferIncomingTrade}
+          onClose={() => setDismissedTradeOfferKey(currentIncomingOfferKey)}
         />
       )}
 
@@ -3410,6 +3429,7 @@ export const App: React.FC = () => {
           currentPlayer={me}
           players={gameState.players}
           board={gameState.board}
+          isCardOwner={Boolean(me && (gameState.activeCard.ownerPlayerId ? gameState.activeCard.ownerPlayerId === me.id : gameState.players[gameState.currentTurnIndex]?.id === me.id))}
           onConfirm={handleConfirmChanceCard}
         />
       )}

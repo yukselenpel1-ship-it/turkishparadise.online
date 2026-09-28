@@ -902,7 +902,7 @@ export function applyGameAction(
       }
     } else if (currentTile.type === 'chance' || currentTile.type === 'chest') {
       const rawCard = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];
-      const card: ChanceCard = { ...rawCard };
+      const card: ChanceCard = { ...rawCard, ownerPlayerId: actingPlayer.id };
       if (card.id === 'c10') {
         card.targetTileId = getNextForwardStationIndex(nextState.board, actingPlayer.position);
       }
@@ -1235,12 +1235,13 @@ export function applyGameAction(
   // --------------------------------------------------------------------------
   // ACTION: CONFIRM_CHANCE
   // --------------------------------------------------------------------------
-  if (type === 'CONFIRM_CHANCE') {
+  if (type === 'CONFIRM_CHANCE' || type === 'DEMOLISH_BUILDING' || type === 'APPLY_CHANCE') {
     const card = nextState.activeCard;
     if (!card) {
       return { success: false, error: 'INVALID_ACTION', errorMessage: 'Bekleyen aktif şans kartı bulunmuyor.' };
     }
-    if (nextState.players[nextState.currentTurnIndex]?.id !== actingPlayer.id) {
+    const cardOwnerId = card.ownerPlayerId || nextState.players[nextState.currentTurnIndex]?.id;
+    if (cardOwnerId !== actingPlayer.id) {
       return { success: false, error: 'NOT_YOUR_TURN', errorMessage: 'Sıra sizde değil.' };
     }
 
@@ -1534,6 +1535,7 @@ export function applyGameAction(
           rejectionCount: nextCount,
           lastOfferAmount: offer.offeredMoney,
           lastOfferTurn: nextState.currentTurnIndex,
+          strategicMaxOffer: existing?.strategicMaxOffer,
           updatedAt: now
         };
       }

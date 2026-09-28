@@ -8,6 +8,7 @@ interface ChanceModalProps {
   currentPlayer?: Player;
   players?: Player[];
   board?: BoardTile[];
+  isCardOwner?: boolean;
   onConfirm: (payload?: { targetPlayerId?: string; tileId?: number }) => void;
   autoConfirmSeconds?: number;
 }
@@ -17,6 +18,7 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
   currentPlayer,
   players = [],
   board = [],
+  isCardOwner = true,
   onConfirm,
   autoConfirmSeconds = 10
 }) => {
@@ -25,9 +27,14 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
   const [secondsLeft, setSecondsLeft] = useState<number>(autoConfirmSeconds);
   const onConfirmRef = useRef(onConfirm);
 
+  const cardOwnerPlayer = players.find(
+    (p) => p.id === (card.ownerPlayerId || currentPlayer?.id)
+  );
+  const cardOwnerName = cardOwnerPlayer?.name || (language === 'en' ? 'Player' : 'Oyuncu');
+
   // Eligible targets for SEND_TO_JAIL
   const eligiblePlayers = players.filter(
-    (p) => p.id !== currentPlayer?.id && p.inGame && !p.isJailed
+    (p) => p.id !== (card.ownerPlayerId || currentPlayer?.id) && p.inGame && !p.isJailed
   );
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(
     eligiblePlayers[0]?.id
@@ -36,7 +43,7 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
 
   // Eligible properties for DEMOLISH_BUILDING
   const eligibleTiles = board.filter(
-    (t) => t.ownerId && t.ownerId !== currentPlayer?.id && (t.houses || 0) > 0 && !t.isMortgaged
+    (t) => t.ownerId && t.ownerId !== (card.ownerPlayerId || currentPlayer?.id) && (t.houses || 0) > 0 && !t.isMortgaged
   );
   const [selectedTileId, setSelectedTileId] = useState<number | undefined>(
     eligibleTiles[0]?.id
@@ -61,20 +68,23 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
       setSecondsLeft((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          if (card.actionType === 'SEND_TO_JAIL') {
-            onConfirmRef.current(
-              selectedPlayerIdRef.current
-                ? { targetPlayerId: selectedPlayerIdRef.current }
-                : undefined
-            );
-          } else if (card.actionType === 'DEMOLISH_BUILDING') {
-            onConfirmRef.current(
-              selectedTileIdRef.current !== undefined
-                ? { tileId: selectedTileIdRef.current }
-                : undefined
-            );
-          } else {
-            onConfirmRef.current();
+          // Only card owner auto-confirms when timer expires
+          if (isCardOwner) {
+            if (card.actionType === 'SEND_TO_JAIL') {
+              onConfirmRef.current(
+                selectedPlayerIdRef.current
+                  ? { targetPlayerId: selectedPlayerIdRef.current }
+                  : undefined
+              );
+            } else if (card.actionType === 'DEMOLISH_BUILDING') {
+              onConfirmRef.current(
+                selectedTileIdRef.current !== undefined
+                  ? { tileId: selectedTileIdRef.current }
+                  : undefined
+              );
+            } else {
+              onConfirmRef.current();
+            }
           }
           return 0;
         }
@@ -83,9 +93,10 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [card, autoConfirmSeconds]);
+  }, [card, autoConfirmSeconds, isCardOwner]);
 
   const handleConfirmClick = () => {
+    if (!isCardOwner) return;
     if (card.actionType === 'SEND_TO_JAIL') {
       onConfirm(selectedPlayerId ? { targetPlayerId: selectedPlayerId } : undefined);
     } else if (card.actionType === 'DEMOLISH_BUILDING') {
@@ -131,7 +142,16 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
               {language === 'en' ? 'Select Target Player' : 'Hedef Oyuncuyu Seçin'}
             </label>
-            {eligiblePlayers.length > 0 ? (
+            {!isCardOwner ? (
+              <div className="flex items-center gap-2 p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-300">
+                <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  {language === 'en'
+                    ? `${cardOwnerName} is selecting a target player...`
+                    : `${cardOwnerName} hedef oyuncuyu seçiyor...`}
+                </span>
+              </div>
+            ) : eligiblePlayers.length > 0 ? (
               <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
                 {eligiblePlayers.map((p) => {
                   const isSelected = selectedPlayerId === p.id;
@@ -194,7 +214,16 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
               {language === 'en' ? 'Select Building to Demolish' : 'Yıkılacak Yapıyı Seçin'}
             </label>
-            {eligibleTiles.length > 0 ? (
+            {!isCardOwner ? (
+              <div className="flex items-center gap-2 p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-300">
+                <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  {language === 'en'
+                    ? `${cardOwnerName} is selecting a property to demolish...`
+                    : `${cardOwnerName} yıkılacak yapıyı seçiyor...`}
+                </span>
+              </div>
+            ) : eligibleTiles.length > 0 ? (
               <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
                 {eligibleTiles.map((t) => {
                   const owner = players.find((p) => p.id === t.ownerId);
@@ -257,32 +286,45 @@ export const ChanceModal: React.FC<ChanceModalProps> = ({
           </div>
         )}
 
-        <button
-          onClick={handleConfirmClick}
-          disabled={
-            (isSendToJail && eligiblePlayers.length > 0 && !selectedPlayerId) ||
-            (isDemolishBuilding && eligibleTiles.length > 0 && selectedTileId === undefined)
-          }
-          className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black py-3 px-4 rounded-xl shadow-lg transition text-sm cursor-pointer active:scale-95 flex items-center justify-center gap-2"
-        >
-          <span>
-            {isSendToJail && eligiblePlayers.length > 0
-              ? language === 'en'
-                ? '🚨 Send to Jail'
-                : '🚨 Kodese Gönder'
-              : isDemolishBuilding && eligibleTiles.length > 0
-              ? language === 'en'
-                ? '💥 Demolish Building'
-                : '💥 Yapıyı Yık'
-              : language === 'en'
-              ? 'OK 🔥'
-              : 'Tamam 🔥'}
-          </span>
-          <span className="inline-flex items-center gap-1 bg-slate-950/30 text-slate-900 font-mono text-xs px-2 py-0.5 rounded-full border border-slate-950/20">
-            <Clock className="w-3 h-3" />
-            <span>{secondsLeft}s</span>
-          </span>
-        </button>
+        {/* Action Button: ONLY rendered for card owner */}
+        {isCardOwner ? (
+          <button
+            type="button"
+            onClick={handleConfirmClick}
+            disabled={
+              (isSendToJail && eligiblePlayers.length > 0 && !selectedPlayerId) ||
+              (isDemolishBuilding && eligibleTiles.length > 0 && selectedTileId === undefined)
+            }
+            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black py-3 px-4 rounded-xl shadow-lg transition text-sm cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+          >
+            <span>
+              {isSendToJail && eligiblePlayers.length > 0
+                ? language === 'en'
+                  ? '🚨 Send to Jail'
+                  : '🚨 Kodese Gönder'
+                : isDemolishBuilding && eligibleTiles.length > 0
+                ? language === 'en'
+                  ? '💥 Demolish Building'
+                  : '💥 Yapıyı Yık'
+                : language === 'en'
+                ? 'OK 🔥'
+                : 'Tamam 🔥'}
+            </span>
+            <span className="inline-flex items-center gap-1 bg-slate-950/30 text-slate-900 font-mono text-xs px-2 py-0.5 rounded-full border border-slate-950/20">
+              <Clock className="w-3 h-3" />
+              <span>{secondsLeft}s</span>
+            </span>
+          </button>
+        ) : (
+          <div className="w-full bg-slate-950/70 border border-slate-800 text-slate-400 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2">
+            <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span>
+              {language === 'en'
+                ? `Waiting for ${cardOwnerName} (${secondsLeft}s)...`
+                : `${cardOwnerName} bekleniyor (${secondsLeft}s)...`}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

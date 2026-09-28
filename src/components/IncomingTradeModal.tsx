@@ -11,6 +11,7 @@ interface IncomingTradeModalProps {
   onAccept: () => void;
   onDecline: () => void;
   onCounterOffer: () => void;
+  onClose?: () => void;
 }
 
 export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
@@ -19,6 +20,7 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
   onAccept,
   onDecline,
   onCounterOffer,
+  onClose,
 }) => {
   const { t, formatMoney, translateTile, language } = useLanguage();
 
@@ -54,7 +56,8 @@ export const IncomingTradeModal: React.FC<IncomingTradeModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onDecline}
+            type="button"
+            onClick={onClose || onDecline}
             className="p-1.5 rounded-full bg-slate-900 text-slate-400 hover:text-white transition cursor-pointer"
           >
             <X className="w-4 h-4" />

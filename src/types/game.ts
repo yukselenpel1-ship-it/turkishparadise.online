@@ -128,6 +128,7 @@ export interface ChanceCard {
   actionType: ChanceActionType;
   amount?: number;
   targetTileId?: number;
+  ownerPlayerId?: string;
 }
 
 export type ActionType = 

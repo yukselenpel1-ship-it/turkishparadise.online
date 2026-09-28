@@ -659,6 +659,7 @@ export function declineIncomingTrade(state: GameState, rejectingPlayerId: string
         rejectionCount: nextCount,
         lastOfferAmount: offer.offeredMoney,
         lastOfferTurn: newState.currentTurnIndex,
+        strategicMaxOffer: existing?.strategicMaxOffer,
         updatedAt: Date.now()
       };
     }
@@ -675,10 +676,10 @@ export function declineIncomingTrade(state: GameState, rejectingPlayerId: string
 
 /**
  * Dynamic Escalation Rate per color group tier:
- * - Low-value set (brown, lightblue): ~+10% (0.10)
- * - Medium-value set (pink, orange, yellow): ~+15-20% (0.18)
- * - High-value / high-rent set (red, green, blue): ~+25-35% (0.30-0.35)
- * - Critical monopoly completion boost: up to +0.40 for top-tier groups (green, blue)
+ * - Low-value set (brown, lightblue): ~+8-15% (0.08 - 0.15)
+ * - Medium-value set (pink, orange, yellow): ~+14-22% (0.14 - 0.22)
+ * - High-value / high-rent set (red, green, blue): ~+25-38% (0.25 - 0.38)
+ * - Critical monopoly completion boost: up to +0.38 for top-tier groups (green, blue)
  */
 export function getGroupEscalationRate(
   colorGroup?: ColorGroup,
@@ -687,16 +688,16 @@ export function getGroupEscalationRate(
 ): number {
   if (!colorGroup) return 0.15;
   if (colorGroup === 'brown' || colorGroup === 'lightblue') {
-    return difficulty === 'hard' ? 0.12 : difficulty === 'medium' ? 0.10 : 0.08;
+    return difficulty === 'hard' ? 0.15 : difficulty === 'medium' ? 0.12 : 0.08;
   }
   if (colorGroup === 'pink' || colorGroup === 'orange' || colorGroup === 'yellow') {
-    return difficulty === 'hard' ? 0.20 : difficulty === 'medium' ? 0.18 : 0.14;
+    return difficulty === 'hard' ? 0.22 : difficulty === 'medium' ? 0.18 : 0.14;
   }
   if (colorGroup === 'red' || colorGroup === 'green' || colorGroup === 'blue') {
     if (isMonopolyCloser) {
-      return difficulty === 'hard' ? 0.35 : difficulty === 'medium' ? 0.30 : 0.25;
+      return difficulty === 'hard' ? 0.38 : difficulty === 'medium' ? 0.32 : 0.25;
     }
-    return difficulty === 'hard' ? 0.28 : difficulty === 'medium' ? 0.22 : 0.18;
+    return difficulty === 'hard' ? 0.30 : difficulty === 'medium' ? 0.25 : 0.20;
   }
   return 0.15;
 }
@@ -785,6 +786,15 @@ export function attemptBotProactiveTrade(
       const escalationFactor = 1.0 + (rejectionCount * escalationRate);
       let desiredTotalValue = Math.round(baseDesiredValue * escalationFactor);
 
+      // If previously rejected, ensure desiredTotalValue is strictly greater than negRecord.lastOfferAmount
+      if (negRecord && negRecord.rejectionCount > 0 && negRecord.lastOfferAmount > 0) {
+        const minEscalated = Math.max(
+          negRecord.lastOfferAmount + 10,
+          Math.round(negRecord.lastOfferAmount * (1 + escalationRate))
+        );
+        desiredTotalValue = Math.min(Math.max(desiredTotalValue, minEscalated), strategicMaxOffer);
+      }
+
       // Bound by strategicMaxOffer
       desiredTotalValue = Math.min(desiredTotalValue, strategicMaxOffer);
 
@@ -820,10 +830,13 @@ export function attemptBotProactiveTrade(
 
       // If previously rejected, guarantee offer strictly escalates above last offer if cash available (capped at strategicMaxOffer)
       if (negRecord && negRecord.rejectionCount > 0 && negRecord.lastOfferAmount > 0) {
-        const targetEscalatedCash = Math.round(negRecord.lastOfferAmount * (1 + escalationRate));
+        const targetEscalatedCash = Math.max(
+          negRecord.lastOfferAmount + 10,
+          Math.round(negRecord.lastOfferAmount * (1 + escalationRate))
+        );
         const maxEscalatedAllowed = Math.min(targetEscalatedCash, strategicMaxOffer - offeredTilesValue, maxCashAvailable);
         if (maxEscalatedAllowed > negRecord.lastOfferAmount) {
-          cashOffer = maxEscalatedAllowed;
+          cashOffer = Math.max(cashOffer, maxEscalatedAllowed);
         }
       }
 
@@ -879,6 +892,18 @@ export function attemptBotProactiveTrade(
       } 
       // Case B: Target is ACTIVE HUMAN PLAYER -> Show interactive incoming trade modal!
       else {
+        if (!newState.botNegotiations) newState.botNegotiations = {};
+        newState.botNegotiations[negKey] = {
+          botId: bot.id,
+          targetPlayerId: targetOwner.id,
+          targetPropertyId: missingTile.id,
+          rejectionCount: rejectionCount,
+          lastOfferAmount: cashOffer,
+          lastOfferTurn: newState.currentTurnIndex,
+          strategicMaxOffer,
+          updatedAt: Date.now()
+        };
+
         newState.incomingTradeOffer = {
           ...offer,
           fromPlayerName: bot.name,
@@ -1098,7 +1123,7 @@ export function handleTileLanding(
     case 'chance':
     case 'chest': {
       const rawCard = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];
-      const randomCard: ChanceCard = { ...rawCard };
+      const randomCard: ChanceCard = { ...rawCard, ownerPlayerId: player.id };
       if (randomCard.id === 'c10') {
         randomCard.targetTileId = getNextForwardStationIndex(state.board, player.position);
       }
