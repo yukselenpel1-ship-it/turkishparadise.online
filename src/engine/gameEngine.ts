@@ -642,7 +642,9 @@ export function pruneBotNegotiations(state: GameState): GameState {
 export function declineIncomingTrade(state: GameState, rejectingPlayerId: string): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
   const offer = newState.incomingTradeOffer;
-  if (!offer || offer.toPlayerId !== rejectingPlayerId) return newState;
+  if (!offer) return newState;
+  const targetPlayerId = offer.toPlayerId || (offer as any).targetPlayerId;
+  if (targetPlayerId !== rejectingPlayerId) return newState;
 
   if (offer.requestedTileIds && offer.requestedTileIds.length > 0) {
     const proposingBot = newState.players.find(p => p.id === offer.fromPlayerId && p.isBot);
@@ -654,7 +656,7 @@ export function declineIncomingTrade(state: GameState, rejectingPlayerId: string
       if (!newState.botNegotiations) newState.botNegotiations = {};
       newState.botNegotiations[negKey] = {
         botId: offer.fromPlayerId,
-        targetPlayerId: offer.toPlayerId,
+        targetPlayerId: targetPlayerId,
         targetPropertyId: targetTileId,
         rejectionCount: nextCount,
         lastOfferAmount: offer.offeredMoney,

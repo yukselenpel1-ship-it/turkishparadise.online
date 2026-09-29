@@ -195,6 +195,115 @@ describe('Turkish Paradise - Critical Gameplay Bug Fixes Suite', () => {
       state.incomingTradeOffer = testTradeOffer;
     });
 
+    it('declineButtonDispatchesTradeDecline', () => {
+      // Test decline action dispatch from recipient player
+      const action: GameAction = {
+        actionId: 'act_decline_btn',
+        roomId: state.roomId,
+        playerId: 'p2',
+        type: 'TRADE_DECLINE'
+      };
+
+      const res = applyGameAction(state, action, { userId: 'p2', isHost: false });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.state.incomingTradeOffer).toBeUndefined();
+        expect(res.events?.some((e) => e.type === 'TRADE_DECLINED')).toBe(true);
+      }
+    });
+
+    it('serverClearsIncomingTradeOnDecline', () => {
+      const action: GameAction = {
+        actionId: 'act_server_clear_decline',
+        roomId: state.roomId,
+        playerId: 'p2',
+        type: 'DECLINE_TRADE'
+      };
+
+      const res = applyGameAction(state, action, { userId: 'p2', isHost: false });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.state.incomingTradeOffer).toBeUndefined();
+        expect(res.state.board.find((t) => t.id === 1)!.ownerId).toBe('p1');
+        expect(res.state.board.find((t) => t.id === 3)!.ownerId).toBe('p2');
+      }
+    });
+
+    it('onlyTradeTargetCanDecline', () => {
+      // Non-target player (p1, the sender, or a 3rd party) tries to decline the incoming trade offer directed to p2
+      const actionWrong: GameAction = {
+        actionId: 'act_decline_wrong_actor',
+        roomId: state.roomId,
+        playerId: 'p1',
+        type: 'TRADE_DECLINE'
+      };
+
+      const res = applyGameAction(state, actionWrong, { userId: 'p1', isHost: true });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('NOT_TRADE_TARGET');
+
+      // Invariant: incoming trade offer must still remain untouched
+      expect(state.incomingTradeOffer).toBeDefined();
+      expect(state.incomingTradeOffer?.toPlayerId).toBe('p2');
+    });
+
+    it('declineUpdatesBotNegotiation', () => {
+      // Setup incoming trade from bot_hard to p1
+      const botOffer: TradeOffer = {
+        fromPlayerId: 'bot_hard',
+        toPlayerId: 'p1',
+        offeredTileIds: [],
+        requestedTileIds: [3],
+        offeredMoney: 400,
+        requestedMoney: 0
+      };
+      state.incomingTradeOffer = botOffer;
+      state.botNegotiations = {
+        'bot_hard_3': {
+          botId: 'bot_hard',
+          targetPlayerId: 'p1',
+          targetPropertyId: 3,
+          rejectionCount: 1,
+          lastOfferAmount: 300,
+          strategicMaxOffer: 800
+        }
+      };
+
+      const action: GameAction = {
+        actionId: 'act_decline_bot_trade',
+        roomId: state.roomId,
+        playerId: 'p1',
+        type: 'TRADE_DECLINE'
+      };
+
+      const res = applyGameAction(state, action, { userId: 'p1', isHost: true });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.state.incomingTradeOffer).toBeUndefined();
+        const negRecord = res.state.botNegotiations?.['bot_hard_3'];
+        expect(negRecord).toBeDefined();
+        expect(negRecord?.rejectionCount).toBe(2);
+        expect(negRecord?.lastOfferAmount).toBe(400);
+        expect(negRecord?.strategicMaxOffer).toBe(800);
+      }
+    });
+
+    it('declineModalDoesNotReopenFromStaleState', () => {
+      // 1. Decline trade on state
+      const next = declineIncomingTrade(state, 'p2');
+      expect(next.incomingTradeOffer).toBeUndefined();
+
+      // 2. Calculate offer keys: null when incomingTradeOffer is cleared
+      const currentIncomingOfferKey = next.incomingTradeOffer
+        ? `${next.incomingTradeOffer.fromPlayerId}_${next.incomingTradeOffer.toPlayerId}_${next.incomingTradeOffer.offeredMoney}`
+        : null;
+      expect(currentIncomingOfferKey).toBeNull();
+
+      // 3. Trying to decline again on cleared state safely returns unchanged state
+      const afterSecondDecline = declineIncomingTrade(next, 'p2');
+      expect(afterSecondDecline.incomingTradeOffer).toBeUndefined();
+    });
+
     it('tradeAcceptWorks', () => {
       const action: GameAction = {
         actionId: 'act_accept_trade',

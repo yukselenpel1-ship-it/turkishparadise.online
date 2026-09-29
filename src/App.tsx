@@ -1276,17 +1276,22 @@ export const App: React.FC = () => {
           handleSellToBankAction(payload.tileId, senderPlayerId);
         } else if (actionType === 'TRADE_OFFER' && payload && payload.fromPlayerId === senderPlayerId) {
           handleExecuteTradeAction(payload);
-        } else if (actionType === 'ACCEPT_TRADE') {
-          if (liveState.incomingTradeOffer && liveState.incomingTradeOffer.toPlayerId === senderPlayerId) {
-            handleAcceptIncomingTrade();
-          }
-        } else if (actionType === 'DECLINE_TRADE') {
+        } else if (actionType === 'ACCEPT_TRADE' || actionType === 'TRADE_ACCEPT') {
           if (
             liveState.incomingTradeOffer &&
             (liveState.incomingTradeOffer.toPlayerId === senderPlayerId ||
+              (liveState.incomingTradeOffer as any).targetPlayerId === senderPlayerId)
+          ) {
+            handleAcceptIncomingTrade(senderPlayerId);
+          }
+        } else if (actionType === 'DECLINE_TRADE' || actionType === 'TRADE_DECLINE') {
+          if (
+            liveState.incomingTradeOffer &&
+            (liveState.incomingTradeOffer.toPlayerId === senderPlayerId ||
+              (liveState.incomingTradeOffer as any).targetPlayerId === senderPlayerId ||
               liveState.incomingTradeOffer.fromPlayerId === senderPlayerId)
           ) {
-            handleDeclineIncomingTrade();
+            handleDeclineIncomingTrade(senderPlayerId);
           }
         } else if (actionType === 'LEAVE_AND_REPLACE_WITH_BOT') {
           updateAndBroadcastGameState((prev) => leaveAndReplaceWithBot(prev, senderPlayerId));
@@ -2795,13 +2800,17 @@ export const App: React.FC = () => {
   };
 
   // Handle Accept Incoming Trade from Bot or Human Player
-  const handleAcceptIncomingTrade = () => {
+  const handleAcceptIncomingTrade = (actingPlayerId?: string) => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
+    const actorId = actingPlayerId || liveMyId || undefined;
+    if (!actorId) return;
+
+    setDismissedTradeOfferKey(null);
 
     // ⚡ SERVER-AUTHORITATIVE MODE
     if (isServerAuthoritativeEnabled()) {
-      dispatchServerAction('ACCEPT_TRADE', liveMyId || undefined);
+      dispatchServerAction('TRADE_ACCEPT', actorId);
       return;
     }
 
@@ -2810,7 +2819,7 @@ export const App: React.FC = () => {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
       if (liveState.roomId && liveMyId) {
-        syncManager.sendGameAction(liveState.roomId, liveMyId, 'ACCEPT_TRADE');
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'TRADE_ACCEPT');
       }
       return;
     }
@@ -2822,13 +2831,36 @@ export const App: React.FC = () => {
   };
 
   // Handle Decline Incoming Trade from Bot or Human Player
-  const handleDeclineIncomingTrade = () => {
+  const handleDeclineIncomingTrade = (actingPlayerId?: string) => {
     const liveState = gameStateRef.current;
     const liveMyId = myPlayerIdRef.current;
+    const actorId = actingPlayerId || liveMyId || undefined;
+    if (!actorId) return;
+
+    setDismissedTradeOfferKey(null);
 
     // ⚡ SERVER-AUTHORITATIVE MODE
     if (isServerAuthoritativeEnabled()) {
-      dispatchServerAction('DECLINE_TRADE', liveMyId || undefined);
+      setGameState((prev) => {
+        if (!prev.incomingTradeOffer) return prev;
+        return { ...prev, incomingTradeOffer: undefined };
+      });
+
+      dispatchServerAction('TRADE_DECLINE', actorId).then((ok) => {
+        if (!ok) {
+          const roomId = liveState.roomId || gameState.roomId;
+          if (roomId) {
+            const userJwt = getStoredAuthToken();
+            fetchServerGameState(roomId, userJwt ? { token: userJwt } : undefined).then((sRes) => {
+              if (sRes.success && sRes.state) {
+                gameStateRef.current = sRes.state;
+                setGameState(sRes.state);
+                debouncedSaveGameState(sRes.state);
+              }
+            });
+          }
+        }
+      });
       return;
     }
 
@@ -2837,12 +2869,13 @@ export const App: React.FC = () => {
       const myPlayer = liveState.players.find((p) => p.id === liveMyId);
       if (!myPlayer || !myPlayer.inGame) return;
       if (liveState.roomId && liveMyId) {
-        syncManager.sendGameAction(liveState.roomId, liveMyId, 'DECLINE_TRADE');
+        syncManager.sendGameAction(liveState.roomId, liveMyId, 'TRADE_DECLINE');
       }
+      setGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
       return;
     }
     updateAndBroadcastGameState((prev) => {
-      return declineIncomingTrade(prev, liveMyId || '');
+      return declineIncomingTrade(prev, actorId);
     });
   };
 
@@ -2856,17 +2889,19 @@ export const App: React.FC = () => {
       const proposingPlayerId = liveState.incomingTradeOffer.fromPlayerId;
       setTradeTargetPlayerId(proposingPlayerId);
       setTradeSelectedTile(targetTile);
+      setDismissedTradeOfferKey(null);
 
       if (isServerAuthoritativeEnabled()) {
-        dispatchServerAction('DECLINE_TRADE', liveMyId || undefined);
+        setGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
+        dispatchServerAction('TRADE_DECLINE', liveMyId || undefined);
       } else {
         const isMeHost = isPlayerHost(liveState, liveMyId);
         if (!isMeHost) {
           if (liveState.roomId && liveMyId) {
-            syncManager.sendGameAction(liveState.roomId, liveMyId, 'DECLINE_TRADE');
+            syncManager.sendGameAction(liveState.roomId, liveMyId, 'TRADE_DECLINE');
           }
         }
-        updateAndBroadcastGameState((prev) => ({ ...prev, incomingTradeOffer: undefined }));
+        updateAndBroadcastGameState((prev) => declineIncomingTrade(prev, liveMyId || ''));
       }
       setIsTradeModalOpen(true);
     }
@@ -3322,16 +3357,16 @@ export const App: React.FC = () => {
       )}
 
       {/* Incoming Trade Offer Modal from Bot or Player (Rendered ONLY for target recipient) */}
-      {gameState.incomingTradeOffer && me && gameState.incomingTradeOffer.toPlayerId === me.id && currentIncomingOfferKey !== dismissedTradeOfferKey && (
+      {gameState.incomingTradeOffer && me && (gameState.incomingTradeOffer.toPlayerId === me.id || (gameState.incomingTradeOffer as any).targetPlayerId === me.id) && currentIncomingOfferKey !== dismissedTradeOfferKey && (
         <IncomingTradeModal
           incomingOffer={gameState.incomingTradeOffer}
           currentPlayer={me}
           players={gameState.players}
           board={gameState.board}
-          onAccept={handleAcceptIncomingTrade}
-          onDecline={handleDeclineIncomingTrade}
+          onAccept={() => handleAcceptIncomingTrade(me.id)}
+          onDecline={() => handleDeclineIncomingTrade(me.id)}
           onCounterOffer={handleCounterOfferIncomingTrade}
-          onClose={() => setDismissedTradeOfferKey(currentIncomingOfferKey)}
+          onClose={() => handleDeclineIncomingTrade(me.id)}
         />
       )}
 

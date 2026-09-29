@@ -53,6 +53,7 @@ export type ServerErrorCode =
   | 'PROPERTY_UNAVAILABLE'
   | 'INVALID_PROPERTY'
   | 'INVALID_TRADE'
+  | 'NOT_TRADE_TARGET'
   | 'INVALID_FORCE_BUY'
   | 'VERSION_CONFLICT'
   | 'DUPLICATE_ACTION'
@@ -72,6 +73,7 @@ export interface ServerGameEvent {
     | 'HOUSE_SOLD'
     | 'MORTGAGE_TOGGLED'
     | 'TRADE_COMPLETED'
+    | 'TRADE_DECLINED'
     | 'JAIL_STATUS'
     | 'BANKRUPTCY'
     | 'TURN_CHANGED'
@@ -1501,8 +1503,12 @@ export function applyGameAction(
   // --------------------------------------------------------------------------
   if (type === 'TRADE_ACCEPT' || type === 'ACCEPT_TRADE') {
     const offer = nextState.incomingTradeOffer;
-    if (!offer || offer.toPlayerId !== actingPlayer.id) {
+    if (!offer) {
       return { success: false, error: 'INVALID_TRADE', errorMessage: 'Onaylanacak aktif bir takas teklifi bulunmuyor.' };
+    }
+    const targetPlayerId = offer.toPlayerId || (offer as any).targetPlayerId;
+    if (actingPlayer.id !== targetPlayerId) {
+      return { success: false, error: 'NOT_TRADE_TARGET', errorMessage: 'Bu takas teklifini yalnızca teklif yapılan oyuncu kabul edebilir.' };
     }
 
     const updated = executeTrade(nextState, offer);
@@ -1516,8 +1522,12 @@ export function applyGameAction(
   // --------------------------------------------------------------------------
   if (type === 'TRADE_DECLINE' || type === 'DECLINE_TRADE') {
     const offer = nextState.incomingTradeOffer;
-    if (!offer || offer.toPlayerId !== actingPlayer.id) {
+    if (!offer) {
       return { success: false, error: 'INVALID_TRADE', errorMessage: 'Reddedilecek aktif bir takas teklifi bulunmuyor.' };
+    }
+    const targetPlayerId = offer.toPlayerId || (offer as any).targetPlayerId;
+    if (actingPlayer.id !== targetPlayerId) {
+      return { success: false, error: 'NOT_TRADE_TARGET', errorMessage: 'Bu takas teklifini yalnızca teklif yapılan oyuncu reddedebilir.' };
     }
 
     if (offer.requestedTileIds && offer.requestedTileIds.length > 0) {
@@ -1530,7 +1540,7 @@ export function applyGameAction(
         if (!nextState.botNegotiations) nextState.botNegotiations = {};
         nextState.botNegotiations[negKey] = {
           botId: offer.fromPlayerId,
-          targetPlayerId: offer.toPlayerId,
+          targetPlayerId: targetPlayerId,
           targetPropertyId: targetTileId,
           rejectionCount: nextCount,
           lastOfferAmount: offer.offeredMoney,
@@ -1543,6 +1553,7 @@ export function applyGameAction(
 
     nextState.incomingTradeOffer = undefined;
     addServerLog(nextState, `❌ ${actingPlayer.name} gelen takas teklifini reddetti.`, 'info');
+    events.push({ type: 'TRADE_DECLINED', actorPlayerId: actingPlayer.id, targetPlayerId: offer.fromPlayerId, actionId, timestamp: now });
     return { success: true, state: nextState, events };
   }
 
