@@ -5,7 +5,14 @@ import {
   declineIncomingTrade,
   executeTrade,
   applyChanceCard,
-  hasColorGroupMonopoly
+  hasColorGroupMonopoly,
+  handleRollDice,
+  buyProperty,
+  passProperty,
+  buildHouse,
+  sellHouse,
+  toggleMortgage,
+  payJailBail
 } from '../src/engine/gameEngine';
 import { applyGameAction } from '../src/server/game/serverGameEngine';
 import { GameState, Player, BoardTile, ChanceCard, TradeOffer } from '../src/types/game';
@@ -584,6 +591,95 @@ describe('Turkish Paradise - Critical Gameplay Bug Fixes Suite', () => {
         const nextTurnOffer = attemptBotProactiveTrade(declined, bot, { ignoreRandomChance: true, ignoreCooldown: false });
         expect(nextTurnOffer.incomingTradeOffer).toBeDefined();
       }
+    });
+  });
+
+  // ==========================================================================
+  // SECTION 4: AFK Auto-Takeover & Take Back Control ("Buradayım") Recovery
+  // ==========================================================================
+  describe('AFK Auto-Takeover & Take Back Control Recovery', () => {
+    it('server PLAYER_ACTIVE clears isAfk and refreshes turn timer for current player', () => {
+      // Setup: player1 is AFK on their turn with stale turnStartedAt
+      const staleTimestamp = Date.now() - 65000;
+      state.turnStartedAt = staleTimestamp;
+      player1.isAfk = true;
+      state.currentTurnIndex = 0;
+
+      const action: GameAction = {
+        actionId: 'act_active_1',
+        roomId: state.roomId || 'TR-BUGFIX-ROOM',
+        playerId: 'p1',
+        type: 'PLAYER_ACTIVE',
+        timestamp: Date.now()
+      };
+
+      const result = applyGameAction(state, action);
+      expect(result.success).toBe(true);
+      expect(result.state.players[0].isAfk).toBe(false);
+      expect(result.state.turnStartedAt).toBeGreaterThan(staleTimestamp);
+    });
+
+    it('server active game actions clear isAfk on human acting player', () => {
+      // Setup: player1 is AFK but clicks roll dice
+      player1.isAfk = true;
+      state.currentTurnIndex = 0;
+      state.diceRolled = false;
+
+      const rollAction: GameAction = {
+        actionId: 'act_roll_afk',
+        roomId: state.roomId || 'TR-BUGFIX-ROOM',
+        playerId: 'p1',
+        type: 'ROLL_DICE',
+        timestamp: Date.now()
+      };
+
+      const result = applyGameAction(state, rollAction);
+      expect(result.success).toBe(true);
+      expect(result.state.players[0].isAfk).toBe(false);
+    });
+
+    it('client gameEngine actions clear isAfk on human player when executing moves', () => {
+      // 1. handleRollDice clears isAfk
+      player1.isAfk = true;
+      state.diceRolled = false;
+      state.currentTurnIndex = 0;
+      const afterRoll = handleRollDice(state, [2, 3]);
+      expect(afterRoll.players[0].isAfk).toBe(false);
+
+      // 2. buyProperty clears isAfk
+      afterRoll.players[0].isAfk = true;
+      afterRoll.pendingAction = 'BUY_PROPERTY';
+      const afterBuy = buyProperty(afterRoll, 'p1');
+      expect(afterBuy.players[0].isAfk).toBe(false);
+
+      // 3. passProperty clears isAfk
+      afterBuy.players[0].isAfk = true;
+      afterBuy.pendingAction = 'BUY_PROPERTY';
+      const afterPass = passProperty(afterBuy, 'p1');
+      expect(afterPass.players[0].isAfk).toBe(false);
+
+      // 4. payJailBail clears isAfk
+      afterPass.players[0].isAfk = true;
+      afterPass.players[0].isJailed = true;
+      afterPass.players[0].money = 1000;
+      const afterBail = payJailBail(afterPass);
+      expect(afterBail.players[0].isAfk).toBe(false);
+
+      // 5. trade decline clears isAfk on rejecting human player
+      const tradeState = createInitialState({ roomCode: 'TR-TRADE-AFK' });
+      tradeState.phase = 'PLAYING';
+      tradeState.players = [player1, botPlayer];
+      tradeState.incomingTradeOffer = {
+        fromPlayerId: 'bot_hard',
+        toPlayerId: 'p1',
+        offeredMoney: 200,
+        offeredTileIds: [],
+        requestedMoney: 0,
+        requestedTileIds: [3]
+      };
+      player1.isAfk = true;
+      const afterDecline = declineIncomingTrade(tradeState, 'p1');
+      expect(afterDecline.players[0].isAfk).toBe(false);
     });
   });
 });

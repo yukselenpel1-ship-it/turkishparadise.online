@@ -469,9 +469,10 @@ export function autoLiquidateDebt(
 export function applyGameAction(
   state: GameState,
   action: GameAction,
-  authenticatedActor: AuthenticatedActor,
+  authenticatedActor?: AuthenticatedActor,
   options?: EngineOptions
 ): ActionResult {
+  const actor = authenticatedActor || { userId: action.playerId, displayName: 'Oyuncu', isHost: true };
   const now = options?.now || Date.now();
   const rng = options?.rng || defaultCryptoRng;
 
@@ -497,7 +498,7 @@ export function applyGameAction(
 
     const cleanText = rawText.trim().substring(0, 250);
     const senderPlayer = nextState.players.find(p => p.id === action.playerId);
-    const senderName = senderPlayer ? senderPlayer.name : authenticatedActor.displayName || 'Oyuncu';
+    const senderName = senderPlayer ? senderPlayer.name : actor.displayName || 'Oyuncu';
     const senderAvatar = senderPlayer ? senderPlayer.avatar : '👤';
     const senderColor = senderPlayer ? senderPlayer.color : '#3B82F6';
 
@@ -520,9 +521,9 @@ export function applyGameAction(
   // --------------------------------------------------------------------------
   if (type === 'START_GAME' || type === 'ADD_BOT' || type === 'REMOVE_BOT' || type === 'UPDATE_SETTINGS') {
     const isActorHost =
-      authenticatedActor.isHost ||
-      nextState.hostPlayerId === authenticatedActor.userId ||
-      nextState.players.some(p => p.id === action.playerId && p.isHost && (p.userId === authenticatedActor.userId || p.participantKey === authenticatedActor.participantKey));
+      actor.isHost ||
+      nextState.hostPlayerId === actor.userId ||
+      nextState.players.some(p => p.id === action.playerId && p.isHost && (p.userId === actor.userId || p.participantKey === actor.participantKey));
 
     if (!isActorHost) {
       return { success: false, error: 'UNAUTHORIZED_PLAYER', errorMessage: 'Bu işlemi sadece oda kurucusu yapabilir.' };
@@ -696,13 +697,13 @@ export function applyGameAction(
       return { success: false, error: 'SEAT_ALREADY_TAKEN', errorMessage: 'Bu koltuk başka bir oyuncu tarafından devralındı.' };
     }
 
-    const newName = action.payload?.name || authenticatedActor.displayName || 'Yeni Oyuncu';
+    const newName = action.payload?.name || actor.displayName || 'Yeni Oyuncu';
     const newAvatar = action.payload?.avatar || '👤';
     const newColor = action.payload?.color || targetSlot.color;
 
     // 🔒 SECURITY: The seat identity MUST strictly bind to the authenticated claimant's signed actor identity!
-    const newUserId = authenticatedActor.userId;
-    const newPKey = authenticatedActor.participantKey || (action.payload?.participantKey ? action.payload.participantKey : undefined);
+    const newUserId = actor.userId;
+    const newPKey = actor.participantKey || (action.payload?.participantKey ? action.payload.participantKey : undefined);
     const newClientId = action.payload?.clientId;
     const newTabId = action.payload?.tabId;
 
@@ -736,9 +737,9 @@ export function applyGameAction(
   }
 
   // Verify Authenticated Actor matches Acting Player
-  const matchesUserId = actingPlayer.userId && authenticatedActor.userId && actingPlayer.userId === authenticatedActor.userId;
-  const matchesParticipantKey = actingPlayer.participantKey && authenticatedActor.participantKey && actingPlayer.participantKey === authenticatedActor.participantKey;
-  const matchesDirectId = actingPlayer.id === authenticatedActor.userId;
+  const matchesUserId = actingPlayer.userId && actor.userId && actingPlayer.userId === actor.userId;
+  const matchesParticipantKey = actingPlayer.participantKey && actor.participantKey && actingPlayer.participantKey === actor.participantKey;
+  const matchesDirectId = actingPlayer.id === actor.userId;
 
   if (!matchesUserId && !matchesParticipantKey && !matchesDirectId && process.env.NODE_ENV === 'production') {
     return { success: false, error: 'UNAUTHORIZED_PLAYER', errorMessage: 'Kimlik doğrulaması başarısız: Yetkisiz oyuncu.' };
@@ -778,6 +779,7 @@ export function applyGameAction(
   // Clear isAfk when any human player performs an active game action
   if (!actingPlayer.isBot && actingPlayer.isAfk) {
     actingPlayer.isAfk = false;
+    nextState.turnStartedAt = now;
   }
 
   const currentTurnPlayer = nextState.players[nextState.currentTurnIndex];

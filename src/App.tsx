@@ -1212,7 +1212,9 @@ export const App: React.FC = () => {
 
         const currentTurnPlayer = liveState.players[liveState.currentTurnIndex];
 
-        if (actionType === 'ROLL_DICE') {
+        if (actionType === 'PLAYER_ACTIVE') {
+          handleTakeBackControl(senderPlayerId);
+        } else if (actionType === 'ROLL_DICE') {
           if (currentTurnPlayer?.id !== senderPlayerId) return;
           if (!isMovingRef.current && !liveState.diceRolled) {
             handleRollDiceAction();
@@ -1764,21 +1766,45 @@ export const App: React.FC = () => {
   }, [gameState.phase, gameState.pendingAction, isMoving, myPlayerId]);
 
   // Human Player Takes Back Control from AFK Bot ("Buradayım")
-  const handleTakeBackControl = () => {
+  const handleTakeBackControl = (actingPlayerId?: string) => {
     const liveMyId = myPlayerIdRef.current;
+    const targetPlayerId = actingPlayerId || liveMyId;
+    if (!targetPlayerId) return;
+
     if (isServerAuthoritativeEnabled()) {
-      dispatchServerAction('PLAYER_ACTIVE', liveMyId || undefined);
+      dispatchServerAction('PLAYER_ACTIVE', targetPlayerId);
+      setGameState((prev) => {
+        const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+        const targetIdx = updated.players.findIndex((p) => p.id === targetPlayerId);
+        if (targetIdx >= 0) {
+          updated.players[targetIdx].isAfk = false;
+          if (updated.currentTurnIndex === targetIdx) {
+            updated.turnStartedAt = Date.now();
+          }
+        }
+        return updated;
+      });
       setTurnSecondsRemaining(60);
       return;
     }
 
+    const liveState = gameStateRef.current;
+    const isMeHost = isPlayerHost(liveState, liveMyId);
+
+    // If I am guest and taking back control for myself, send PLAYER_ACTIVE game action to host
+    if (!isMeHost && targetPlayerId === liveMyId && liveState.roomId) {
+      syncManager.sendGameAction(liveState.roomId, targetPlayerId, 'PLAYER_ACTIVE');
+    }
+
     updateAndBroadcastGameState((prev) => {
       const updated = JSON.parse(JSON.stringify(prev)) as GameState;
-      const meIdx = updated.players.findIndex((p) => p.id === liveMyId);
-      if (meIdx >= 0) {
-        updated.players[meIdx].isAfk = false;
-        updated.turnStartedAt = Date.now();
-        addLog(updated, `✨ ${updated.players[meIdx].name} tekrar aktif oldu ve kontrolü devraldı!`, 'success');
+      const targetIdx = updated.players.findIndex((p) => p.id === targetPlayerId);
+      if (targetIdx >= 0) {
+        updated.players[targetIdx].isAfk = false;
+        if (updated.currentTurnIndex === targetIdx) {
+          updated.turnStartedAt = Date.now();
+        }
+        addLog(updated, `✨ ${updated.players[targetIdx].name} tekrar aktif oldu ve kontrolü devraldı!`, 'success');
       }
       return updated;
     });
@@ -2384,6 +2410,10 @@ export const App: React.FC = () => {
     // 2. Set local dice state on Host
     setGameState((prev) => {
       const updated = JSON.parse(JSON.stringify(prev)) as GameState;
+      const p = updated.players.find((x) => x.id === currentPlayer.id);
+      if (p && !p.isBot && p.isAfk) {
+        p.isAfk = false;
+      }
       updated.dice = dice;
       updated.diceRolled = true;
       if (isDouble) {
@@ -2400,6 +2430,10 @@ export const App: React.FC = () => {
     runLocalStepAnimation(currentPlayer.id, diceTotal, () => {
       updateAndBroadcastGameState((prev) => {
         const landingState = finalizePlayerLanding(prev, currentPlayer.id);
+        const p = landingState.players.find((x) => x.id === currentPlayer.id);
+        if (p && !p.isBot && p.isAfk) {
+          p.isAfk = false;
+        }
         landingState.turnStartedAt = Date.now(); // Fresh 60s timer for property decision
         return landingState;
       });

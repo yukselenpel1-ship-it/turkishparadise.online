@@ -242,6 +242,10 @@ export function payJailBail(state: GameState): GameState {
     return newState;
   }
 
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
+
   player.money -= JAIL_BAIL_AMOUNT;
   player.isJailed = false;
   player.jailTurns = 0;
@@ -440,6 +444,13 @@ export function executeTrade(state: GameState, offer: TradeOffer): GameState {
   if (!fromPlayer || !toPlayer) {
     if (newState.incomingTradeOffer) newState.incomingTradeOffer = undefined;
     return newState;
+  }
+
+  if (!fromPlayer.isBot && fromPlayer.isAfk) {
+    fromPlayer.isAfk = false;
+  }
+  if (!toPlayer.isBot && toPlayer.isAfk) {
+    toPlayer.isAfk = false;
   }
 
   // Sanitize numerical money inputs
@@ -669,6 +680,9 @@ export function declineIncomingTrade(state: GameState, rejectingPlayerId: string
 
   const fromPlayer = newState.players.find(p => p.id === offer.fromPlayerId);
   const toPlayer = newState.players.find(p => p.id === offer.toPlayerId);
+  if (toPlayer && !toPlayer.isBot && toPlayer.isAfk) {
+    toPlayer.isAfk = false;
+  }
   newState.incomingTradeOffer = undefined;
   if (toPlayer) {
     addLog(newState, `❌ ${toPlayer.name}, ${fromPlayer?.name || 'gelen'} takas teklifini reddetti.`, 'warning');
@@ -930,6 +944,10 @@ export function handleRollDice(state: GameState, customDice?: [number, number]):
 
   if (!player || newState.diceRolled || newState.phase !== 'PLAYING') {
     return newState;
+  }
+
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
   }
 
   const dice = customDice || rollDice();
@@ -1226,6 +1244,10 @@ export function applyChanceCard(state: GameState, payload?: { targetPlayerId?: s
 
   if (!card || !player) return newState;
 
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
+
   addLog(newState, `🃏 ${player.name} kart çekti: ${card.title} - ${card.description}`, 'action');
 
   switch (card.actionType) {
@@ -1370,6 +1392,11 @@ export function buyProperty(state: GameState, playerId?: string): GameState {
   const targetId = playerId || newState.players[newState.currentTurnIndex]?.id;
   const player = newState.players.find(p => p.id === targetId) || newState.players[newState.currentTurnIndex];
   if (!player) return newState;
+
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
+
   const currentTile = newState.board[player.position];
 
   if (!currentTile || currentTile.ownerId || !currentTile.price) return newState;
@@ -1428,6 +1455,11 @@ export function passProperty(state: GameState, playerId?: string): GameState {
   const targetId = playerId || newState.players[newState.currentTurnIndex]?.id;
   const player = newState.players.find(p => p.id === targetId) || newState.players[newState.currentTurnIndex];
   if (!player) return newState;
+
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
+
   const currentTile = newState.board[player.position];
 
   if (currentTile) {
@@ -1454,6 +1486,10 @@ export function sellPropertyToBank(state: GameState, tileId: number, playerId?: 
 
   const player = newState.players.find(p => p.id === (playerId || tile.ownerId));
   if (!player || player.id !== tile.ownerId) return newState;
+
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
 
   // 2/3 property price + 50% house cost refund
   const propertyRefund = Math.floor(tile.price * (2 / 3));
@@ -1486,6 +1522,10 @@ export function buildHouse(state: GameState, tileId: number, playerId?: string):
   const player = newState.players.find(p => p.id === targetPlayerId);
 
   if (!player || tile.ownerId !== player.id || !tile.houseCost || tile.houses >= 5) return newState;
+
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
 
   if (tile.isMortgaged) {
     addLog(newState, `⚠️ İpotekli mülke ev dikilemez! Önce ipoteği kaldırın.`, 'warning');
@@ -1529,6 +1569,10 @@ export function sellHouse(state: GameState, tileId: number, playerId?: string): 
   const player = newState.players.find(p => p.id === targetPlayerId);
   if (!player || tile.ownerId !== player.id) return newState;
 
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
+
   const refund = Math.floor(tile.houseCost / 2);
   tile.houses -= 1;
   player.money += refund;
@@ -1554,6 +1598,10 @@ export function toggleMortgage(state: GameState, tileId: number, playerId?: stri
   const player = newState.players.find(p => p.id === targetPlayerId);
 
   if (!player || tile.ownerId !== player.id) return newState;
+
+  if (!player.isBot && player.isAfk) {
+    player.isAfk = false;
+  }
 
   const mortgageValue = Math.floor(tile.price / 2);
 
