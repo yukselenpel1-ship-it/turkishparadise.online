@@ -1,0 +1,68 @@
+name: Turkish Paradise - Coolify Auto Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: turkish-paradise-vds-test
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Trigger Coolify test deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify Vulut VDS SSH host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          # ssh-keyscan is untrusted until the pinned host fingerprint matches.
+          ssh-keyscan -T 15 -p 25416 -t ed25519 104.233.4.217 2>/dev/null > "$HOME/.ssh/known_hosts"
+          test -s "$HOME/.ssh/known_hosts"
+
+          expected='SHA256:7wpXPf5r+D/bxUlbGNgzGHMn2TjWgXxKzdVaVkcdwb0'
+          actual="$(ssh-keygen -lf "$HOME/.ssh/known_hosts" -E sha256 | awk 'NR == 1 { print $2 }')"
+
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::VDS host fingerprint mismatch. Refusing to deploy."
+            exit 1
+          fi
+          chmod 600 "$HOME/.ssh/known_hosts"
+          echo "VDS SSH host identity verified."
+
+      - name: Deploy Turkish Paradise test site through restricted SSH
+        shell: bash
+        env:
+          TP_DEPLOY_SSH_KEY: ${{ secrets.TP_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TP_DEPLOY_SSH_KEY:-}" ]]; then
+            echo "::error::Missing TP_DEPLOY_SSH_KEY repository secret."
+            exit 1
+          fi
+
+          umask 077
+          printf '%s\n' "$TP_DEPLOY_SSH_KEY" > "$HOME/.ssh/tp_coolify_actions"
+          unset TP_DEPLOY_SSH_KEY
+          trap 'rm -f "$HOME/.ssh/tp_coolify_actions"' EXIT
+
+          # The authorized_keys forced command triggers only the TP Coolify deploy API.
+          ssh -T \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            -i "$HOME/.ssh/tp_coolify_actions" \
+            -p 25416 \
+            vdsadmin@104.233.4.217
